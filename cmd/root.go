@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -12,6 +13,22 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Exit codes for scripting (0 = success, 1 = usage/validation, 2 = runtime error).
+const (
+	ExitSuccess       = 0
+	ExitUsageError    = 1
+	ExitRuntimeError  = 2
+)
+
+// exitCodeError allows RunE to specify exit code.
+type exitCodeError struct {
+	err  error
+	code int
+}
+
+func (e *exitCodeError) Error() string { return e.err.Error() }
+func (e *exitCodeError) Unwrap() error { return e.err }
+
 var (
 	cfgFile string
 	rootCmd = &cobra.Command{
@@ -21,14 +38,22 @@ var (
 generates API documentation in various formats including Swagger, Postman,
 or a custom Docusaurus-based website.`,
 		Version: "1.0.0",
+		Example: `  apidoc-gen init
+  apidoc-gen generate
+  apidoc-gen generate --type swagger --output ./docs
+  apidoc-gen generate ./my-api --no-interactive --type postman`,
 	}
 
 	generateCmd = &cobra.Command{
 		Use:   "generate [path]",
 		Short: "Generate API documentation",
-		Long:  `Scan a codebase and generate API documentation in the format of your choice.`,
+		Long:  `Scan a codebase and generate API documentation in the format of your choice. Use --no-interactive (or set --type) for CI/scripts.`,
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  runGenerate,
+		Example: `  apidoc-gen generate
+  apidoc-gen generate .
+  apidoc-gen generate --type swagger -o ./docs
+  apidoc-gen generate --no-interactive --type postman --title "My API"`,
 	}
 
 	initCmd = &cobra.Command{
@@ -36,6 +61,7 @@ or a custom Docusaurus-based website.`,
 		Short: "Initialize configuration file",
 		Long:  `Create a configuration file (.apidoc-gen.yaml) in the current directory.`,
 		RunE:  runInit,
+		Example: `  apidoc-gen init`,
 	}
 )
 
@@ -50,7 +76,8 @@ func init() {
 	generateCmd.Flags().StringP("output", "o", "./docs", "output directory for generated documentation")
 	generateCmd.Flags().StringP("type", "t", "", "documentation type (swagger|postman|custom)")
 	generateCmd.Flags().StringP("framework", "f", "", "backend framework (gin|echo|fiber|gorilla|chi)")
-	generateCmd.Flags().Bool("interactive", true, "use interactive mode")
+	generateCmd.Flags().Bool("interactive", true, "use interactive mode when type is not set")
+	generateCmd.Flags().BoolP("no-interactive", "y", false, "disable interactive mode (use config/flags only; good for CI)")
 	generateCmd.Flags().StringSlice("exclude", []string{}, "directories to exclude from scanning")
 	generateCmd.Flags().String("base-path", "", "base path for API endpoints")
 	generateCmd.Flags().String("title", "API Documentation", "API title")
@@ -62,6 +89,7 @@ func init() {
 	viper.BindPFlag("type", generateCmd.Flags().Lookup("type"))
 	viper.BindPFlag("framework", generateCmd.Flags().Lookup("framework"))
 	viper.BindPFlag("interactive", generateCmd.Flags().Lookup("interactive"))
+	viper.BindPFlag("no-interactive", generateCmd.Flags().Lookup("no-interactive"))
 	viper.BindPFlag("exclude", generateCmd.Flags().Lookup("exclude"))
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 	viper.BindPFlag("base-path", generateCmd.Flags().Lookup("base-path"))
@@ -114,16 +142,17 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
 	_ = viper.UnmarshalKey("servers", &cfg.Servers)
 
-	// Interactive mode
-	if viper.GetBool("interactive") && cfg.DocType == "" {
+	// Interactive mode: skip if --no-interactive/-y or if --type is already set
+	useInteractive := viper.GetBool("interactive") && !viper.GetBool("no-interactive") && cfg.DocType == ""
+	if useInteractive {
 		if err := prompt.GetUserPreferences(cfg); err != nil {
-			return fmt.Errorf("failed to get user preferences: %w", err)
+			return &exitCodeError{fmt.Errorf("failed to get user preferences: %w", err), ExitUsageError}
 		}
 	}
 
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
-		return fmt.Errorf("invalid configuration: %w", err)
+		return &exitCodeError{fmt.Errorf("invalid configuration: %w", err), ExitUsageError}
 	}
 
 	if cfg.Verbose {
@@ -139,7 +168,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	apiAnalyzer := analyzer.NewAnalyzer(cfg)
 	apiSpec, err := apiAnalyzer.Analyze()
 	if err != nil {
-		return fmt.Errorf("failed to analyze codebase: %w", err)
+		return &exitCodeError{fmt.Errorf("failed to analyze codebase: %w", err), ExitRuntimeError}
 	}
 
 	if cfg.Verbose {
@@ -150,11 +179,11 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("📝 Generating %s documentation...\n", cfg.DocType)
 	gen, err := generator.NewGenerator(cfg.DocType, cfg)
 	if err != nil {
-		return fmt.Errorf("failed to create generator: %w", err)
+		return &exitCodeError{fmt.Errorf("failed to create generator: %w", err), ExitRuntimeError}
 	}
 
 	if err := gen.Generate(apiSpec); err != nil {
-		return fmt.Errorf("failed to generate documentation: %w", err)
+		return &exitCodeError{fmt.Errorf("failed to generate documentation: %w", err), ExitRuntimeError}
 	}
 
 	fmt.Printf("✅ Documentation generated successfully at: %s\n", cfg.Output)
@@ -208,7 +237,7 @@ verbose: false
 `
 
 	if err := os.WriteFile(configPath, []byte(defaultConfig), 0644); err != nil {
-		return fmt.Errorf("failed to create config file: %w", err)
+		return &exitCodeError{fmt.Errorf("failed to create config file: %w", err), ExitRuntimeError}
 	}
 
 	fmt.Printf("✅ Configuration file created: %s\n", configPath)
@@ -219,6 +248,11 @@ verbose: false
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		code := ExitUsageError
+		var exitErr *exitCodeError
+		if errors.As(err, &exitErr) {
+			code = exitErr.code
+		}
+		os.Exit(code)
 	}
 }
