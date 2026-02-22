@@ -1,0 +1,11 @@
+.git
+.gitignore
+*.md
+docs/
+web/
+Dockerfile
+.dockerignore
+apidoc-gen
+*.yaml
+!go.mod
+!go.sum
