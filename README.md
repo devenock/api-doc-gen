@@ -1,420 +1,154 @@
 # API Documentation Generator (apidoc-gen)
 
-A powerful Go CLI tool that automatically generates API documentation by scanning your codebase. Supports multiple output formats including Swagger/OpenAPI, Postman collections, and custom Docusaurus websites.
+CLI that scans your Go API codebase and generates API documentation as **Swagger/OpenAPI**, **Postman**, or a **Docusaurus** site.
+
+- **Install:** [Binary](#installation) · [Docker](#docker)
+- **Get started:** [Quick start](#quick-start) below, or open **[web/index.html](web/index.html)** for a single-page guide with copy-paste commands.
 
 ## Features
 
-- 🔍 **Automatic Code Analysis** - Scans your Go codebase to detect API endpoints
-- 🎯 **Framework Detection** - Supports Gin, Echo, Fiber, Gorilla Mux, Chi, and more
-- 📚 **Multiple Output Formats**:
-  - **Swagger/OpenAPI 3.0** - Industry-standard API documentation with Swagger UI
-  - **Postman Collection** - Import directly into Postman
-  - **Custom Docusaurus Site** - Beautiful, searchable documentation website
-- ⚙️ **Configuration Management** - Use Viper for flexible configuration
-- 🎨 **Interactive CLI** - Built with Cobra for a great user experience
-- 🚀 **Fast and Efficient** - Written in Go for maximum performance
+- Scans Go projects and detects **Gin, Echo, Fiber, Gorilla Mux, Chi**
+- Outputs **Swagger/OpenAPI 3.0** (JSON, YAML, Swagger UI), **Postman Collection v2.1**, or **custom Docusaurus** site
+- Config via **file** (`.apidoc-gen.yaml`), **env** (`APIDOC_*`), or **flags**
+- **Interactive** prompts or **non-interactive** for CI (`--no-interactive`, `-y`)
 
 ## Installation
 
-### Prerequisites
-
-- Go 1.22 or higher
-- Node.js and npm (for custom Docusaurus output)
-
-### Build from Source
+**Prerequisites:** Go 1.22+ (Node.js/npm only for Docusaurus output)
 
 ```bash
-git clone https://github.com/yourusername/apidoc-gen.git
-cd apidoc-gen
+# Install binary
+go install github.com/devenock/api-doc-gen@latest
+
+# Or build from source
+git clone https://github.com/yourusername/apidoc-gen.git && cd apidoc-gen
 go build -o apidoc-gen
 ```
 
-Or install directly:
+## Quick start
+
+From your Go API project root:
 
 ```bash
-go install github.com/yourusername/apidoc-gen@latest
+apidoc-gen init                    # optional: create .apidoc-gen.yaml
+apidoc-gen generate               # interactive: choose type, framework, etc.
+# or
+apidoc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
-## Quick Start
+Then open `docs/index.html` (Swagger) or import `docs/collection.json` (Postman).
 
-### 1. Initialize Configuration
+## Docker
+
+Build and run without installing Go:
 
 ```bash
-apidoc-gen init
+docker build -t apidoc-gen .
+docker run --rm -v "$(pwd)":/workspace -w /workspace apidoc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
-This creates a `.apidoc-gen.yaml` file in your current directory.
-
-### 2. Generate Documentation
-
-Run in interactive mode:
-
-```bash
-apidoc-gen generate
-```
-
-Or specify all options via flags:
-
-```bash
-apidoc-gen generate \
-  --type swagger \
-  --output ./docs \
-  --framework gin \
-  --title "My API" \
-  --version "1.0.0"
-```
-
-### 3. View Your Documentation
-
-**For Swagger:**
-```bash
-cd docs
-# Open index.html in your browser
-```
-
-**For Postman:**
-```bash
-# Import docs/collection.json into Postman
-```
-
-**For Custom Docusaurus:**
-```bash
-cd docs
-npm install
-npm start
-```
+Use your API project path instead of `$(pwd)` if you’re not in the project root.
 
 ## Usage
 
 ### Commands
 
-#### `generate`
+| Command | Description |
+|--------|-------------|
+| `generate [path]` | Generate docs (path defaults to `.`) |
+| `init` | Create `.apidoc-gen.yaml` in current directory |
+| `completion <shell>` | Shell completion (bash, zsh, fish) |
 
-Generate API documentation from your codebase.
+### Main flags (generate)
 
-```bash
-apidoc-gen generate [path] [flags]
-```
+| Flag | Description |
+|------|-------------|
+| `-t, --type` | `swagger` \| `postman` \| `custom` |
+| `-o, --output` | Output directory (default `./docs`) |
+| `-f, --framework` | `gin` \| `echo` \| `fiber` \| `gorilla` \| `chi` (or empty = auto) |
+| `-y, --no-interactive` | No prompts (for CI/scripts) |
+| `-q, --quiet` | Suppress progress output |
+| `-v, --verbose` | Verbose output |
+| `--dry-run` | Show what would be generated, no files written |
+| `--show-config` | Print effective config and exit |
 
-**Flags:**
-- `-o, --output` - Output directory (default: "./docs")
-- `-t, --type` - Documentation type: swagger, postman, or custom
-- `-f, --framework` - Backend framework: gin, echo, fiber, gorilla, chi (auto-detected if not specified)
-- `--title` - API title (default: "API Documentation")
-- `--version` - API version (default: "1.0.0")
-- `--base-path` - Base path for API endpoints (e.g., /api/v1)
-- `--exclude` - Directories to exclude (comma-separated)
-- `--interactive` - Use interactive mode when type is not set (default: true)
-- `-y, --no-interactive` - Disable interactive mode (use config/flags only; good for CI)
-- `-q, --quiet` - Suppress progress output (errors still printed to stderr)
-- `-v, --verbose` - Verbose output
-- `--dry-run` - Analyze and show what would be generated without writing files
-- `--show-config` - Print effective config (file + env + flags) and exit
+Run `apidoc-gen generate --help` for the full list.
 
-**Examples:**
+### Configuration
 
-```bash
-# Interactive mode (recommended for first time)
-apidoc-gen generate
+- **Config file:** `.apidoc-gen.yaml` in project root (create with `apidoc-gen init`).
+- **Env:** `APIDOC_TYPE`, `APIDOC_OUTPUT`, `APIDOC_FRAMEWORK`, etc.
+- **Precedence:** config file → env → flags.
 
-# Generate Swagger docs for current directory
-apidoc-gen generate --type swagger
-
-# Generate Postman collection for a specific project
-apidoc-gen generate /path/to/project --type postman --output ./api-docs
-
-# Generate custom Docusaurus site
-apidoc-gen generate --type custom --framework gin
-
-# Generate with full configuration
-apidoc-gen generate \
-  --type swagger \
-  --framework echo \
-  --title "My Awesome API" \
-  --version "2.0.0" \
-  --base-path "/api/v2" \
-  --exclude "vendor,test,tmp"
-
-# Non-interactive (CI/scripts)
-apidoc-gen generate --no-interactive --type swagger -o ./docs
-apidoc-gen generate -y --type postman --title "My API"
-```
-
-#### `init`
-
-Create a configuration file in the current directory.
-
-```bash
-apidoc-gen init
-```
-
-Creates `.apidoc-gen.yaml` with default settings.
-
-### Configuration File
-
-The `.apidoc-gen.yaml` file allows you to set default values:
-
-```yaml
-# Output directory for generated documentation
-output: ./docs
-
-# Documentation type: swagger, postman, or custom
-type: swagger
-
-# Backend framework (optional): gin, echo, fiber, gorilla, chi
-# Leave empty for auto-detection
-framework: ""
-
-# Directories to exclude from scanning
-exclude:
-  - vendor
-  - node_modules
-  - .git
-  - test
-  - tests
-
-# API base path (e.g., /api/v1)
-base_path: ""
-
-# API metadata
-title: "API Documentation"
-version: "1.0.0"
-description: "Auto-generated API documentation"
-
-# Server configuration
-servers:
-  - url: "http://localhost:8080"
-    description: "Development server"
-  - url: "https://api.example.com"
-    description: "Production server"
-
-# Verbose output
-verbose: false
-```
-
-### Environment Variables
-
-Configuration can also be set via environment variables (prefixed with `APIDOC_`):
-
-```bash
-export APIDOC_TYPE=swagger
-export APIDOC_OUTPUT=./docs
-export APIDOC_FRAMEWORK=gin
-apidoc-gen generate
-```
-
-See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full flag ↔ env ↔ config key table and precedence.
-
-### Shell completion
-
-Generate shell completion scripts so you can tab-complete commands and flags:
-
-```bash
-# Bash (add to ~/.bashrc or run once)
-apidoc-gen completion bash > /etc/bash_completion.d/apidoc-gen  # or ~/.local/share/bash-completion/completions/apidoc-gen
-
-# Zsh (add to ~/.zshrc)
-source <(apidoc-gen completion zsh)
-
-# Fish
-apidoc-gen completion fish | source
-```
+Full reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ### Automation / CI
 
-Run without prompts by setting `--type` (and other options) or using `--no-interactive` / `-y`:
+Use `--no-interactive` (or `-y`) and set `--type` so the CLI doesn’t wait for input.
+
+- **Exit codes:** `0` success, `1` validation error, `2` runtime error.
 
 ```bash
-apidoc-gen generate --no-interactive --type swagger --output ./docs --title "My API"
+apidoc-gen generate -y --type swagger -o ./docs --title "My API"
 ```
 
-**Exit codes** (for scripting):
-- `0` – success
-- `1` – usage or validation error (e.g. invalid type, path not found)
-- `2` – runtime error (e.g. analysis or generation failed)
-
-Example in a GitHub Actions workflow:
-
-```yaml
-- run: apidoc-gen generate -y --type swagger -o ./docs
-```
-
-## Supported Frameworks
-
-- **Gin** - `github.com/gin-gonic/gin`
-- **Echo** - `github.com/labstack/echo`
-- **Fiber** - `github.com/gofiber/fiber`
-- **Gorilla Mux** - `github.com/gorilla/mux`
-- **Chi** - `github.com/go-chi/chi`
-- Generic route detection for other frameworks
-
-## Output Formats
-
-### Swagger/OpenAPI
-
-Generates:
-- `openapi.json` - OpenAPI 3.0 specification (JSON)
-- `openapi.yaml` - OpenAPI 3.0 specification (YAML)
-- `index.html` - Swagger UI for interactive documentation
-
-Features:
-- Full OpenAPI 3.0 compliance
-- Request/response schemas
-- Parameter documentation
-- Authentication specifications
-
-### Postman Collection
-
-Generates:
-- `collection.json` - Postman Collection v2.1
-
-Features:
-- Organized by tags/endpoints
-- Pre-filled example requests
-- Environment variables
-- Query parameters and headers
-
-### Custom Docusaurus Site
-
-Generates a complete Docusaurus documentation website:
-
-Features:
-- Searchable documentation
-- Dark mode support
-- Responsive design
-- Markdown-based pages
-- Easy customization
-- Static site generation
-
-## Best Practices
-
-### 1. Document Your Code
-
-Add **plain Go comments** to your handler functions. The tool uses them for summary and description:
-
-```go
-// GetUser retrieves a user by ID.
-// It returns 404 if the user is not found.
-func GetUser(c *gin.Context) {
-    // Implementation
-}
-```
-
-> **Note:** Swag-style annotations (`@Summary`, `@Param`, `@Success`, `@Router`, etc.) are not parsed yet. Only the handler’s doc comment is used for summary and description. Path parameters are inferred from route patterns (e.g. `/users/:id`).
-
-### 2. Use Configuration Files
-
-Create `.apidoc-gen.yaml` in your project root for consistent documentation generation across your team.
-
-### 3. Exclude Unnecessary Directories
-
-Always exclude vendor, test, and node_modules directories to speed up analysis.
-
-### 4. Version Your API
-
-Use semantic versioning and update the version in your config when releasing new API versions.
-
-### 5. Automate Documentation
-
-Add documentation generation to your CI/CD pipeline:
+### Shell completion
 
 ```bash
-#!/bin/bash
-# .github/workflows/docs.yml
-apidoc-gen generate --type swagger --output ./docs
-# Deploy docs to GitHub Pages or hosting service
+source <(apidoc-gen completion bash)   # or zsh
+apidoc-gen completion fish | source   # fish
 ```
 
-## Project Structure
+## Supported frameworks
+
+Gin, Echo, Fiber, Gorilla Mux, Chi (auto-detected from `go.mod`), plus generic route patterns.
+
+## Output formats
+
+| Type | Output |
+|------|--------|
+| **swagger** | `openapi.json`, `openapi.yaml`, `index.html` (Swagger UI) |
+| **postman** | `collection.json` (Postman Collection v2.1) |
+| **custom** | Docusaurus site in output dir (`npm start` to run) |
+
+## Best practices
+
+1. **Comments** – Plain Go doc comments on handlers become summary/description. Path params are inferred from routes (e.g. `/users/:id`).
+2. **Config file** – Use `.apidoc-gen.yaml` for consistent defaults across the team.
+3. **Exclude dirs** – Default excludes: `vendor`, `node_modules`, `.git`, `test`, `tests`. Override with `exclude` in config or `--exclude`.
+
+## Project structure
 
 ```
-apidoc-gen/
-├── cmd/
-│   └── root.go            # CLI commands
-├── pkg/
-│   ├── analyzer/           # Code analysis
-│   │   └── analyzer.go
-│   ├── generator/          # Documentation generators
-│   │   ├── generator.go
-│   │   ├── swagger.go
-│   │   ├── postman.go
-│   │   └── custom.go
-│   ├── models/             # Data models
-│   │   └── models.go
-│   └── config/             # Configuration
-│       └── config.go
-├── internal/
-│   └── prompt/             # Interactive prompts
-│       └── prompt.go
-├── go.mod
-├── go.sum
-├── main.go
+├── cmd/root.go
+├── pkg/analyzer/   # Code analysis
+├── pkg/generator/  # Swagger, Postman, Docusaurus
+├── pkg/models/     # Data models
+├── pkg/config/     # Configuration
+├── internal/prompt/
+├── docs/           # CONFIGURATION.md, TROUBLESHOOTING.md
+├── web/            # Getting-started UI (index.html)
+├── Dockerfile
 ├── Makefile
 └── README.md
 ```
 
 ## Development
 
-### Building
-
 ```bash
-make build
+make build   # build binary
+make test    # run tests
+make run     # build and run generate
+make install # install locally
 ```
-
-### Testing
-
-```bash
-make test
-```
-
-### Running
-
-```bash
-make run
-```
-
-### Installing Locally
-
-```bash
-make install
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## Troubleshooting
 
-- **No endpoints found** – Ensure your framework is detected or set with `--framework`; use `-v` for details. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
-- **npx not found** (Custom Docusaurus) – Install [Node.js and npm](https://nodejs.org); ensure `npx` is on your PATH.
-- **Configuration not read** – Put `.apidoc-gen.yaml` in the current directory or use `--config`. Run `apidoc-gen generate --show-config` to see effective config.
-- **Scripts hang or prompt** – Use `--no-interactive` (or `-y`) and set `--type` and other options so the CLI does not wait for input.
-
-Full guide: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+- **No endpoints** – Set `--framework` or use `-v`. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+- **Config not read** – Ensure `.apidoc-gen.yaml` is in cwd or use `--config`. Run `--show-config` to inspect.
+- **Prompts in CI** – Use `-y` and `--type` (and other flags) so the run is non-interactive.
+- **npx not found** (Docusaurus) – Install Node.js/npm and ensure `npx` is on PATH.
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Acknowledgments
-
-- Built with [Cobra](https://github.com/spf13/cobra) for CLI
-- Configuration powered by [Viper](https://github.com/spf13/viper)
-- Interactive prompts using [promptui](https://github.com/manifoldco/promptui)
-- Documentation powered by [Docusaurus](https://docusaurus.io/)
-
-## Support
-
-- 📖 [Documentation](https://github.com/yourusername/apidoc-gen/wiki)
-- 🐛 [Issue Tracker](https://github.com/yourusername/apidoc-gen/issues)
-- 💬 [Discussions](https://github.com/yourusername/apidoc-gen/discussions)
-
----
-
-**Made with ❤️ by the API Documentation Generator Team**
+MIT.
