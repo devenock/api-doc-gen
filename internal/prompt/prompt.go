@@ -61,56 +61,48 @@ func GetUserPreferences(cfg *config.Config) error {
 		}
 	}
 
-	// API title
-	if cfg.Title == "API Documentation" {
-		titlePrompt := promptui.Prompt{
-			Label:   "API Title",
-			Default: "My API",
-		}
-
-		title, err := titlePrompt.Run()
-		if err != nil {
-			return err
-		}
-
-		if title != "" {
-			cfg.Title = title
-		}
+	// API title (default from config file / flags)
+	titlePrompt := promptui.Prompt{
+		Label:   "API Title",
+		Default: cfg.Title,
+	}
+	title, err := titlePrompt.Run()
+	if err != nil {
+		return err
+	}
+	if title != "" {
+		cfg.Title = title
 	}
 
-	// API Version
+	// API Version (default from config file / flags)
 	versionPrompt := promptui.Prompt{
 		Label:   "API Version",
-		Default: "1.0.0",
+		Default: cfg.Version,
 	}
-
 	version, err := versionPrompt.Run()
 	if err != nil {
 		return err
 	}
-
 	if version != "" {
 		cfg.Version = version
 	}
 
-	// Base Path
+	// Base Path (default from config file / flags)
 	basePathPrompt := promptui.Prompt{
 		Label:   "API Base Path (e.g., /api/v1)",
-		Default: "",
+		Default: cfg.BasePath,
 	}
-
 	basePath, err := basePathPrompt.Run()
 	if err != nil {
 		return err
 	}
 	cfg.BasePath = basePath
 
-	// Output directory
+	// Output directory (default from config file / flags)
 	outputPrompt := promptui.Prompt{
 		Label:   "Output Directory",
-		Default: "./docs",
+		Default: cfg.Output,
 	}
-
 	output, err := outputPrompt.Run()
 	if err != nil {
 		return err

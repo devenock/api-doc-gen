@@ -42,9 +42,9 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 		a.framework = models.FrameWorkType(a.config.Framework)
 	}
 
-	// if a.config.Verbose {
-	// 	fmt.Printf("   Detected framework: %s\n", a.framework)
-	// }
+	if a.config.Verbose {
+		fmt.Printf("   Detected framework: %s\n", a.framework)
+	}
 
 	// Walk through the project directory
 	err := filepath.Walk(a.config.ProjectPath, func(path string, info os.FileInfo, err error) error {

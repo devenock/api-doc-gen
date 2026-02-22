@@ -17,7 +17,7 @@ type Config struct {
 	Version     string
 	Description string
 	Servers     []ServerConfig
-	Verbose     string
+	Verbose     bool
 }
 
 // ServerConfig represent a server cpnfiguration

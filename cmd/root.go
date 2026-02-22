@@ -109,6 +109,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		Version:     viper.GetString("version"),
 		Description: viper.GetString("description"),
 		Servers:     []config.ServerConfig{},
+		Verbose:     viper.GetBool("verbose"),
 	}
 	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
 	_ = viper.UnmarshalKey("servers", &cfg.Servers)
@@ -125,13 +126,13 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// if cfg.Verbose {
-	// 	fmt.Println("🔍 Starting API documentation generation...")
-	// 	fmt.Printf("   Project Path: %s\n", cfg.ProjectPath)
-	// 	fmt.Printf("   Output: %s\n", cfg.Output)
-	// 	fmt.Printf("   Type: %s\n", cfg.DocType)
-	// 	fmt.Printf("   Framework: %s\n", cfg.Framework)
-	// }
+	if cfg.Verbose {
+		fmt.Println("🔍 Starting API documentation generation...")
+		fmt.Printf("   Project Path: %s\n", cfg.ProjectPath)
+		fmt.Printf("   Output: %s\n", cfg.Output)
+		fmt.Printf("   Type: %s\n", cfg.DocType)
+		fmt.Printf("   Framework: %s\n", cfg.Framework)
+	}
 
 	// Analyze codebase
 	fmt.Println("📊 Analyzing codebase...")
@@ -141,9 +142,9 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to analyze codebase: %w", err)
 	}
 
-	// if cfg.Verbose {
-	// 	fmt.Printf("   Found %d endpoints\n", len(apiSpec.Endpoints))
-	// }
+	if cfg.Verbose {
+		fmt.Printf("   Found %d endpoints\n", len(apiSpec.Endpoints))
+	}
 
 	// Generate documentation
 	fmt.Printf("📝 Generating %s documentation...\n", cfg.DocType)
