@@ -1,0 +1,227 @@
+package generator
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/devenock/api-doc-gen/pkg/config"
+	"github.com/devenock/api-doc-gen/pkg/models"
+	"gopkg.in/yaml.v3"
+)
+
+// SwaggerGenerator generates Swagger/OpenAPI documentation
+type SwaggerGenerator struct {
+	config *config.Config
+}
+
+// NewSwaggerGenerator creates a new Swagger generator
+func NewSwaggerGenerator(cfg *config.Config) *SwaggerGenerator {
+	return &SwaggerGenerator{config: cfg}
+}
+
+// Generate creates Swagger documentation
+func (g *SwaggerGenerator) Generate(spec *models.APISpec) error {
+	// Create output directory
+	if err := os.MkdirAll(g.config.Output, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	// Convert to OpenAPI 3.0 format
+	openAPI := g.convertToOpenAPI(spec)
+
+	// Generate YAML
+	yamlPath := filepath.Join(g.config.Output, "openapi.yaml")
+	if err := g.writeYAML(yamlPath, openAPI); err != nil {
+		return fmt.Errorf("failed to write YAML: %w", err)
+	}
+
+	// Generate JSON
+	jsonPath := filepath.Join(g.config.Output, "openapi.json")
+	if err := g.writeJSON(jsonPath, openAPI); err != nil {
+		return fmt.Errorf("failed to write JSON: %w", err)
+	}
+
+	// Generate Swagger UI HTML
+	htmlPath := filepath.Join(g.config.Output, "index.html")
+	if err := g.generateSwaggerUI(htmlPath); err != nil {
+		return fmt.Errorf("failed to generate Swagger UI: %w", err)
+	}
+
+	fmt.Printf("   📄 OpenAPI YAML: %s\n", yamlPath)
+	fmt.Printf("   📄 OpenAPI JSON: %s\n", jsonPath)
+	fmt.Printf("   🌐 Swagger UI: %s\n", htmlPath)
+
+	return nil
+}
+
+// convertToOpenAPI converts APISpec to OpenAPI 3.0 format
+func (g *SwaggerGenerator) convertToOpenAPI(spec *models.APISpec) map[string]interface{} {
+	openAPI := map[string]interface{}{
+		"openapi": "3.0.3",
+		"info": map[string]interface{}{
+			"title":       spec.Title,
+			"version":     spec.Version,
+			"description": spec.Description,
+		},
+		"servers": []map[string]interface{}{},
+		"paths":   map[string]interface{}{},
+	}
+
+	// Add servers
+	for _, server := range spec.Servers {
+		openAPI["servers"] = append(openAPI["servers"].([]map[string]interface{}),
+			map[string]interface{}{
+				"url":         server.URL,
+				"description": server.Description,
+			})
+	}
+
+	// Add paths
+	paths := openAPI["paths"].(map[string]interface{})
+	for _, endpoint := range spec.Endpoints {
+		path := endpoint.Path
+		if g.config.BasePath != "" {
+			path = g.config.BasePath + path
+		}
+
+		if paths[path] == nil {
+			paths[path] = make(map[string]interface{})
+		}
+
+		pathItem := paths[path].(map[string]interface{})
+		pathItem[endpoint.Method] = g.convertEndpoint(endpoint)
+	}
+
+	// Add components/schemas
+	if len(spec.Models) > 0 {
+		openAPI["components"] = map[string]interface{}{
+			"schemas": spec.Models,
+		}
+	}
+
+	return openAPI
+}
+
+// convertEndpoint converts an Endpoint to OpenAPI operation
+func (g *SwaggerGenerator) convertEndpoint(endpoint models.Endpoint) map[string]interface{} {
+	operation := map[string]interface{}{
+		"summary":     endpoint.Summary,
+		"description": endpoint.Description,
+		"responses":   map[string]interface{}{},
+	}
+
+	if len(endpoint.Tags) > 0 {
+		operation["tags"] = endpoint.Tags
+	}
+
+	// Add parameters
+	if len(endpoint.Parameters) > 0 {
+		params := []map[string]interface{}{}
+		for _, param := range endpoint.Parameters {
+			params = append(params, map[string]interface{}{
+				"name":        param.Name,
+				"in":          param.In,
+				"description": param.Description,
+				"required":    param.Required,
+				"schema":      param.Schema,
+			})
+		}
+		operation["parameters"] = params
+	}
+
+	// Add request body
+	if endpoint.RequestBody != nil {
+		operation["requestBody"] = map[string]interface{}{
+			"description": endpoint.RequestBody.Description,
+			"required":    endpoint.RequestBody.Required,
+			"content":     endpoint.RequestBody.Content,
+		}
+	}
+
+	// Add responses
+	responses := operation["responses"].(map[string]interface{})
+	for code, response := range endpoint.Responses {
+		responses[fmt.Sprintf("%d", code)] = map[string]interface{}{
+			"description": response.Description,
+			"content":     response.Content,
+		}
+	}
+
+	// Add security if present
+	if len(endpoint.Security) > 0 {
+		operation["security"] = endpoint.Security
+	}
+
+	return operation
+}
+
+// writeYAML writes the OpenAPI spec to a YAML file
+func (g *SwaggerGenerator) writeYAML(path string, data interface{}) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := yaml.NewEncoder(file)
+	encoder.SetIndent(2)
+	return encoder.Encode(data)
+}
+
+// writeJSON writes the OpenAPI spec to a JSON file
+func (g *SwaggerGenerator) writeJSON(path string, data interface{}) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(data)
+}
+
+// generateSwaggerUI generates a Swagger UI HTML file
+func (g *SwaggerGenerator) generateSwaggerUI(path string) error {
+	html := `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>` + g.config.Title + `</title>
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            window.ui = SwaggerUIBundle({
+                url: "./openapi.json",
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout"
+            });
+        };
+    </script>
+</body>
+</html>`
+
+	return os.WriteFile(path, []byte(html), 0644)
+}

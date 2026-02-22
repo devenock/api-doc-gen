@@ -34,17 +34,17 @@ type Endpoint struct {
 type Parameter struct {
 	Name        string      `json:"name" yaml:"name"`
 	In          string      `json:"in" yaml:"in"`
-	Description string      `json:description" yaml"description"`
+	Description string      `json:"description" yaml:"description"`
 	Required    bool        `json:"required" yaml:"required"`
-	Schema      Schema      `json:"schema" yaml"schema"`
+	Schema      Schema      `json:"schema" yaml:"schema"`
 	Example     interface{} `json:"example, omitempty" yaml:"example, omitempty"`
 }
 
 // requestBody represent a request body/payload
 type RequestBody struct {
-	Description string `json:"description" yaml:"description"`
-	Required    string `json:"required" yaml:"required"`
-	Content     string `json:"content" yaml:"content"`
+	Description string             `json:"description" yaml:"description"`
+	Required    bool               `json:"required" yaml:"required"`
+	Content     map[string]Content `json:"content" yaml:"content"`
 }
 
 // content represents content with a schema
@@ -62,7 +62,7 @@ type Response struct {
 
 // header represent a response header
 type Header struct {
-	Description string `json:"description" yaml:"desription"`
+	Description string `json:"description" yaml:"description"`
 	Schema      Schema `json:"schema" yaml:"schema"`
 }
 

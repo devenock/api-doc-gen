@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"fmt"
@@ -55,6 +55,7 @@ func init() {
 	generateCmd.Flags().String("base-path", "", "base path for API endpoints")
 	generateCmd.Flags().String("title", "API Documentation", "API title")
 	generateCmd.Flags().String("version", "1.0.0", "API version")
+	generateCmd.Flags().String("description", "", "API description")
 
 	// Bind flags to viper
 	viper.BindPFlag("output", generateCmd.Flags().Lookup("output"))
@@ -66,6 +67,7 @@ func init() {
 	viper.BindPFlag("base-path", generateCmd.Flags().Lookup("base-path"))
 	viper.BindPFlag("title", generateCmd.Flags().Lookup("title"))
 	viper.BindPFlag("version", generateCmd.Flags().Lookup("version"))
+	viper.BindPFlag("description", generateCmd.Flags().Lookup("description"))
 
 	// Add commands
 	rootCmd.AddCommand(generateCmd)
@@ -104,7 +106,9 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		BasePath:    viper.GetString("base-path"),
 		Title:       viper.GetString("title"),
 		Version:     viper.GetString("version"),
-		Verbose:     viper.GetBool("verbose"),
+		Description: viper.GetString("description"),
+		Servers:     []config.ServerConfig{},
+		// Verbose:     viper.GetBool("verbose"),
 	}
 
 	// Interactive mode
@@ -119,13 +123,13 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	if cfg.Verbose {
-		fmt.Println("🔍 Starting API documentation generation...")
-		fmt.Printf("   Project Path: %s\n", cfg.ProjectPath)
-		fmt.Printf("   Output: %s\n", cfg.Output)
-		fmt.Printf("   Type: %s\n", cfg.DocType)
-		fmt.Printf("   Framework: %s\n", cfg.Framework)
-	}
+	// if cfg.Verbose {
+	// 	fmt.Println("🔍 Starting API documentation generation...")
+	// 	fmt.Printf("   Project Path: %s\n", cfg.ProjectPath)
+	// 	fmt.Printf("   Output: %s\n", cfg.Output)
+	// 	fmt.Printf("   Type: %s\n", cfg.DocType)
+	// 	fmt.Printf("   Framework: %s\n", cfg.Framework)
+	// }
 
 	// Analyze codebase
 	fmt.Println("📊 Analyzing codebase...")
@@ -135,9 +139,9 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to analyze codebase: %w", err)
 	}
 
-	if cfg.Verbose {
-		fmt.Printf("   Found %d endpoints\n", len(apiSpec.Endpoints))
-	}
+	// if cfg.Verbose {
+	// 	fmt.Printf("   Found %d endpoints\n", len(apiSpec.Endpoints))
+	// }
 
 	// Generate documentation
 	fmt.Printf("📝 Generating %s documentation...\n", cfg.DocType)
