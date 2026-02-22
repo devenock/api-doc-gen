@@ -246,21 +246,17 @@ Features:
 
 ### 1. Document Your Code
 
-Add comments to your handler functions:
+Add **plain Go comments** to your handler functions. The tool uses them for summary and description:
 
 ```go
-// GetUser retrieves a user by ID
-// @Summary Get user by ID
-// @Description Get detailed information about a user
-// @Tags users
-// @Param id path int true "User ID"
-// @Success 200 {object} User
-// @Failure 404 {object} Error
-// @Router /users/{id} [get]
+// GetUser retrieves a user by ID.
+// It returns 404 if the user is not found.
 func GetUser(c *gin.Context) {
     // Implementation
 }
 ```
+
+> **Note:** Swag-style annotations (`@Summary`, `@Param`, `@Success`, `@Router`, etc.) are not parsed yet. Only the handler’s doc comment is used for summary and description. Path parameters are inferred from route patterns (e.g. `/users/:id`).
 
 ### 2. Use Configuration Files
 
@@ -290,25 +286,22 @@ apidoc-gen generate --type swagger --output ./docs
 ```
 apidoc-gen/
 ├── cmd/
-│   └── apidoc-gen/        # CLI commands
-│       └── root.go
+│   └── root.go            # CLI commands
 ├── pkg/
-│   ├── analyzer/          # Code analysis
+│   ├── analyzer/           # Code analysis
 │   │   └── analyzer.go
-│   ├── generator/         # Documentation generators
+│   ├── generator/          # Documentation generators
 │   │   ├── generator.go
 │   │   ├── swagger.go
 │   │   ├── postman.go
 │   │   └── custom.go
-│   ├── models/            # Data models
+│   ├── models/             # Data models
 │   │   └── models.go
-│   └── config/            # Configuration
+│   └── config/             # Configuration
 │       └── config.go
 ├── internal/
-│   └── prompt/            # Interactive prompts
+│   └── prompt/             # Interactive prompts
 │       └── prompt.go
-├── examples/              # Example projects
-│   └── gin-api/
 ├── go.mod
 ├── go.sum
 ├── main.go

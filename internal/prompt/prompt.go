@@ -9,7 +9,7 @@ import (
 
 // GetUserPreferences prompts the user for their preferences
 func GetUserPreferences(cfg *config.Config) error {
-	fmt.Println("\n Welcome to API Documentation Generator!\n")
+	fmt.Println("\nWelcome to API Documentation Generator!")
 
 	// Documentation Type selection
 	if cfg.DocType == "" {
@@ -119,7 +119,7 @@ func GetUserPreferences(cfg *config.Config) error {
 		cfg.Output = output
 	}
 
-	fmt.Println("\n Configuration complete!\n")
+	fmt.Println("\nConfiguration complete!")
 
 	return nil
 }
