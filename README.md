@@ -185,6 +185,10 @@ make install # install locally
 
 apidoc-gen runs entirely on your machine and does not send your code or data anywhere. For handling of sensitive codebases, dependency hygiene, and how to report vulnerabilities, see **[SECURITY.md](SECURITY.md)**.
 
+## Contributing
+
+Contributions are welcome. Please read **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup and pull request guidelines. By participating, you agree to our **[Code of Conduct](CODE_OF_CONDUCT.md)**.
+
 ## License
 
 MIT.
