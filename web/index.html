@@ -82,6 +82,7 @@
   <nav>
     <a href="#install">Install</a>
     <a href="#quick-start">Quick start</a>
+    <a href="#backend">In your backend</a>
     <a href="#commands">Commands</a>
     <a href="#flags">Flags</a>
     <a href="#config">Config</a>
@@ -112,6 +113,27 @@ apidoc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
     <button class="copy-btn" data-clipboard-target="1">Copy</button>
   </div>
   <p>Then open <code>docs/index.html</code> (Swagger) or import <code>docs/collection.json</code> (Postman).</p>
+
+  <h2 id="backend">Using in your backend codebase</h2>
+  <p>Run apidoc-gen from your Go API project (or pass that path). It reads your repo and writes docs into the folder you choose.</p>
+  <ul>
+    <li><strong>Where to run</strong> – From the root of your backend (where <code>go.mod</code> and your routes live). Path defaults to <code>.</code>.</li>
+    <li><strong>What it reads</strong> – <code>go.mod</code> (framework) and <code>.go</code> files. Skips <code>vendor</code>, <code>node_modules</code>, <code>.git</code>, test dirs.</li>
+    <li><strong>Output</strong> – Default <code>./docs</code>; use <code>-o ./api-docs</code> to change.</li>
+    <li><strong>Config in repo</strong> – Run <code>apidoc-gen init</code> in your backend to add <code>.apidoc-gen.yaml</code>; commit it for shared defaults.</li>
+    <li><strong>From elsewhere</strong> – <code>apidoc-gen generate /path/to/your-api -y --type swagger -o /path/to/your-api/docs</code></li>
+  </ul>
+  <div class="copy-wrap">
+    <pre><code># In your backend repo
+cd /path/to/my-go-api
+apidoc-gen init
+apidoc-gen generate -y --type swagger -o ./docs
+
+# Optional Make target in your backend's Makefile:
+# docs:
+#   apidoc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
+    <button class="copy-btn">Copy</button>
+  </div>
 
   <h2 id="commands">Commands</h2>
   <ul>

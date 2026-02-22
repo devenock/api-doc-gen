@@ -3,7 +3,8 @@
 CLI that scans your Go API codebase and generates API documentation as **Swagger/OpenAPI**, **Postman**, or a **Docusaurus** site.
 
 - **Install:** [Binary](#installation) · [Docker](#docker)
-- **Get started:** [Quick start](#quick-start) below, or open **[web/index.html](web/index.html)** for a single-page guide with copy-paste commands.
+- **Get started:** [Quick start](#quick-start) below, or open **[web/index.html](web/index.html)** for a single-page guide.
+- **Use in your backend:** [Using in your backend codebase](#using-in-your-backend-codebase) (where to run, what it reads, optional Make target).
 
 ## Features
 
@@ -37,6 +38,37 @@ apidoc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
 Then open `docs/index.html` (Swagger) or import `docs/collection.json` (Postman).
+
+## Using in your backend codebase
+
+You run apidoc-gen **from your Go API project** (or point it at that directory). It reads your repo and writes docs into a folder you choose.
+
+1. **Where to run** – From the root of your backend repo (the directory that has `go.mod` and your route definitions). The tool uses the current directory if you don’t pass a path.
+2. **What it reads** – `go.mod` (to detect framework) and `.go` files under that path. It skips `vendor`, `node_modules`, `.git`, and test dirs by default.
+3. **Where output goes** – By default `./docs` in the directory you ran the command from; override with `-o` (e.g. `-o ./api-docs`).
+4. **Optional config in repo** – Run `apidoc-gen init` inside your backend repo to create `.apidoc-gen.yaml` there. Commit it so the team shares the same defaults (output dir, type, title, etc.).
+5. **From another directory** – To generate docs for a backend that isn’t your cwd:  
+   `apidoc-gen generate /path/to/your-api --no-interactive --type swagger -o /path/to/your-api/docs`
+
+**Example: backend repo layout**
+
+```
+my-go-api/
+├── go.mod
+├── main.go
+├── handlers/
+├── .apidoc-gen.yaml   # optional, from apidoc-gen init
+└── docs/              # generated (e.g. openapi.json, index.html)
+```
+
+**Optional Make target** (in your backend’s `Makefile`):
+
+```makefile
+docs:
+	apidoc-gen generate --no-interactive --type swagger -o ./docs
+```
+
+Then run `make docs` from your backend root.
 
 ## Docker
 
