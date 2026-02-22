@@ -83,6 +83,7 @@ func initConfig() {
 		viper.SetConfigName(".apidoc-gen")
 	}
 
+	viper.SetEnvPrefix("APIDOC")
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err == nil && viper.GetBool("verbose") {
@@ -108,8 +109,9 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		Version:     viper.GetString("version"),
 		Description: viper.GetString("description"),
 		Servers:     []config.ServerConfig{},
-		// Verbose:     viper.GetBool("verbose"),
 	}
+	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
+	_ = viper.UnmarshalKey("servers", &cfg.Servers)
 
 	// Interactive mode
 	if viper.GetBool("interactive") && cfg.DocType == "" {
