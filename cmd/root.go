@@ -84,6 +84,8 @@ func init() {
 	generateCmd.Flags().String("title", "API Documentation", "API title")
 	generateCmd.Flags().String("version", "1.0.0", "API version")
 	generateCmd.Flags().String("description", "", "API description")
+	generateCmd.Flags().Bool("dry-run", false, "analyze and show what would be generated without writing files")
+	generateCmd.Flags().Bool("show-config", false, "print effective config (file + env + flags) and exit")
 
 	// Bind flags to viper
 	viper.BindPFlag("output", generateCmd.Flags().Lookup("output"))
@@ -98,6 +100,8 @@ func init() {
 	viper.BindPFlag("title", generateCmd.Flags().Lookup("title"))
 	viper.BindPFlag("version", generateCmd.Flags().Lookup("version"))
 	viper.BindPFlag("description", generateCmd.Flags().Lookup("description"))
+	viper.BindPFlag("dry-run", generateCmd.Flags().Lookup("dry-run"))
+	viper.BindPFlag("show-config", generateCmd.Flags().Lookup("show-config"))
 
 	// Add commands
 	rootCmd.AddCommand(generateCmd)
@@ -145,6 +149,12 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
 	_ = viper.UnmarshalKey("servers", &cfg.Servers)
 
+	// --show-config: print effective config and exit (before interactive so no prompt)
+	if viper.GetBool("show-config") {
+		printShowConfig(cfg)
+		return nil
+	}
+
 	// Interactive mode: skip if --no-interactive/-y or if --type is already set
 	quiet := viper.GetBool("quiet")
 	useInteractive := viper.GetBool("interactive") && !viper.GetBool("no-interactive") && cfg.DocType == ""
@@ -163,6 +173,11 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return &exitCodeError{fmt.Errorf("invalid configuration: %w", err), ExitUsageError}
+	}
+
+	// --dry-run: analyze and report, do not write files
+	if viper.GetBool("dry-run") {
+		return runDryRun(cfg, quiet)
 	}
 
 	if !quiet {
@@ -258,6 +273,44 @@ verbose: false
 
 	fmt.Printf("✅ Configuration file created: %s\n", configPath)
 	fmt.Println("You can now customize the configuration and run 'apidoc-gen generate'")
+	return nil
+}
+
+// printShowConfig prints the effective configuration (for --show-config).
+func printShowConfig(cfg *config.Config) {
+	fmt.Printf("project_path: %q\n", cfg.ProjectPath)
+	fmt.Printf("output: %q\n", cfg.Output)
+	fmt.Printf("type: %q\n", cfg.DocType)
+	fmt.Printf("framework: %q\n", cfg.Framework)
+	fmt.Printf("base_path: %q\n", cfg.BasePath)
+	fmt.Printf("title: %q\n", cfg.Title)
+	fmt.Printf("version: %q\n", cfg.Version)
+	fmt.Printf("description: %q\n", cfg.Description)
+	fmt.Printf("exclude: %v\n", cfg.Exclude)
+	fmt.Printf("verbose: %v\n", cfg.Verbose)
+	fmt.Printf("quiet: %v\n", cfg.Quiet)
+	fmt.Printf("servers: %d\n", len(cfg.Servers))
+	for i, s := range cfg.Servers {
+		fmt.Printf("  [%d] url=%q description=%q\n", i, s.URL, s.Description)
+	}
+}
+
+// runDryRun runs analysis and prints what would be generated without writing.
+func runDryRun(cfg *config.Config, quiet bool) error {
+	apiAnalyzer := analyzer.NewAnalyzer(cfg)
+	apiSpec, err := apiAnalyzer.Analyze()
+	if err != nil {
+		return &exitCodeError{fmt.Errorf("failed to analyze codebase: %w", err), ExitRuntimeError}
+	}
+	if !quiet {
+		fmt.Println("dry-run: would generate the following")
+		fmt.Printf("  output: %s\n", cfg.Output)
+		fmt.Printf("  type: %s\n", cfg.DocType)
+		fmt.Printf("  endpoints: %d\n", len(apiSpec.Endpoints))
+		for _, ep := range apiSpec.Endpoints {
+			fmt.Printf("    %s %s\n", ep.Method, ep.Path)
+		}
+	}
 	return nil
 }
 
