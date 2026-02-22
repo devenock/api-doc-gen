@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>apidoc-gen – Get Started</title>
+  <title>apidoc-gen – Documentation</title>
   <style>
     :root {
       --bg: #0f1419;
@@ -13,6 +13,16 @@
       --accent: #58a6ff;
       --green: #3fb950;
       --border: #30363d;
+      --sidebar-width: 260px;
+      --header-height: 56px;
+    }
+    html.light {
+      --bg: #ffffff;
+      --surface: #f6f8fa;
+      --text: #1f2328;
+      --muted: #656d76;
+      --accent: #0969da;
+      --border: #d0d7de;
     }
     * { box-sizing: border-box; }
     body {
@@ -21,16 +31,149 @@
       color: var(--text);
       line-height: 1.6;
       margin: 0;
-      padding: 0 1rem 3rem;
-      max-width: 52rem;
-      margin-left: auto;
-      margin-right: auto;
+      min-height: 100vh;
     }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
-    h1 { font-size: 1.75rem; margin-top: 2rem; margin-bottom: 0.5rem; }
-    h2 { font-size: 1.25rem; margin-top: 2rem; margin-bottom: 0.5rem; color: var(--muted); }
-    p { margin: 0.5rem 0 1rem; color: var(--muted); }
+
+    /* Header */
+    .header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--header-height);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.5rem;
+      z-index: 100;
+    }
+    .header-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 700;
+      font-size: 1.125rem;
+      color: var(--text);
+    }
+    .header-logo:hover { text-decoration: none; color: var(--text); }
+    .header-nav {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+    .header-nav a { color: var(--muted); font-size: 0.9375rem; }
+    .header-nav a.active { color: var(--accent); font-weight: 500; }
+    .header-nav a:hover { color: var(--text); }
+    .theme-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      width: 2rem;
+      height: 2rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .theme-btn:hover { color: var(--text); border-color: var(--muted); }
+
+    /* Layout */
+    .layout {
+      display: flex;
+      padding-top: var(--header-height);
+      min-height: 100vh;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-width);
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.25rem 0;
+      position: sticky;
+      top: var(--header-height);
+      height: calc(100vh - var(--header-height));
+      overflow-y: auto;
+    }
+    .sidebar-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      padding: 0 1.25rem 0.75rem;
+      margin: 0;
+    }
+    .sidebar section { margin-bottom: 0.25rem; }
+    .sidebar summary {
+      padding: 0.4rem 1.25rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sidebar summary::-webkit-details-marker { display: none; }
+    .sidebar summary::after { content: '▾'; font-size: 0.7rem; color: var(--muted); }
+    .sidebar details[open] summary::after { transform: rotate(180deg); }
+    .sidebar summary:hover { color: var(--accent); }
+    .sidebar ul {
+      list-style: none;
+      margin: 0;
+      padding: 0 0 0.5rem 0;
+      padding-left: 0.5rem;
+      border-left: 1px solid var(--border);
+      margin-left: 1.25rem;
+    }
+    .sidebar li { margin: 0; }
+    .sidebar a {
+      display: block;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.8125rem;
+      color: var(--muted);
+    }
+    .sidebar a:hover { color: var(--accent); }
+
+    /* Main content */
+    .main {
+      flex: 1;
+      min-width: 0;
+      padding: 2rem 3rem 4rem;
+      max-width: 52rem;
+    }
+    .main h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin: 0 0 0.5rem;
+      color: var(--text);
+    }
+    .main .lead {
+      font-size: 1.0625rem;
+      color: var(--muted);
+      margin: 0 0 2rem;
+      line-height: 1.6;
+    }
+    .main h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 2.5rem 0 0.75rem;
+      padding-top: 0.5rem;
+      color: var(--text);
+    }
+    .main h2:first-of-type { margin-top: 0; padding-top: 0; }
+    .main p { margin: 0.5rem 0 1rem; color: var(--muted); }
+    .main ul { color: var(--muted); margin: 0.5rem 0 1rem; padding-left: 1.5rem; }
+    .main li { margin: 0.25rem 0; }
     pre, code {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -45,16 +188,15 @@
     }
     code { padding: 0.2em 0.4em; }
     pre code { padding: 0; }
-    .hero {
-      padding: 2rem 0;
-      border-bottom: 1px solid var(--border);
+    .badge {
+      display: inline-block;
+      background: var(--green);
+      color: var(--bg);
+      padding: 0.2em 0.5em;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
     }
-    .hero h1 { margin-top: 0; font-size: 2rem; }
-    .hero p { font-size: 1.05rem; margin-bottom: 0; }
-    ul { color: var(--muted); margin: 0.5rem 0 1rem; padding-left: 1.5rem; }
-    .badge { display: inline-block; background: var(--green); color: var(--bg); padding: 0.2em 0.5em; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
-    nav { margin: 1.5rem 0; }
-    nav a { margin-right: 1rem; }
     .copy-wrap { position: relative; }
     .copy-btn {
       position: absolute;
@@ -70,39 +212,86 @@
     }
     .copy-btn:hover { background: var(--accent); color: var(--bg); }
     .copy-btn.done { background: var(--green); }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main { padding: 2rem 1.5rem; }
+    }
   </style>
 </head>
 <body>
-  <div class="hero">
-    <h1>apidoc-gen</h1>
-    <p>Generate API documentation from your Go API in one command. Supports Swagger/OpenAPI, Postman, and Docusaurus.</p>
-    <span class="badge">CLI</span>
-  </div>
+  <header class="header">
+    <a href="#" class="header-logo">apidoc-gen</a>
+    <nav class="header-nav">
+      <a href="#" class="active">Documentation</a>
+      <a href="../README.md" target="_blank" rel="noopener">README</a>
+      <button class="theme-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme">☀</button>
+    </nav>
+  </header>
 
-  <nav>
-    <a href="#install">Install</a>
-    <a href="#quick-start">Quick start</a>
-    <a href="#backend">In your backend</a>
-    <a href="#commands">Commands</a>
-    <a href="#flags">Flags</a>
-    <a href="#config">Config</a>
-    <a href="#docker">Docker</a>
-    <a href="#ci">CI</a>
-    <a href="#help">Help</a>
-  </nav>
+  <div class="layout">
+    <aside class="sidebar">
+      <h2 class="sidebar-title">Documentation</h2>
 
-  <h2 id="install">Install</h2>
-  <p>Requires Go 1.22+. For Docusaurus output you also need Node.js/npm.</p>
-  <div class="copy-wrap">
-    <pre><code>go install github.com/devenock/api-doc-gen@latest</code></pre>
-    <button class="copy-btn" data-clipboard-target="1">Copy</button>
-  </div>
-  <p>Or build from source: <code>git clone ... && go build -o apidoc-gen .</code></p>
+      <section>
+        <details open>
+          <summary>Getting Started</summary>
+          <ul>
+            <li><a href="#install">Install</a></li>
+            <li><a href="#quick-start">Quick start</a></li>
+            <li><a href="#backend">In your backend</a></li>
+          </ul>
+        </details>
+      </section>
 
-  <h2 id="quick-start">Quick start</h2>
-  <p>From your Go API project root:</p>
-  <div class="copy-wrap">
-    <pre><code># 1) Optional: create config file
+      <section>
+        <details open>
+          <summary>Usage</summary>
+          <ul>
+            <li><a href="#commands">Commands</a></li>
+            <li><a href="#flags">Flags</a></li>
+            <li><a href="#config">Configuration</a></li>
+          </ul>
+        </details>
+      </section>
+
+      <section>
+        <details>
+          <summary>Deployment</summary>
+          <ul>
+            <li><a href="#docker">Docker</a></li>
+            <li><a href="#ci">CI / scripts</a></li>
+          </ul>
+        </details>
+      </section>
+
+      <section>
+        <details>
+          <summary>Reference</summary>
+          <ul>
+            <li><a href="#help">Help & troubleshooting</a></li>
+          </ul>
+        </details>
+      </section>
+    </aside>
+
+    <main class="main">
+      <h1>apidoc-gen</h1>
+      <p class="lead">Generate API documentation from your Go API in one command. Supports Swagger/OpenAPI, Postman, and Docusaurus. This guide covers installation, usage in your backend, and deployment.</p>
+      <span class="badge">CLI</span>
+
+      <h2 id="install">Install</h2>
+      <p>Requires Go 1.22+. For Docusaurus output you also need Node.js/npm.</p>
+      <div class="copy-wrap">
+        <pre><code>go install github.com/devenock/api-doc-gen@latest</code></pre>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <p>Or build from source: <code>git clone ... && go build -o apidoc-gen .</code></p>
+
+      <h2 id="quick-start">Quick start</h2>
+      <p>From your Go API project root:</p>
+      <div class="copy-wrap">
+        <pre><code># 1) Optional: create config file
 apidoc-gen init
 
 # 2) Generate docs (interactive: choose type, framework, etc.)
@@ -110,21 +299,21 @@ apidoc-gen generate
 
 # Or non-interactive (e.g. Swagger to ./docs)
 apidoc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
-    <button class="copy-btn" data-clipboard-target="1">Copy</button>
-  </div>
-  <p>Then open <code>docs/index.html</code> (Swagger) or import <code>docs/collection.json</code> (Postman).</p>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <p>Then open <code>docs/index.html</code> (Swagger) or import <code>docs/collection.json</code> (Postman).</p>
 
-  <h2 id="backend">Using in your backend codebase</h2>
-  <p>Run apidoc-gen from your Go API project (or pass that path). It reads your repo and writes docs into the folder you choose.</p>
-  <ul>
-    <li><strong>Where to run</strong> – From the root of your backend (where <code>go.mod</code> and your routes live). Path defaults to <code>.</code>.</li>
-    <li><strong>What it reads</strong> – <code>go.mod</code> (framework) and <code>.go</code> files. Skips <code>vendor</code>, <code>node_modules</code>, <code>.git</code>, test dirs.</li>
-    <li><strong>Output</strong> – Default <code>./docs</code>; use <code>-o ./api-docs</code> to change.</li>
-    <li><strong>Config in repo</strong> – Run <code>apidoc-gen init</code> in your backend to add <code>.apidoc-gen.yaml</code>; commit it for shared defaults.</li>
-    <li><strong>From elsewhere</strong> – <code>apidoc-gen generate /path/to/your-api -y --type swagger -o /path/to/your-api/docs</code></li>
-  </ul>
-  <div class="copy-wrap">
-    <pre><code># In your backend repo
+      <h2 id="backend">Using in your backend codebase</h2>
+      <p>Run apidoc-gen from your Go API project (or pass that path). It reads your repo and writes docs into the folder you choose.</p>
+      <ul>
+        <li><strong>Where to run</strong> – From the root of your backend (where <code>go.mod</code> and your routes live). Path defaults to <code>.</code>.</li>
+        <li><strong>What it reads</strong> – <code>go.mod</code> (framework) and <code>.go</code> files. Skips <code>vendor</code>, <code>node_modules</code>, <code>.git</code>, test dirs.</li>
+        <li><strong>Output</strong> – Default <code>./docs</code>; use <code>-o ./api-docs</code> to change.</li>
+        <li><strong>Config in repo</strong> – Run <code>apidoc-gen init</code> in your backend to add <code>.apidoc-gen.yaml</code>; commit it for shared defaults.</li>
+        <li><strong>From elsewhere</strong> – <code>apidoc-gen generate /path/to/your-api -y --type swagger -o /path/to/your-api/docs</code></li>
+      </ul>
+      <div class="copy-wrap">
+        <pre><code># In your backend repo
 cd /path/to/my-go-api
 apidoc-gen init
 apidoc-gen generate -y --type swagger -o ./docs
@@ -132,60 +321,62 @@ apidoc-gen generate -y --type swagger -o ./docs
 # Optional Make target in your backend's Makefile:
 # docs:
 #   apidoc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
-    <button class="copy-btn">Copy</button>
-  </div>
+        <button class="copy-btn">Copy</button>
+      </div>
 
-  <h2 id="commands">Commands</h2>
-  <ul>
-    <li><strong>generate [path]</strong> – Scan project and generate docs (path defaults to <code>.</code>)</li>
-    <li><strong>init</strong> – Create <code>.apidoc-gen.yaml</code> in the current directory</li>
-    <li><strong>completion &lt;shell&gt;</strong> – Shell completion (bash, zsh, fish)</li>
-  </ul>
+      <h2 id="commands">Commands</h2>
+      <ul>
+        <li><strong>generate [path]</strong> – Scan project and generate docs (path defaults to <code>.</code>)</li>
+        <li><strong>init</strong> – Create <code>.apidoc-gen.yaml</code> in the current directory</li>
+        <li><strong>completion &lt;shell&gt;</strong> – Shell completion (bash, zsh, fish)</li>
+      </ul>
 
-  <h2 id="flags">Main flags (generate)</h2>
-  <ul>
-    <li><code>-t, --type</code> – swagger | postman | custom</li>
-    <li><code>-o, --output</code> – Output directory (default <code>./docs</code>)</li>
-    <li><code>-f, --framework</code> – gin | echo | fiber | gorilla | chi (or leave empty for auto-detect)</li>
-    <li><code>-y, --no-interactive</code> – No prompts (use with <code>--type</code> for CI)</li>
-    <li><code>-q, --quiet</code> – Less output</li>
-    <li><code>-v, --verbose</code> – More detail</li>
-    <li><code>--dry-run</code> – Show what would be generated, no files written</li>
-    <li><code>--show-config</code> – Print effective config and exit</li>
-    <li><code>--title</code>, <code>--version</code>, <code>--base-path</code>, <code>--exclude</code></li>
-  </ul>
+      <h2 id="flags">Main flags (generate)</h2>
+      <ul>
+        <li><code>-t, --type</code> – swagger | postman | custom</li>
+        <li><code>-o, --output</code> – Output directory (default <code>./docs</code>)</li>
+        <li><code>-f, --framework</code> – gin | echo | fiber | gorilla | chi (or leave empty for auto-detect)</li>
+        <li><code>-y, --no-interactive</code> – No prompts (use with <code>--type</code> for CI)</li>
+        <li><code>-q, --quiet</code> – Less output</li>
+        <li><code>-v, --verbose</code> – More detail</li>
+        <li><code>--dry-run</code> – Show what would be generated, no files written</li>
+        <li><code>--show-config</code> – Print effective config and exit</li>
+        <li><code>--title</code>, <code>--version</code>, <code>--base-path</code>, <code>--exclude</code></li>
+      </ul>
 
-  <h2 id="config">Configuration</h2>
-  <p>Config file: <code>.apidoc-gen.yaml</code> in project root. Env vars: <code>APIDOC_TYPE</code>, <code>APIDOC_OUTPUT</code>, etc. Precedence: config file → env → flags.</p>
-  <div class="copy-wrap">
-    <pre><code># Minimal .apidoc-gen.yaml
+      <h2 id="config">Configuration</h2>
+      <p>Config file: <code>.apidoc-gen.yaml</code> in project root. Env vars: <code>APIDOC_TYPE</code>, <code>APIDOC_OUTPUT</code>, etc. Precedence: config file → env → flags.</p>
+      <div class="copy-wrap">
+        <pre><code># Minimal .apidoc-gen.yaml
 output: ./docs
 type: swagger
 framework: ""   # auto-detect</code></pre>
-    <button class="copy-btn" data-clipboard-target="1">Copy</button>
-  </div>
-  <p>Full reference: <a href="../docs/CONFIGURATION.md" target="_blank" rel="noopener">docs/CONFIGURATION.md</a></p>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <p>Full reference: <a href="../docs/CONFIGURATION.md" target="_blank" rel="noopener">docs/CONFIGURATION.md</a></p>
 
-  <h2 id="docker">Docker</h2>
-  <p>Mount your project as the workspace and run generate:</p>
-  <div class="copy-wrap">
-    <pre><code>docker build -t apidoc-gen .
+      <h2 id="docker">Docker</h2>
+      <p>Mount your project as the workspace and run generate:</p>
+      <div class="copy-wrap">
+        <pre><code>docker build -t apidoc-gen .
 docker run --rm -v "$(pwd)":/workspace -w /workspace apidoc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
-    <button class="copy-btn" data-clipboard-target="1">Copy</button>
-  </div>
-  <p>Replace <code>$(pwd)</code> with your API project path if needed.</p>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <p>Replace <code>$(pwd)</code> with your API project path if needed.</p>
 
-  <h2 id="ci">CI / scripts</h2>
-  <p>Use <code>--no-interactive</code> (or <code>-y</code>) and set <code>--type</code> so the CLI does not wait for input. Exit codes: 0 = success, 1 = validation error, 2 = runtime error.</p>
-  <div class="copy-wrap">
-    <pre><code>apidoc-gen generate -y --type swagger -o ./docs --title "My API"</code></pre>
-    <button class="copy-btn" data-clipboard-target="1">Copy</button>
-  </div>
+      <h2 id="ci">CI / scripts</h2>
+      <p>Use <code>--no-interactive</code> (or <code>-y</code>) and set <code>--type</code> so the CLI does not wait for input. Exit codes: 0 = success, 1 = validation error, 2 = runtime error.</p>
+      <div class="copy-wrap">
+        <pre><code>apidoc-gen generate -y --type swagger -o ./docs --title "My API"</code></pre>
+        <button class="copy-btn">Copy</button>
+      </div>
 
-  <h2 id="help">Help &amp; troubleshooting</h2>
-  <p>In terminal: <code>apidoc-gen --help</code>, <code>apidoc-gen generate --help</code>.</p>
-  <p>No endpoints found? Set <code>--framework</code> or use <code>-v</code>. Config not read? Use <code>--show-config</code> to debug.</p>
-  <p>Full guide: <a href="../docs/TROUBLESHOOTING.md" target="_blank" rel="noopener">docs/TROUBLESHOOTING.md</a></p>
+      <h2 id="help">Help &amp; troubleshooting</h2>
+      <p>In terminal: <code>apidoc-gen --help</code>, <code>apidoc-gen generate --help</code>.</p>
+      <p>No endpoints found? Set <code>--framework</code> or use <code>-v</code>. Config not read? Use <code>--show-config</code> to debug.</p>
+      <p>Full guide: <a href="../docs/TROUBLESHOOTING.md" target="_blank" rel="noopener">docs/TROUBLESHOOTING.md</a></p>
+    </main>
+  </div>
 
   <script>
     document.querySelectorAll('.copy-btn').forEach(function(btn) {
@@ -199,6 +390,20 @@ docker run --rm -v "$(pwd)":/workspace -w /workspace apidoc-gen generate --no-in
         });
       });
     });
+    var themeBtn = document.getElementById('theme-btn');
+    var html = document.documentElement;
+    function setTheme(light) {
+      if (light) { html.classList.add('light'); themeBtn.textContent = '🌙'; }
+      else { html.classList.remove('light'); themeBtn.textContent = '☀'; }
+      try { localStorage.setItem('apidoc-gen-theme', light ? 'light' : 'dark'); } catch (e) {}
+    }
+    themeBtn.addEventListener('click', function() {
+      setTheme(!html.classList.contains('light'));
+    });
+    try {
+      var saved = localStorage.getItem('apidoc-gen-theme');
+      if (saved === 'light') setTheme(true);
+    } catch (e) {}
   </script>
 </body>
 </html>
