@@ -104,8 +104,12 @@ apidoc-gen generate [path] [flags]
 - `--version` - API version (default: "1.0.0")
 - `--base-path` - Base path for API endpoints (e.g., /api/v1)
 - `--exclude` - Directories to exclude (comma-separated)
-- `--interactive` - Use interactive mode (default: true)
+- `--interactive` - Use interactive mode when type is not set (default: true)
+- `-y, --no-interactive` - Disable interactive mode (use config/flags only; good for CI)
+- `-q, --quiet` - Suppress progress output (errors still printed to stderr)
 - `-v, --verbose` - Verbose output
+- `--dry-run` - Analyze and show what would be generated without writing files
+- `--show-config` - Print effective config (file + env + flags) and exit
 
 **Examples:**
 
@@ -130,6 +134,10 @@ apidoc-gen generate \
   --version "2.0.0" \
   --base-path "/api/v2" \
   --exclude "vendor,test,tmp"
+
+# Non-interactive (CI/scripts)
+apidoc-gen generate --no-interactive --type swagger -o ./docs
+apidoc-gen generate -y --type postman --title "My API"
 ```
 
 #### `init`
@@ -193,6 +201,42 @@ export APIDOC_TYPE=swagger
 export APIDOC_OUTPUT=./docs
 export APIDOC_FRAMEWORK=gin
 apidoc-gen generate
+```
+
+See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full flag ↔ env ↔ config key table and precedence.
+
+### Shell completion
+
+Generate shell completion scripts so you can tab-complete commands and flags:
+
+```bash
+# Bash (add to ~/.bashrc or run once)
+apidoc-gen completion bash > /etc/bash_completion.d/apidoc-gen  # or ~/.local/share/bash-completion/completions/apidoc-gen
+
+# Zsh (add to ~/.zshrc)
+source <(apidoc-gen completion zsh)
+
+# Fish
+apidoc-gen completion fish | source
+```
+
+### Automation / CI
+
+Run without prompts by setting `--type` (and other options) or using `--no-interactive` / `-y`:
+
+```bash
+apidoc-gen generate --no-interactive --type swagger --output ./docs --title "My API"
+```
+
+**Exit codes** (for scripting):
+- `0` – success
+- `1` – usage or validation error (e.g. invalid type, path not found)
+- `2` – runtime error (e.g. analysis or generation failed)
+
+Example in a GitHub Actions workflow:
+
+```yaml
+- run: apidoc-gen generate -y --type swagger -o ./docs
 ```
 
 ## Supported Frameworks
@@ -347,21 +391,12 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Troubleshooting
 
-### "No endpoints found"
+- **No endpoints found** – Ensure your framework is detected or set with `--framework`; use `-v` for details. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+- **npx not found** (Custom Docusaurus) – Install [Node.js and npm](https://nodejs.org); ensure `npx` is on your PATH.
+- **Configuration not read** – Put `.apidoc-gen.yaml` in the current directory or use `--config`. Run `apidoc-gen generate --show-config` to see effective config.
+- **Scripts hang or prompt** – Use `--no-interactive` (or `-y`) and set `--type` and other options so the CLI does not wait for input.
 
-- Ensure your framework is correctly detected or specified
-- Check that your route definitions follow standard patterns
-- Use verbose mode (`-v`) to see detailed analysis
-
-### "npx not found" (Custom Docusaurus)
-
-- Install Node.js and npm from https://nodejs.org
-- Ensure npm is in your PATH
-
-### Configuration not being read
-
-- Ensure `.apidoc-gen.yaml` is in the current directory or specify with `--config`
-- Check YAML syntax
+Full guide: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ## License
 
