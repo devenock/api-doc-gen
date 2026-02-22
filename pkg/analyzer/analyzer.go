@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/devenock/api-doc-gen/pkg/config"
@@ -74,6 +75,9 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Deduplicate by (method, path), keeping first occurrence
+	a.endpoints = a.deduplicateEndpoints(a.endpoints)
 
 	// Create API spec
 	spec := &models.APISpec{
@@ -155,6 +159,7 @@ func (a *Analyzer) parseFile(filePath string) error {
 		case models.FrameWorkFiber:
 			a.parseFiberRoutes(n, node)
 		case models.FrameWorkGorilla:
+			a.parseGorillaMethods(n) // .Methods("POST") chain first
 			a.parseGorillaRoutes(n, node)
 		case models.FrameWorkChi:
 			a.parseChiRoutes(n, node)
@@ -205,10 +210,11 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 
 	// Create endpoint
 	endpoint := models.Endpoint{
-		Path:      path,
-		Method:    method,
-		Summary:   fmt.Sprintf("%s %s", method, path),
-		Responses: make(map[int]models.Response),
+		Path:        path,
+		Method:      method,
+		Summary:     fmt.Sprintf("%s %s", method, path),
+		Parameters:  extractPathParams(path),
+		Responses:   make(map[int]models.Response),
 	}
 
 	// Extract handler function name and look for comments
@@ -277,10 +283,11 @@ func (a *Analyzer) parseGorillaRoutes(n ast.Node, file *ast.File) {
 	path := strings.Trim(pathLit.Value, `"`)
 
 	endpoint := models.Endpoint{
-		Path:      path,
-		Method:    "GET", // Default, should be detected from Methods() chain
-		Summary:   fmt.Sprintf("Handler for %s", path),
-		Responses: make(map[int]models.Response),
+		Path:        path,
+		Method:      "GET", // default; may be updated when .Methods() is seen
+		Summary:     fmt.Sprintf("Handler for %s", path),
+		Parameters:  extractPathParams(path),
+		Responses:   make(map[int]models.Response),
 	}
 
 	endpoint.Responses[200] = models.Response{
@@ -295,6 +302,64 @@ func (a *Analyzer) parseGorillaRoutes(n ast.Node, file *ast.File) {
 	}
 
 	a.endpoints = append(a.endpoints, endpoint)
+}
+
+// parseGorillaMethods handles .Methods("POST") chained after HandleFunc/Handle
+func (a *Analyzer) parseGorillaMethods(n ast.Node) {
+	callExpr, ok := n.(*ast.CallExpr)
+	if !ok || len(callExpr.Args) == 0 {
+		return
+	}
+	sel, ok := callExpr.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Methods" {
+		return
+	}
+	inner, ok := sel.X.(*ast.CallExpr)
+	if !ok || len(inner.Args) < 1 {
+		return
+	}
+	innerSel, ok := inner.Fun.(*ast.SelectorExpr)
+	if !ok || (innerSel.Sel.Name != "HandleFunc" && innerSel.Sel.Name != "Handle") {
+		return
+	}
+	pathLit, ok := inner.Args[0].(*ast.BasicLit)
+	if !ok || pathLit.Kind != token.STRING {
+		return
+	}
+	path := strings.Trim(pathLit.Value, `"`)
+	method := "GET"
+	if lit, ok := callExpr.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+		method = strings.ToUpper(strings.Trim(lit.Value, `"`))
+	}
+	validMethods := map[string]bool{
+		"GET": true, "POST": true, "PUT": true, "DELETE": true,
+		"PATCH": true, "HEAD": true, "OPTIONS": true,
+	}
+	if !validMethods[method] {
+		return
+	}
+	// Update the most recently added endpoint with this path to use the correct method
+	for i := len(a.endpoints) - 1; i >= 0; i-- {
+		if a.endpoints[i].Path == path {
+			a.endpoints[i].Method = method
+			return
+		}
+	}
+	// .Methods() visited before HandleFunc: add endpoint with correct method
+	a.endpoints = append(a.endpoints, models.Endpoint{
+		Path:        path,
+		Method:      method,
+		Summary:     fmt.Sprintf("%s %s", method, path),
+		Parameters:  extractPathParams(path),
+		Responses:   make(map[int]models.Response),
+	})
+	ep := &a.endpoints[len(a.endpoints)-1]
+	ep.Responses[200] = models.Response{
+		Description: "Successful response",
+		Content: map[string]models.Content{
+			"application/json": {Schema: models.Schema{Type: "object"}},
+		},
+	}
 }
 
 // parseChiRoutes extracts routes from Chi router
@@ -326,14 +391,20 @@ func (a *Analyzer) parseGenericRoutes(n ast.Node, file *ast.File) {
 		if pathLit, ok := callExpr.Args[0].(*ast.BasicLit); ok && pathLit.Kind == token.STRING {
 			path := strings.Trim(pathLit.Value, `"`)
 			endpoint := models.Endpoint{
-				Path:      path,
-				Method:    method,
-				Summary:   fmt.Sprintf("%s %s", method, path),
-				Responses: make(map[int]models.Response),
+				Path:        path,
+				Method:      method,
+				Summary:     fmt.Sprintf("%s %s", method, path),
+				Parameters:  extractPathParams(path),
+				Responses:   make(map[int]models.Response),
 			}
 
 			endpoint.Responses[200] = models.Response{
 				Description: "Successful response",
+				Content: map[string]models.Content{
+					"application/json": {
+						Schema: models.Schema{Type: "object"},
+					},
+				},
 			}
 
 			a.endpoints = append(a.endpoints, endpoint)
@@ -367,4 +438,50 @@ func (a *Analyzer) extractHandlerComments(file *ast.File, handlerName string, en
 		}
 		break
 	}
+}
+
+// extractPathParams extracts path parameters from route path.
+// Supports :param (Gin, Echo, Fiber) and {param} (Chi).
+func extractPathParams(path string) []models.Parameter {
+	var params []models.Parameter
+	// :param style (e.g. /users/:id)
+	colonRe := regexp.MustCompile(`:([^/]+)`)
+	for _, name := range colonRe.FindAllStringSubmatch(path, -1) {
+		if len(name) >= 2 {
+			params = append(params, models.Parameter{
+				Name:     name[1],
+				In:       "path",
+				Required: true,
+				Schema:   models.Schema{Type: "string"},
+			})
+		}
+	}
+	// {param} style (e.g. /users/{id})
+	braceRe := regexp.MustCompile(`\{([^}]+)\}`)
+	for _, name := range braceRe.FindAllStringSubmatch(path, -1) {
+		if len(name) >= 2 {
+			params = append(params, models.Parameter{
+				Name:     name[1],
+				In:       "path",
+				Required: true,
+				Schema:   models.Schema{Type: "string"},
+			})
+		}
+	}
+	return params
+}
+
+// deduplicateEndpoints keeps first occurrence of each (method, path).
+func (a *Analyzer) deduplicateEndpoints(endpoints []models.Endpoint) []models.Endpoint {
+	seen := make(map[string]bool)
+	var out []models.Endpoint
+	for _, ep := range endpoints {
+		key := ep.Method + " " + ep.Path
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, ep)
+	}
+	return out
 }
