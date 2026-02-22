@@ -27,16 +27,20 @@ func (g *CustomGenerator) Generate(spec *models.APISpec) error {
 
 	// Check if Docusaurus is already initialized
 	if _, err := os.Stat(filepath.Join(docusaurusPath, "package.json")); os.IsNotExist(err) {
-		fmt.Println("   📦 Initializing Docusaurus site...")
+		if !g.config.Quiet {
+			fmt.Println("   📦 Initializing Docusaurus site...")
+		}
 		if err := g.initDocusaurus(docusaurusPath); err != nil {
 			return fmt.Errorf("failed to initialize Docusaurus: %w", err)
 		}
-	} else {
+	} else if !g.config.Quiet {
 		fmt.Println("   📦 Using existing Docusaurus site...")
 	}
 
 	// Generate API documentation pages
-	fmt.Println("   📝 Generating API documentation pages...")
+	if !g.config.Quiet {
+		fmt.Println("   📝 Generating API documentation pages...")
+	}
 	if err := g.generateAPIPages(spec, docusaurusPath); err != nil {
 		return fmt.Errorf("failed to generate API pages: %w", err)
 	}
@@ -51,10 +55,11 @@ func (g *CustomGenerator) Generate(spec *models.APISpec) error {
 		return fmt.Errorf("failed to update config: %w", err)
 	}
 
-	fmt.Printf("   🌐 Docusaurus site ready at: %s\n", docusaurusPath)
-	fmt.Println("   💡 Run 'npm start' in the output directory to view the site")
-	fmt.Println("   💡 Run 'npm run build' to create a production build")
-
+	if !g.config.Quiet {
+		fmt.Printf("   🌐 Docusaurus site ready at: %s\n", docusaurusPath)
+		fmt.Println("   💡 Run 'npm start' in the output directory to view the site")
+		fmt.Println("   💡 Run 'npm run build' to create a production build")
+	}
 	return nil
 }
 

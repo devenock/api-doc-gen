@@ -113,9 +113,10 @@ func (g *PostmanGenerator) Generate(spec *models.APISpec) error {
 		return fmt.Errorf("failed to write collection: %w", err)
 	}
 
-	fmt.Printf("   📄 Postman Collection: %s\n", outputPath)
-	fmt.Println("   💡 Import this file into Postman to use the collection")
-
+	if !g.config.Quiet {
+		fmt.Printf("   📄 Postman Collection: %s\n", outputPath)
+		fmt.Println("   💡 Import this file into Postman to use the collection")
+	}
 	return nil
 }
 

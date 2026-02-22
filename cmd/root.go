@@ -71,6 +71,7 @@ func init() {
 	// Persistent flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is .apidoc-gen.yaml)")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
+	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "suppress progress output (errors still printed to stderr)")
 
 	// Generate command flags
 	generateCmd.Flags().StringP("output", "o", "./docs", "output directory for generated documentation")
@@ -92,6 +93,7 @@ func init() {
 	viper.BindPFlag("no-interactive", generateCmd.Flags().Lookup("no-interactive"))
 	viper.BindPFlag("exclude", generateCmd.Flags().Lookup("exclude"))
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	viper.BindPFlag("quiet", rootCmd.PersistentFlags().Lookup("quiet"))
 	viper.BindPFlag("base-path", generateCmd.Flags().Lookup("base-path"))
 	viper.BindPFlag("title", generateCmd.Flags().Lookup("title"))
 	viper.BindPFlag("version", generateCmd.Flags().Lookup("version"))
@@ -138,13 +140,21 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		Description: viper.GetString("description"),
 		Servers:     []config.ServerConfig{},
 		Verbose:     viper.GetBool("verbose"),
+		Quiet:       viper.GetBool("quiet"),
 	}
 	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
 	_ = viper.UnmarshalKey("servers", &cfg.Servers)
 
 	// Interactive mode: skip if --no-interactive/-y or if --type is already set
+	quiet := viper.GetBool("quiet")
 	useInteractive := viper.GetBool("interactive") && !viper.GetBool("no-interactive") && cfg.DocType == ""
 	if useInteractive {
+		if cfgFile == "" && viper.ConfigFileUsed() == "" {
+			// Config file not found; suggest init (only in interactive)
+			if !quiet {
+				fmt.Fprintln(os.Stderr, "Tip: run 'apidoc-gen init' to create .apidoc-gen.yaml with defaults.")
+			}
+		}
 		if err := prompt.GetUserPreferences(cfg); err != nil {
 			return &exitCodeError{fmt.Errorf("failed to get user preferences: %w", err), ExitUsageError}
 		}
@@ -155,28 +165,32 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return &exitCodeError{fmt.Errorf("invalid configuration: %w", err), ExitUsageError}
 	}
 
-	if cfg.Verbose {
-		fmt.Println("🔍 Starting API documentation generation...")
-		fmt.Printf("   Project Path: %s\n", cfg.ProjectPath)
-		fmt.Printf("   Output: %s\n", cfg.Output)
-		fmt.Printf("   Type: %s\n", cfg.DocType)
-		fmt.Printf("   Framework: %s\n", cfg.Framework)
-	}
+	if !quiet {
+		if cfg.Verbose {
+			fmt.Println("🔍 Starting API documentation generation...")
+			fmt.Printf("   Project Path: %s\n", cfg.ProjectPath)
+			fmt.Printf("   Output: %s\n", cfg.Output)
+			fmt.Printf("   Type: %s\n", cfg.DocType)
+			fmt.Printf("   Framework: %s\n", cfg.Framework)
+		}
 
-	// Analyze codebase
-	fmt.Println("📊 Analyzing codebase...")
+		// Analyze codebase
+		fmt.Println("📊 Analyzing codebase...")
+	}
 	apiAnalyzer := analyzer.NewAnalyzer(cfg)
 	apiSpec, err := apiAnalyzer.Analyze()
 	if err != nil {
 		return &exitCodeError{fmt.Errorf("failed to analyze codebase: %w", err), ExitRuntimeError}
 	}
 
-	if cfg.Verbose {
-		fmt.Printf("   Found %d endpoints\n", len(apiSpec.Endpoints))
-	}
+	if !quiet {
+		if cfg.Verbose {
+			fmt.Printf("   Found %d endpoints\n", len(apiSpec.Endpoints))
+		}
 
-	// Generate documentation
-	fmt.Printf("📝 Generating %s documentation...\n", cfg.DocType)
+		// Generate documentation
+		fmt.Printf("📝 Generating %s documentation...\n", cfg.DocType)
+	}
 	gen, err := generator.NewGenerator(cfg.DocType, cfg)
 	if err != nil {
 		return &exitCodeError{fmt.Errorf("failed to create generator: %w", err), ExitRuntimeError}
@@ -186,7 +200,9 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return &exitCodeError{fmt.Errorf("failed to generate documentation: %w", err), ExitRuntimeError}
 	}
 
-	fmt.Printf("✅ Documentation generated successfully at: %s\n", cfg.Output)
+	if !quiet {
+		fmt.Printf("✅ Documentation generated successfully at: %s\n", cfg.Output)
+	}
 	return nil
 }
 

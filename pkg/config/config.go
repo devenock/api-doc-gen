@@ -18,6 +18,7 @@ type Config struct {
 	Description string
 	Servers     []ServerConfig
 	Verbose     bool
+	Quiet       bool
 }
 
 // ServerConfig represent a server cpnfiguration
@@ -26,11 +27,11 @@ type ServerConfig struct {
 	Description string
 }
 
-// validate check if the configuration is valid
+// Validate checks if the configuration is valid and returns clear, actionable errors.
 func (c *Config) Validate() error {
 	// check if project path exists
 	if _, err := os.Stat(c.ProjectPath); os.IsNotExist(err) {
-		return errors.New("project path does not exist")
+		return errors.New("project path does not exist: " + c.ProjectPath + " (check the path or run from the project root)")
 	}
 
 	// validate documentation type
@@ -41,7 +42,7 @@ func (c *Config) Validate() error {
 	}
 
 	if !validTypes[c.DocType] {
-		return errors.New("invalid documentation type. Must be: swagger, postman or custom")
+		return errors.New("invalid documentation type \"" + c.DocType + "\": use swagger, postman, or custom (set --type or run with interactive mode)")
 	}
 
 	// set defaults

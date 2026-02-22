@@ -49,10 +49,11 @@ func (g *SwaggerGenerator) Generate(spec *models.APISpec) error {
 		return fmt.Errorf("failed to generate Swagger UI: %w", err)
 	}
 
-	fmt.Printf("   📄 OpenAPI YAML: %s\n", yamlPath)
-	fmt.Printf("   📄 OpenAPI JSON: %s\n", jsonPath)
-	fmt.Printf("   🌐 Swagger UI: %s\n", htmlPath)
-
+	if !g.config.Quiet {
+		fmt.Printf("   📄 OpenAPI YAML: %s\n", yamlPath)
+		fmt.Printf("   📄 OpenAPI JSON: %s\n", jsonPath)
+		fmt.Printf("   🌐 Swagger UI: %s\n", htmlPath)
+	}
 	return nil
 }
 
