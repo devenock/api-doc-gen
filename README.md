@@ -181,6 +181,10 @@ make install # install locally
 - **Prompts in CI** – Use `-y` and `--type` (and other flags) so the run is non-interactive.
 - **npx not found** (Docusaurus) – Install Node.js/npm and ensure `npx` is on PATH.
 
+## Security and privacy
+
+apidoc-gen runs entirely on your machine and does not send your code or data anywhere. For handling of sensitive codebases, dependency hygiene, and how to report vulnerabilities, see **[SECURITY.md](SECURITY.md)**.
+
 ## License
 
 MIT.

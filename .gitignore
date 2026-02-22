@@ -1,0 +1,32 @@
+# Build output
+apidoc-gen
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test and coverage
+*.test
+*.out
+coverage.html
+coverage.txt
+
+# Local config (optional; remove if you want to track .apidoc-gen.yaml)
+# .apidoc-gen.yaml
+
+# Generated docs (when testing locally)
+docs-out/
+docs-q/
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Go workspace
+go.work
+go.work.sum
