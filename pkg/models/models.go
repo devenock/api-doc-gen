@@ -28,9 +28,10 @@ type Endpoint struct {
 	RequestBody *RequestBody          `json:"requestBody,omitempty" yaml:"requestBody,omitempty"`
 	Responses   map[int]Response      `json:"responses" yaml:"responses"`
 	Security    []map[string][]string `json:"security,omitempty" yaml:"security,omitempty"`
-	// SourceFile and HandlerName are set when the handler is in the same file as the route (for --write-annotations).
-	SourceFile  string `json:"-" yaml:"-"`
-	HandlerName string `json:"-" yaml:"-"`
+	// SourceFile and HandlerName are set so --write-annotations can target the handler (same file or resolved from HandlerPackage).
+	SourceFile    string `json:"-" yaml:"-"`
+	HandlerName   string `json:"-" yaml:"-"`
+	HandlerPackage string `json:"-" yaml:"-"` // e.g. "controllers" when route uses controllers.CreateUser
 	// RequestTypeName and ResponseTypeName are the Go type names for @Param body and @Success (for swag annotations).
 	RequestTypeName  string `json:"-" yaml:"-"`
 	ResponseTypeName string `json:"-" yaml:"-"`

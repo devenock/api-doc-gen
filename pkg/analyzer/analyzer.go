@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -14,6 +15,8 @@ import (
 	"github.com/devenock/api-doc-gen/pkg/config"
 	"github.com/devenock/api-doc-gen/pkg/models"
 )
+
+var errStopWalk = errors.New("stop walk")
 
 // Analyzer analyzes the codebase to extract API information
 type Analyzer struct {
@@ -112,6 +115,9 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 			}
 		}
 	}
+
+	// Resolve SourceFile for handlers in other packages (e.g. controllers.CreateUser -> controllers/user_controller.go)
+	a.resolveHandlerSourceFiles()
 
 	// Deduplicate by (method, path), keeping first occurrence
 	a.endpoints = a.deduplicateEndpoints(a.endpoints)
@@ -573,6 +579,66 @@ func (a *Analyzer) buildGinAuthGroups(file *ast.File) map[string]bool {
 	return authGroups
 }
 
+// resolveHandlerSourceFiles sets SourceFile for endpoints that have HandlerPackage and HandlerName
+// by finding the .go file that defines that function (e.g. controllers.CreateUser -> controllers/user_controller.go).
+func (a *Analyzer) resolveHandlerSourceFiles() {
+	for i := range a.endpoints {
+		ep := &a.endpoints[i]
+		if ep.HandlerName == "" || ep.SourceFile != "" {
+			continue
+		}
+		if ep.HandlerPackage == "" {
+			continue
+		}
+		filePath := findFileWithFunction(a.config.ProjectPath, a.config.Exclude, ep.HandlerPackage, ep.HandlerName)
+		if filePath != "" {
+			ep.SourceFile = filePath
+		}
+	}
+}
+
+// findFileWithFunction returns the path of a .go file that declares package matching pkgName (or in dir pkgName) and defines func funcName.
+func findFileWithFunction(projectPath string, exclude []string, pkgName, funcName string) string {
+	var found string
+	filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			for _, ex := range exclude {
+				if strings.Contains(path, ex) {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" {
+			return nil
+		}
+		fset := token.NewFileSet()
+		node, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return nil
+		}
+		pkgDecl := node.Name.Name
+		dirName := filepath.Base(filepath.Dir(path))
+		// Match package name (e.g. "controllers") or directory name (e.g. .../controllers/...)
+		if pkgDecl != pkgName && dirName != pkgName {
+			return nil
+		}
+		for _, decl := range node.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Name.Name != funcName {
+				continue
+			}
+			found = path
+			return errStopWalk
+		}
+		return nil
+	})
+	return found
+}
+
 // tagFromPath returns a tag (e.g. "products", "users") from the path for OpenAPI grouping.
 // Uses the first path segment that looks like a resource name (skips "api", "v1", "v2", params like ":id").
 func tagFromPath(path string) string {
@@ -658,39 +724,49 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 		Responses:   make(map[int]models.Response),
 	}
 
-	// Extract handler function name, comments, request/response types, and fallback description
-	var handlerName string
+	// Extract handler: may be bare ident (CreateUser) or package-qualified (controllers.CreateUser, handlers.CreateUser)
+	var handlerName, handlerPkg string
 	if len(callExpr.Args) >= 2 {
-		if ident, ok := callExpr.Args[1].(*ast.Ident); ok {
-			handlerName = ident.Name
-			endpoint.Summary = ident.Name
-			a.extractHandlerComments(file, ident.Name, &endpoint)
-
-			// Resolve request body and response schema from handler signature
-			reqTypeName, respTypeName := getHandlerRequestAndResponseTypes(file, ident.Name)
-			if reqTypeName != "" {
-				reqTypeName = localTypeName(reqTypeName)
-				if schema, ok := a.typeRegistry[reqTypeName]; ok {
-					endpoint.RequestTypeName = reqTypeName
-					a.addSchemaAndRefsToModels(reqTypeName, schema)
-					endpoint.RequestBody = &models.RequestBody{
-						Required: true,
-						Content: map[string]models.Content{
-							"application/json": {Schema: schema},
-						},
+		switch arg := callExpr.Args[1].(type) {
+		case *ast.Ident:
+			handlerName = arg.Name
+			handlerPkg = ""
+		case *ast.SelectorExpr:
+			if pkgIdent, ok := arg.X.(*ast.Ident); ok {
+				handlerPkg = pkgIdent.Name
+				handlerName = arg.Sel.Name
+			}
+		}
+		if handlerName != "" {
+			endpoint.Summary = handlerName
+			// Same-file handler: get comments and request/response types from current file
+			if handlerPkg == "" {
+				a.extractHandlerComments(file, handlerName, &endpoint)
+				reqTypeName, respTypeName := getHandlerRequestAndResponseTypes(file, handlerName)
+				if reqTypeName != "" {
+					reqTypeName = localTypeName(reqTypeName)
+					if schema, ok := a.typeRegistry[reqTypeName]; ok {
+						endpoint.RequestTypeName = reqTypeName
+						a.addSchemaAndRefsToModels(reqTypeName, schema)
+						endpoint.RequestBody = &models.RequestBody{
+							Required: true,
+							Content: map[string]models.Content{
+								"application/json": {Schema: schema},
+							},
+						}
 					}
 				}
-			}
-			if respTypeName != "" {
-				respTypeName = localTypeName(respTypeName)
-				if schema, ok := a.typeRegistry[respTypeName]; ok {
-					endpoint.ResponseTypeName = respTypeName
-					a.addSchemaAndRefsToModels(respTypeName, schema)
-					endpoint.Responses[200] = models.Response{
-						Description: "Successful response",
-						Content: map[string]models.Content{
-							"application/json": {Schema: schema},
-						},
+				if respTypeName != "" {
+					respTypeName = localTypeName(respTypeName)
+					if schema, ok := a.typeRegistry[respTypeName]; ok {
+						endpoint.ResponseTypeName = respTypeName
+						a.addSchemaAndRefsToModels(respTypeName, schema)
+						endpoint.Responses[200] = models.Response{
+							Description: "Successful response",
+							Content: map[string]models.Content{
+								"application/json": {Schema: schema},
+							},
+						}
 					}
 				}
 			}
@@ -717,10 +793,13 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 		endpoint.Summary = humanizeHandlerName(handlerName)
 	}
 
-	// For --write-annotations: record where this handler lives
-	if handlerName != "" && a.curFilePath != "" {
-		endpoint.SourceFile = a.curFilePath
+	// For --write-annotations: record handler location (same file or package to resolve later)
+	if handlerName != "" {
 		endpoint.HandlerName = handlerName
+		endpoint.HandlerPackage = handlerPkg
+		if handlerPkg == "" && a.curFilePath != "" {
+			endpoint.SourceFile = a.curFilePath
+		}
 	}
 
 	a.endpoints = append(a.endpoints, endpoint)
