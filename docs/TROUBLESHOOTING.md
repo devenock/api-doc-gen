@@ -2,7 +2,10 @@
 
 ## Command not found after `go install`
 
-If `go install github.com/devenock/api-doc-gen@latest` succeeds but running `apidoc-gen` gives **command not found**, your shell cannot see the binary because Go’s bin directory is not in your PATH.
+If `go install github.com/devenock/api-doc-gen@latest` succeeds but running the tool gives **command not found**, check:
+
+1. **Command name** – The binary is named **`api-doc-gen`** (with a hyphen), from the module path. Use `api-doc-gen init` and `api-doc-gen generate`, not `apidoc-gen`.
+2. **PATH** – Your shell cannot see the binary because Go’s bin directory is not in your PATH.
 
 **Fix:** Add Go’s bin directory to your PATH.
 
@@ -31,12 +34,12 @@ If `go install github.com/devenock/api-doc-gen@latest` succeeds but running `api
 
 3. **Reload your shell** (e.g. open a new terminal or run `source ~/.zshrc`).
 
-4. **Verify:** `apidoc-gen --version`
+4. **Verify:** `api-doc-gen --version`
 
 **Alternative:** Run by full path once you know it:
 ```bash
-$(go env GOPATH)/bin/apidoc-gen init
-$(go env GOPATH)/bin/apidoc-gen generate --no-interactive --type swagger -o ./docs
+$(go env GOPATH)/bin/api-doc-gen init
+$(go env GOPATH)/bin/api-doc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
 ## No endpoints found

@@ -22,7 +22,9 @@ CLI that scans your Go API codebase and generates API documentation as **Swagger
 go install github.com/devenock/api-doc-gen@latest
 ```
 
-Ensure Go’s bin directory is in your PATH (see [Command not found](docs/TROUBLESHOOTING.md#command-not-found-after-go-install) if `apidoc-gen` is not found).
+**Command name:** When installed this way, the binary is **`api-doc-gen`** (hyphen), not `apidoc-gen`. Use `api-doc-gen init`, `api-doc-gen generate`, etc.
+
+Ensure Go’s bin directory is in your PATH (see [Command not found](docs/TROUBLESHOOTING.md#command-not-found-after-go-install) if the command is not found).
 
 Or build from source:
 ```bash
@@ -36,10 +38,10 @@ go build -o apidoc-gen
 From your Go API project root:
 
 ```bash
-apidoc-gen init                    # optional: create .apidoc-gen.yaml
-apidoc-gen generate               # interactive: choose type, framework, etc.
+api-doc-gen init                    # optional: create .apidoc-gen.yaml
+api-doc-gen generate               # interactive: choose type, framework, etc.
 # or
-apidoc-gen generate --no-interactive --type swagger -o ./docs
+api-doc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
 Then open `docs/index.html` (Swagger) or import `docs/collection.json` (Postman).
