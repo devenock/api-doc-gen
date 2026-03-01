@@ -110,34 +110,40 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 	return spec, nil
 }
 
-// detectFramework attempts to detect the framework being used
-func (a *Analyzer) detectFramework() error {
-	goModPath := filepath.Join(a.config.ProjectPath, "go.mod")
-
+// DetectFramework scans the project (e.g. go.mod) and returns the framework
+// identifier: "gin", "echo", "fiber", "gorilla", "chi", or "" if unknown.
+// Useful for init so the config file can be pre-filled.
+func DetectFramework(projectPath string) string {
+	goModPath := filepath.Join(projectPath, "go.mod")
 	content, err := os.ReadFile(goModPath)
 	if err != nil {
-		// If go.mod doesn't exist, try to detect from imports
+		return ""
+	}
+	contentStr := string(content)
+	switch {
+	case strings.Contains(contentStr, "github.com/gin-gonic/gin"):
+		return string(models.FrameWorkGin)
+	case strings.Contains(contentStr, "github.com/labstack/echo"):
+		return string(models.FrameWorkEcho)
+	case strings.Contains(contentStr, "github.com/gofiber/fiber"):
+		return string(models.FrameWorkFiber)
+	case strings.Contains(contentStr, "github.com/gorilla/mux"):
+		return string(models.FrameWorkGorilla)
+	case strings.Contains(contentStr, "github.com/go-chi/chi"):
+		return string(models.FrameWorkChi)
+	default:
+		return ""
+	}
+}
+
+// detectFramework attempts to detect the framework being used
+func (a *Analyzer) detectFramework() error {
+	detected := DetectFramework(a.config.ProjectPath)
+	if detected == "" {
 		a.framework = models.FrameWorkUnknown
 		return nil
 	}
-
-	contentStr := string(content)
-
-	// Check for framework dependencies
-	if strings.Contains(contentStr, "github.com/gin-gonic/gin") {
-		a.framework = models.FrameWorkGin
-	} else if strings.Contains(contentStr, "github.com/labstack/echo") {
-		a.framework = models.FrameWorkEcho
-	} else if strings.Contains(contentStr, "github.com/gofiber/fiber") {
-		a.framework = models.FrameWorkFiber
-	} else if strings.Contains(contentStr, "github.com/gorilla/mux") {
-		a.framework = models.FrameWorkGorilla
-	} else if strings.Contains(contentStr, "github.com/go-chi/chi") {
-		a.framework = models.FrameWorkChi
-	} else {
-		a.framework = models.FrameWorkUnknown
-	}
-
+	a.framework = models.FrameWorkType(detected)
 	return nil
 }
 
