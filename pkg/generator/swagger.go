@@ -95,15 +95,31 @@ func (g *SwaggerGenerator) convertToOpenAPI(spec *models.APISpec) map[string]int
 		pathItem[endpoint.Method] = g.convertEndpoint(endpoint)
 	}
 
-	// Add components/schemas (convert to maps so YAML encoder never sees model struct tags)
+	// Components: schemas and security schemes
+	components := make(map[string]interface{})
 	if len(spec.Models) > 0 {
 		schemas := make(map[string]interface{}, len(spec.Models))
 		for name, s := range spec.Models {
 			schemas[name] = schemaToMap(s)
 		}
-		openAPI["components"] = map[string]interface{}{
-			"schemas": schemas,
+		components["schemas"] = schemas
+	}
+	// Add BearerAuth security scheme when any endpoint uses security
+	for _, ep := range spec.Endpoints {
+		if len(ep.Security) > 0 {
+			components["securitySchemes"] = map[string]interface{}{
+				"BearerAuth": map[string]interface{}{
+					"type":         "http",
+					"scheme":       "bearer",
+					"bearerFormat": "JWT",
+					"description":  "JWT token from login or register",
+				},
+			}
+			break
 		}
+	}
+	if len(components) > 0 {
+		openAPI["components"] = components
 	}
 
 	return openAPI
@@ -161,7 +177,7 @@ func contentToMap(c models.Content) map[string]interface{} {
 
 // contentMapToMap converts map[string]Content to map[string]interface{}.
 func contentMapToMap(m map[string]models.Content) map[string]interface{} {
-	if m == nil || len(m) == 0 {
+	if len(m) == 0 {
 		return nil
 	}
 	out := make(map[string]interface{}, len(m))
