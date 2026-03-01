@@ -25,9 +25,9 @@ type Endpoint struct {
 	Description string                `json:"description" yaml:"description"`
 	Tags        []string              `json:"tags" yaml:"tags"`
 	Parameters  []Parameter           `json:"parameters" yaml:"parameters"`
-	RequestBody *RequestBody          `json:"requestBody, omitempty" yaml:"requestBody, omitempty"`
+	RequestBody *RequestBody          `json:"requestBody,omitempty" yaml:"requestBody,omitempty"`
 	Responses   map[int]Response      `json:"responses" yaml:"responses"`
-	Security    []map[string][]string `json:"security, omitempty" yaml:"security, omitempty"`
+	Security    []map[string][]string `json:"security,omitempty" yaml:"security,omitempty"`
 }
 
 // parameter represent an API parameter
@@ -37,7 +37,7 @@ type Parameter struct {
 	Description string      `json:"description" yaml:"description"`
 	Required    bool        `json:"required" yaml:"required"`
 	Schema      Schema      `json:"schema" yaml:"schema"`
-	Example     interface{} `json:"example, omitempty" yaml:"example, omitempty"`
+	Example     interface{} `json:"example,omitempty" yaml:"example,omitempty"`
 }
 
 // requestBody represent a request body/payload
@@ -50,14 +50,14 @@ type RequestBody struct {
 // content represents content with a schema
 type Content struct {
 	Schema  Schema      `json:"schema" yaml:"schema"`
-	Example interface{} `json:"example, omitempty" yaml:"example, omitempty"`
+	Example interface{} `json:"example,omitempty" yaml:"example,omitempty"`
 }
 
 // response represents API response
 type Response struct {
 	Description string             `json:"description" yaml:"description"`
-	Content     map[string]Content `json:"content, omitempty" yaml:"content, omitempty"`
-	Headers     map[string]Header  `json:"headers, omitempty" yaml:"headers, omitempty"`
+	Content     map[string]Content `json:"content,omitempty" yaml:"content,omitempty"`
+	Headers     map[string]Header  `json:"headers,omitempty" yaml:"headers,omitempty"`
 }
 
 // header represent a response header
@@ -69,15 +69,15 @@ type Header struct {
 // schema represent a data schema
 type Schema struct {
 	Type                 string            `json:"type" yaml:"type"`
-	Format               string            `json:"format, omitempty" yaml:"format, omitempty"`
-	Description          string            `json:"description, omitempty" yaml:"description, omitempty"`
-	Properties           map[string]Schema `json:"properties, omitempty" yaml:"properties, omitempty"`
-	Items                *Schema           `json:"items, omitempty" yaml:"items, omitempty"`
-	Required             []string          `json:"required, omitempty" yaml:"required, omitempty"`
-	Enum                 []interface{}     `json:"enum, omitempty" yaml:"enum, omitempty"`
-	Example              interface{}       `json:"example, omitempty" yaml:"example, omitempty"`
-	AdditionalProperties interface{}       `json:"additionalProperties, omitempty" yaml:"additionalProperties, omitempty"`
-	Ref                  string            `json:"$ref, omitempty" yaml:"$ref, omitempty"`
+	Format               string            `json:"format,omitempty" yaml:"format,omitempty"`
+	Description          string            `json:"description,omitempty" yaml:"description,omitempty"`
+	Properties           map[string]Schema `json:"properties,omitempty" yaml:"properties,omitempty"`
+	Items                *Schema           `json:"items,omitempty" yaml:"items,omitempty"`
+	Required             []string          `json:"required,omitempty" yaml:"required,omitempty"`
+	Enum                 []interface{}     `json:"enum,omitempty" yaml:"enum,omitempty"`
+	Example              interface{}       `json:"example,omitempty" yaml:"example,omitempty"`
+	AdditionalProperties interface{}       `json:"additionalProperties,omitempty" yaml:"additionalProperties,omitempty"`
+	Ref                  string            `json:"$ref,omitempty" yaml:"$ref,omitempty"`
 }
 
 // FrameWorkType represents supported frameworks
