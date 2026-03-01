@@ -16,10 +16,11 @@ import (
 
 // Analyzer analyzes the codebase to extract API information
 type Analyzer struct {
-	config    *config.Config
-	framework models.FrameWorkType
-	endpoints []models.Endpoint
-	models    map[string]models.Schema
+	config         *config.Config
+	framework      models.FrameWorkType
+	endpoints      []models.Endpoint
+	models         map[string]models.Schema
+	curGroupPrefix map[string]string // per-file: variable name -> path prefix (Gin/Echo/Fiber Group)
 }
 
 // NewAnalyzer creates a new Analyzer
@@ -155,6 +156,12 @@ func (a *Analyzer) parseFile(filePath string) error {
 		return nil // Skip files that can't be parsed
 	}
 
+	// Build route group prefix map for this file (Gin/Echo/Fiber .Group("...") only)
+	a.curGroupPrefix = nil
+	if a.framework == models.FrameWorkGin || a.framework == models.FrameWorkEcho || a.framework == models.FrameWorkFiber {
+		a.curGroupPrefix = a.buildGinGroupPrefixes(node)
+	}
+
 	// Visit all nodes in the AST
 	ast.Inspect(node, func(n ast.Node) bool {
 		switch a.framework {
@@ -177,6 +184,73 @@ func (a *Analyzer) parseFile(filePath string) error {
 	})
 
 	return nil
+}
+
+// buildGinGroupPrefixes builds a map of variable name -> path prefix from
+// Group() calls (e.g. v1 := r.Group("/api/v1")) so we can emit full paths.
+func (a *Analyzer) buildGinGroupPrefixes(file *ast.File) map[string]string {
+	type link struct{ child, parent, path string }
+	var links []link
+	ast.Inspect(file, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+			return true
+		}
+		call, ok := assign.Rhs[0].(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Group" || len(call.Args) != 1 {
+			return true
+		}
+		pathLit, ok := call.Args[0].(*ast.BasicLit)
+		if !ok || pathLit.Kind != token.STRING {
+			return true
+		}
+		path := strings.Trim(pathLit.Value, `"`)
+		childIdent, ok := assign.Lhs[0].(*ast.Ident)
+		if !ok {
+			return true
+		}
+		parentIdent, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		links = append(links, link{childIdent.Name, parentIdent.Name, path})
+		return true
+	})
+	prefix := make(map[string]string)
+	for {
+		changed := false
+		for _, l := range links {
+			parentPrefix := prefix[l.parent] // empty if root
+			full := joinPath(parentPrefix, l.path)
+			if prefix[l.child] != full {
+				prefix[l.child] = full
+				changed = true
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+	return prefix
+}
+
+func joinPath(prefix, path string) string {
+	prefix = strings.Trim(prefix, "/")
+	path = strings.Trim(path, "/")
+	if prefix == "" {
+		if path == "" {
+			return "/"
+		}
+		return "/" + path
+	}
+	if path == "" {
+		return "/" + prefix
+	}
+	return "/" + prefix + "/" + path
 }
 
 // parseGinRoutes extracts routes from Gin framework
@@ -213,6 +287,15 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 	}
 
 	path := strings.Trim(pathLit.Value, `"`)
+
+	// Prepend group prefix if receiver is a variable (e.g. products.GET("/", ...))
+	if a.curGroupPrefix != nil {
+		if ident, ok := selExpr.X.(*ast.Ident); ok && ident.Name != "" {
+			if p := a.curGroupPrefix[ident.Name]; p != "" {
+				path = joinPath(p, path)
+			}
+		}
+	}
 
 	// Create endpoint
 	endpoint := models.Endpoint{
