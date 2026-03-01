@@ -42,12 +42,23 @@ $(go env GOPATH)/bin/api-doc-gen init
 $(go env GOPATH)/bin/api-doc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
+## Panic: "unsupported flag … omitempty" when generating Swagger
+
+You are running an older binary that had a YAML encoding bug. **Install the latest code from this repo** so the fixed CLI is in your PATH:
+
+```bash
+cd /path/to/api-doc-gen   # this repository
+go install .
+```
+
+Then from your backend project run `api-doc-gen generate --no-interactive --type swagger -o ./docs` again. The new binary is used globally (same `api-doc-gen` command from any directory).
+
 ## No endpoints found
 
 - **Framework detection** – Ensure your framework is listed in `go.mod` (Gin, Echo, Fiber, Gorilla, Chi). Or set `--framework` explicitly.
 - **Route patterns** – The analyzer looks for standard patterns (e.g. `router.GET("/path", handler)`). Use `-v` (verbose) to see the detected framework.
 - **Excluded dirs** – Check that your route files are not under an excluded directory (e.g. `vendor`, `test`). Adjust `exclude` in config or `--exclude` if needed.
-- **Path** – Run from the project root or pass the project path: `apidoc-gen generate /path/to/project`.
+- **Path** – Run from the project root or pass the project path: `api-doc-gen generate /path/to/project`.
 
 ## Invalid configuration
 

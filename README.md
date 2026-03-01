@@ -17,21 +17,25 @@ CLI that scans your Go API codebase and generates API documentation as **Swagger
 
 **Prerequisites:** Go 1.22+ (Node.js/npm only for Docusaurus output)
 
+**Recommended (latest code):** Clone this repo and install the CLI into your Go bin directory. Then you can run `api-doc-gen` from any project (including your backend).
+
 ```bash
-# Install binary (requires Go 1.22+)
+git clone https://github.com/devenock/api-doc-gen.git
+cd api-doc-gen
+go install .
+```
+
+Ensure `$(go env GOPATH)/bin` (or `$HOME/go/bin`) is in your PATH. Then from any directory, including your backend project, run `api-doc-gen generate ...`.
+
+**Alternative:** Install from the module (use a tagged release when available for latest fixes):
+
+```bash
 go install github.com/devenock/api-doc-gen@latest
 ```
 
-**Command name:** When installed this way, the binary is **`api-doc-gen`** (hyphen), not `apidoc-gen`. Use `api-doc-gen init`, `api-doc-gen generate`, etc.
+**Command name:** The binary is **`api-doc-gen`** (with a hyphen). Use `api-doc-gen init`, `api-doc-gen generate`, etc.
 
-Ensure Go’s bin directory is in your PATH (see [Command not found](docs/TROUBLESHOOTING.md#command-not-found-after-go-install) if the command is not found).
-
-Or build from source:
-```bash
-git clone https://github.com/yourusername/apidoc-gen.git && cd apidoc-gen
-go build -o apidoc-gen
-# then run ./apidoc-gen from that directory or add the directory to PATH
-```
+If the command is not found, see [Command not found](docs/TROUBLESHOOTING.md#command-not-found-after-go-install).
 
 ## Quick start
 

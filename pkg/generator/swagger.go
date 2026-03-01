@@ -95,14 +95,80 @@ func (g *SwaggerGenerator) convertToOpenAPI(spec *models.APISpec) map[string]int
 		pathItem[endpoint.Method] = g.convertEndpoint(endpoint)
 	}
 
-	// Add components/schemas
+	// Add components/schemas (convert to maps so YAML encoder never sees model struct tags)
 	if len(spec.Models) > 0 {
+		schemas := make(map[string]interface{}, len(spec.Models))
+		for name, s := range spec.Models {
+			schemas[name] = schemaToMap(s)
+		}
 		openAPI["components"] = map[string]interface{}{
-			"schemas": spec.Models,
+			"schemas": schemas,
 		}
 	}
 
 	return openAPI
+}
+
+// schemaToMap converts Schema to a plain map so YAML/JSON encoding never sees struct tags.
+func schemaToMap(s models.Schema) map[string]interface{} {
+	typ := s.Type
+	if typ == "" {
+		typ = "object"
+	}
+	out := map[string]interface{}{"type": typ}
+	if s.Format != "" {
+		out["format"] = s.Format
+	}
+	if s.Description != "" {
+		out["description"] = s.Description
+	}
+	if len(s.Properties) > 0 {
+		props := make(map[string]interface{})
+		for k, v := range s.Properties {
+			props[k] = schemaToMap(v)
+		}
+		out["properties"] = props
+	}
+	if s.Items != nil {
+		out["items"] = schemaToMap(*s.Items)
+	}
+	if len(s.Required) > 0 {
+		out["required"] = s.Required
+	}
+	if len(s.Enum) > 0 {
+		out["enum"] = s.Enum
+	}
+	if s.Example != nil {
+		out["example"] = s.Example
+	}
+	if s.AdditionalProperties != nil {
+		out["additionalProperties"] = s.AdditionalProperties
+	}
+	if s.Ref != "" {
+		out["$ref"] = s.Ref
+	}
+	return out
+}
+
+// contentToMap converts Content to a plain map so YAML/JSON encoding never sees struct tags.
+func contentToMap(c models.Content) map[string]interface{} {
+	out := map[string]interface{}{"schema": schemaToMap(c.Schema)}
+	if c.Example != nil {
+		out["example"] = c.Example
+	}
+	return out
+}
+
+// contentMapToMap converts map[string]Content to map[string]interface{}.
+func contentMapToMap(m map[string]models.Content) map[string]interface{} {
+	if m == nil || len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		out[k] = contentToMap(v)
+	}
+	return out
 }
 
 // convertEndpoint converts an Endpoint to OpenAPI operation
@@ -126,7 +192,7 @@ func (g *SwaggerGenerator) convertEndpoint(endpoint models.Endpoint) map[string]
 				"in":          param.In,
 				"description": param.Description,
 				"required":    param.Required,
-				"schema":      param.Schema,
+				"schema":      schemaToMap(param.Schema),
 			})
 		}
 		operation["parameters"] = params
@@ -137,7 +203,7 @@ func (g *SwaggerGenerator) convertEndpoint(endpoint models.Endpoint) map[string]
 		operation["requestBody"] = map[string]interface{}{
 			"description": endpoint.RequestBody.Description,
 			"required":    endpoint.RequestBody.Required,
-			"content":     endpoint.RequestBody.Content,
+			"content":     contentMapToMap(endpoint.RequestBody.Content),
 		}
 	}
 
@@ -146,7 +212,7 @@ func (g *SwaggerGenerator) convertEndpoint(endpoint models.Endpoint) map[string]
 	for code, response := range endpoint.Responses {
 		responses[fmt.Sprintf("%d", code)] = map[string]interface{}{
 			"description": response.Description,
-			"content":     response.Content,
+			"content":     contentMapToMap(response.Content),
 		}
 	}
 
