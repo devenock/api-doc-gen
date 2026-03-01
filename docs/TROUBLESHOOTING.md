@@ -44,14 +44,13 @@ $(go env GOPATH)/bin/api-doc-gen generate --no-interactive --type swagger -o ./d
 
 ## Panic: "unsupported flag … omitempty" when generating Swagger
 
-You are running an older binary that had a YAML encoding bug. **Install the latest code from this repo** so the fixed CLI is in your PATH:
+You are running an older binary. Update to the latest version:
 
 ```bash
-cd /path/to/api-doc-gen   # this repository
-go install .
+go install github.com/devenock/api-doc-gen@latest
 ```
 
-Then from your backend project run `api-doc-gen generate --no-interactive --type swagger -o ./docs` again. The new binary is used globally (same `api-doc-gen` command from any directory).
+Then run `api-doc-gen generate ...` again from your backend. If the panic persists, a fix may not be in a released version yet; check the repo for the latest release or build from source (`git clone` then `go install .` in the repo root).
 
 ## No endpoints found
 
@@ -68,7 +67,7 @@ Then from your backend project run `api-doc-gen generate --no-interactive --type
 ## Configuration not being read
 
 - Ensure `.apidoc-gen.yaml` is in the current directory, or pass `--config /path/to/config.yaml`.
-- Check YAML syntax (indentation, no tabs). Use `apidoc-gen generate --show-config` to see what is actually loaded.
+- Check YAML syntax (indentation, no tabs). Use `api-doc-gen generate --show-config` to see what is actually loaded.
 - Environment variables must be prefixed with `APIDOC_` (e.g. `APIDOC_TYPE=swagger`).
 
 ## npx not found (Custom Docusaurus)

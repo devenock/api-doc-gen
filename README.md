@@ -17,25 +17,17 @@ CLI that scans your Go API codebase and generates API documentation as **Swagger
 
 **Prerequisites:** Go 1.22+ (Node.js/npm only for Docusaurus output)
 
-**Recommended (latest code):** Clone this repo and install the CLI into your Go bin directory. Then you can run `api-doc-gen` from any project (including your backend).
-
-```bash
-git clone https://github.com/devenock/api-doc-gen.git
-cd api-doc-gen
-go install .
-```
-
-Ensure `$(go env GOPATH)/bin` (or `$HOME/go/bin`) is in your PATH. Then from any directory, including your backend project, run `api-doc-gen generate ...`.
-
-**Alternative:** Install from the module (use a tagged release when available for latest fixes):
+Install the CLI from anywhere (no need to clone this repo):
 
 ```bash
 go install github.com/devenock/api-doc-gen@latest
 ```
 
+The binary is installed to `$(go env GOPATH)/bin` (usually `~/go/bin`). Ensure that directory is in your [PATH](docs/TROUBLESHOOTING.md#command-not-found-after-go-install)—then you can run `api-doc-gen` from any directory, including your backend project.
+
 **Command name:** The binary is **`api-doc-gen`** (with a hyphen). Use `api-doc-gen init`, `api-doc-gen generate`, etc.
 
-If the command is not found, see [Command not found](docs/TROUBLESHOOTING.md#command-not-found-after-go-install).
+**Docker:** See [Docker](#docker) below. **From source:** Clone the repo and run `go install .` from its root (for development or unreleased fixes).
 
 ## Quick start
 
@@ -57,9 +49,9 @@ You run apidoc-gen **from your Go API project** (or point it at that directory).
 1. **Where to run** – From the root of your backend repo (the directory that has `go.mod` and your route definitions). The tool uses the current directory if you don’t pass a path.
 2. **What it reads** – `go.mod` (to detect framework) and `.go` files under that path. It skips `vendor`, `node_modules`, `.git`, and test dirs by default.
 3. **Where output goes** – By default `./docs` in the directory you ran the command from; override with `-o` (e.g. `-o ./api-docs`).
-4. **Optional config in repo** – Run `apidoc-gen init` inside your backend repo to create `.apidoc-gen.yaml` there. Commit it so the team shares the same defaults (output dir, type, title, etc.).
+4. **Optional config in repo** – Run `api-doc-gen init` inside your backend repo to create `.apidoc-gen.yaml` there. Commit it so the team shares the same defaults (output dir, type, title, etc.).
 5. **From another directory** – To generate docs for a backend that isn’t your cwd:  
-   `apidoc-gen generate /path/to/your-api --no-interactive --type swagger -o /path/to/your-api/docs`
+   `api-doc-gen generate /path/to/your-api --no-interactive --type swagger -o /path/to/your-api/docs`
 
 **Example: backend repo layout**
 
@@ -76,7 +68,7 @@ my-go-api/
 
 ```makefile
 docs:
-	apidoc-gen generate --no-interactive --type swagger -o ./docs
+	api-doc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
 Then run `make docs` from your backend root.
