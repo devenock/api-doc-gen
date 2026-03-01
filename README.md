@@ -18,12 +18,17 @@ CLI that scans your Go API codebase and generates API documentation as **Swagger
 **Prerequisites:** Go 1.22+ (Node.js/npm only for Docusaurus output)
 
 ```bash
-# Install binary
+# Install binary (requires Go 1.22+)
 go install github.com/devenock/api-doc-gen@latest
+```
 
-# Or build from source
+Ensure Go’s bin directory is in your PATH (see [Command not found](docs/TROUBLESHOOTING.md#command-not-found-after-go-install) if `apidoc-gen` is not found).
+
+Or build from source:
+```bash
 git clone https://github.com/yourusername/apidoc-gen.git && cd apidoc-gen
 go build -o apidoc-gen
+# then run ./apidoc-gen from that directory or add the directory to PATH
 ```
 
 ## Quick start

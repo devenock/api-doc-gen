@@ -1,5 +1,44 @@
 # Troubleshooting
 
+## Command not found after `go install`
+
+If `go install github.com/devenock/api-doc-gen@latest` succeeds but running `apidoc-gen` gives **command not found**, your shell cannot see the binary because Go’s bin directory is not in your PATH.
+
+**Fix:** Add Go’s bin directory to your PATH.
+
+1. **Find where the binary was installed:**
+   ```bash
+   go env GOPATH
+   ```
+   If empty, Go uses `$HOME/go`. The binary is in `$GOPATH/bin` or `$HOME/go/bin`.
+
+2. **Add it to PATH** (pick one that matches your shell).
+
+   **Bash** – add to `~/.bashrc` (or `~/.bash_profile`):
+   ```bash
+   export PATH="$PATH:$(go env GOPATH)/bin"
+   ```
+
+   **Zsh** – add to `~/.zshrc`:
+   ```bash
+   export PATH="$PATH:$(go env GOPATH)/bin"
+   ```
+
+   **Fish** – run once or add to config:
+   ```fish
+   set -gx PATH $PATH (go env GOPATH)/bin
+   ```
+
+3. **Reload your shell** (e.g. open a new terminal or run `source ~/.zshrc`).
+
+4. **Verify:** `apidoc-gen --version`
+
+**Alternative:** Run by full path once you know it:
+```bash
+$(go env GOPATH)/bin/apidoc-gen init
+$(go env GOPATH)/bin/apidoc-gen generate --no-interactive --type swagger -o ./docs
+```
+
 ## No endpoints found
 
 - **Framework detection** – Ensure your framework is listed in `go.mod` (Gin, Echo, Fiber, Gorilla, Chi). Or set `--framework` explicitly.
