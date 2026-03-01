@@ -3,8 +3,12 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/devenock/api-doc-gen/internal/annotations"
 	"github.com/devenock/api-doc-gen/internal/prompt"
 	"github.com/devenock/api-doc-gen/pkg/analyzer"
 	"github.com/devenock/api-doc-gen/pkg/config"
@@ -86,6 +90,8 @@ func init() {
 	generateCmd.Flags().String("description", "", "API description")
 	generateCmd.Flags().Bool("dry-run", false, "analyze and show what would be generated without writing files")
 	generateCmd.Flags().Bool("show-config", false, "print effective config (file + env + flags) and exit")
+	generateCmd.Flags().Bool("serve", false, "after generating (swagger only), serve docs and print the access URL")
+	generateCmd.Flags().Bool("write-annotations", false, "write swag-style comment blocks above handler functions (same-file handlers only)")
 
 	// Bind flags to viper
 	viper.BindPFlag("output", generateCmd.Flags().Lookup("output"))
@@ -102,6 +108,8 @@ func init() {
 	viper.BindPFlag("description", generateCmd.Flags().Lookup("description"))
 	viper.BindPFlag("dry-run", generateCmd.Flags().Lookup("dry-run"))
 	viper.BindPFlag("show-config", generateCmd.Flags().Lookup("show-config"))
+	viper.BindPFlag("serve", generateCmd.Flags().Lookup("serve"))
+	viper.BindPFlag("write-annotations", generateCmd.Flags().Lookup("write-annotations"))
 
 	// Add commands
 	rootCmd.AddCommand(generateCmd)
@@ -217,6 +225,74 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 
 	if !quiet {
 		fmt.Printf("✅ Documentation generated successfully at: %s\n", cfg.Output)
+		printDocsAccessURL(cfg)
+	}
+
+	// --write-annotations: write swag comments above handler functions
+	if viper.GetBool("write-annotations") {
+		n, err := annotations.WriteSwagAnnotations(apiSpec.Endpoints, cfg.BasePath)
+		if err != nil && !quiet {
+			fmt.Fprintf(os.Stderr, "Warning: write-annotations: %v\n", err)
+		} else if !quiet && n > 0 {
+			fmt.Printf("   Wrote swag annotations to %d handler(s).\n", n)
+		}
+	}
+
+	// --serve: start local static server and print URL (swagger only)
+	if viper.GetBool("serve") && cfg.DocType == "swagger" {
+		return runServeDocs(cfg.Output, quiet)
+	}
+	return nil
+}
+
+// printDocsAccessURL prints how to open the generated docs (file URL and optional server URL).
+func printDocsAccessURL(cfg *config.Config) {
+	absOut, err := filepath.Abs(cfg.Output)
+	if err != nil {
+		absOut = cfg.Output
+	}
+	switch cfg.DocType {
+	case "swagger":
+		indexPath := filepath.Join(absOut, "index.html")
+		fmt.Println()
+		fmt.Println("📖 View Swagger UI:")
+		fmt.Printf("   • File:  file://%s\n", filepath.ToSlash(indexPath))
+		serverURL := "http://localhost:8080"
+		if len(cfg.Servers) > 0 && cfg.Servers[0].URL != "" {
+			serverURL = strings.TrimSuffix(cfg.Servers[0].URL, "/")
+		}
+		fmt.Printf("   • If your API serves the %q directory at /docs: %s/docs\n", cfg.Output, serverURL)
+		fmt.Println("   • Or run: api-doc-gen generate --serve  (starts a local preview server)")
+	default:
+		fmt.Printf("   Output directory: %s\n", absOut)
+	}
+}
+
+// runServeDocs serves the output directory and prints the access URL; blocks until interrupted.
+func runServeDocs(outputDir string, quiet bool) error {
+	absDir, err := filepath.Abs(outputDir)
+	if err != nil {
+		return &exitCodeError{fmt.Errorf("failed to resolve output path: %w", err), ExitRuntimeError}
+	}
+	if _, err := os.Stat(absDir); os.IsNotExist(err) {
+		return &exitCodeError{fmt.Errorf("output directory does not exist: %s", absDir), ExitRuntimeError}
+	}
+	port := "8765"
+	addr := ":" + port
+	if !quiet {
+		fmt.Println()
+		fmt.Printf("🌐 Serving docs at http://localhost%s\n", addr)
+		fmt.Printf("   Open in browser: http://localhost%s/index.html\n", addr)
+		fmt.Println("   Press Ctrl+C to stop")
+		fmt.Println()
+	}
+	handler := http.FileServer(http.Dir(absDir))
+	err = http.ListenAndServe(addr, handler)
+	if err != nil && (err == http.ErrServerClosed || strings.Contains(err.Error(), "closed")) {
+		return nil
+	}
+	if err != nil {
+		return &exitCodeError{fmt.Errorf("serve failed: %w", err), ExitRuntimeError}
 	}
 	return nil
 }

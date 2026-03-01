@@ -16,7 +16,7 @@ This document describes how to make the CLI produce **complete** documentation i
 | **JWT / auth** | Protected routes marked with `security: [BearerAuth]`; `securitySchemes` defined. |
 | **Handler “annotations”** | Rich OpenAPI metadata for each handler, whether or not the code has swag comments. |
 
-The CLI should **not** require developers to add swag annotations by hand. The **output** (OpenAPI/Swagger) is the single source of truth; we can optionally write annotations back to source later.
+The CLI does **not** write swag annotations (e.g. `// @Summary`) into handler source files. It generates the OpenAPI spec from code; the **output** (openapi.yaml, openapi.json, index.html) is the single source of truth. An optional “write annotations back to source” feature could be added later.
 
 ---
 

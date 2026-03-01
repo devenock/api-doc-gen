@@ -24,6 +24,7 @@ type Analyzer struct {
 	typeRegistry   map[string]models.Schema // type name -> schema (for request/response resolution)
 	curGroupPrefix map[string]string        // per-file: variable name -> path prefix (Gin/Echo/Fiber Group)
 	curAuthGroups  map[string]bool          // per-file: variable name -> true if group uses auth middleware
+	curFilePath    string                   // current file being parsed (for SourceFile on endpoints)
 }
 
 // NewAnalyzer creates a new Analyzer
@@ -434,6 +435,7 @@ func (a *Analyzer) parseFile(filePath string) error {
 		return nil // Skip files that can't be parsed
 	}
 
+	a.curFilePath = filePath
 	// Build route group prefix map and auth groups for this file (Gin/Echo/Fiber only)
 	a.curGroupPrefix = nil
 	a.curAuthGroups = nil
@@ -669,6 +671,7 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 			if reqTypeName != "" {
 				reqTypeName = localTypeName(reqTypeName)
 				if schema, ok := a.typeRegistry[reqTypeName]; ok {
+					endpoint.RequestTypeName = reqTypeName
 					a.addSchemaAndRefsToModels(reqTypeName, schema)
 					endpoint.RequestBody = &models.RequestBody{
 						Required: true,
@@ -681,6 +684,7 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 			if respTypeName != "" {
 				respTypeName = localTypeName(respTypeName)
 				if schema, ok := a.typeRegistry[respTypeName]; ok {
+					endpoint.ResponseTypeName = respTypeName
 					a.addSchemaAndRefsToModels(respTypeName, schema)
 					endpoint.Responses[200] = models.Response{
 						Description: "Successful response",
@@ -711,6 +715,12 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 	}
 	if endpoint.Summary == handlerName && handlerName != "" {
 		endpoint.Summary = humanizeHandlerName(handlerName)
+	}
+
+	// For --write-annotations: record where this handler lives
+	if handlerName != "" && a.curFilePath != "" {
+		endpoint.SourceFile = a.curFilePath
+		endpoint.HandlerName = handlerName
 	}
 
 	a.endpoints = append(a.endpoints, endpoint)
