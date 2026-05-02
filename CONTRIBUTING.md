@@ -22,7 +22,7 @@ By participating, you agree to uphold our [Code of Conduct](CODE_OF_CONDUCT.md).
    make build
    make test
    ```
-4. **Run locally:** `./apidoc-gen generate --help` or `make run` (runs generate in the project directory).
+4. **Run locally:** `./bin/apidoc-gen generate --help` or `make run` (runs generate in the project directory). Build outputs are written to `./bin/`.
 
 ## Project layout
 

@@ -5,7 +5,9 @@ docs/
 web/
 Dockerfile
 .dockerignore
+bin/
 apidoc-gen
+api-doc-gen
 *.yaml
 !go.mod
 !go.sum

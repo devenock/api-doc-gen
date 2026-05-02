@@ -1,5 +1,7 @@
 # Build output
+bin/
 apidoc-gen
+api-doc-gen
 *.exe
 *.exe~
 *.dll
