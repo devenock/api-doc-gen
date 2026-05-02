@@ -13,6 +13,7 @@ import (
 	"github.com/devenock/api-doc-gen/pkg/analyzer"
 	"github.com/devenock/api-doc-gen/pkg/config"
 	"github.com/devenock/api-doc-gen/pkg/generator"
+	"github.com/devenock/api-doc-gen/pkg/postman"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -46,6 +47,11 @@ or a custom Docusaurus-based website.`,
   api-doc-gen generate
   api-doc-gen generate --type swagger --output ./docs
   api-doc-gen generate ./my-api --no-interactive --type postman`,
+		// Don't print the usage/help screen for runtime/validation errors.
+		// We print errors ourselves in Execute(); Cobra would otherwise print
+		// the same error twice plus a wall of usage text.
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 
 	generateCmd = &cobra.Command{
@@ -58,6 +64,7 @@ or a custom Docusaurus-based website.`,
   api-doc-gen generate .
   api-doc-gen generate --type swagger -o ./docs
   api-doc-gen generate --no-interactive --type postman --title "My API"`,
+		SilenceUsage: true,
 	}
 
 	initCmd = &cobra.Command{
@@ -66,6 +73,7 @@ or a custom Docusaurus-based website.`,
 		Long:  `Create a configuration file (.apidoc-gen.yaml) in the current directory.`,
 		RunE:  runInit,
 		Example: `  api-doc-gen init`,
+		SilenceUsage: true,
 	}
 )
 
@@ -93,6 +101,12 @@ func init() {
 	generateCmd.Flags().Bool("serve", false, "after generating (swagger only), serve docs and print the access URL")
 	generateCmd.Flags().Bool("write-annotations", false, "write swag-style comment blocks above handler functions (same-file handlers only)")
 
+	// Postman upload flags (only honored when --type=postman)
+	generateCmd.Flags().Bool("upload", false, "(postman) force upload to Postman; error out if no API key is available (good for CI)")
+	generateCmd.Flags().Bool("no-upload", false, "(postman) skip the auto-upload step even if a Postman API key is available")
+	generateCmd.Flags().String("postman-api-key", "", "(postman) API key for the upload step; takes precedence over env and credentials file")
+	generateCmd.Flags().String("postman-workspace", "", "(postman) workspace UID to upload to (default: your default workspace)")
+
 	// Bind flags to viper
 	viper.BindPFlag("output", generateCmd.Flags().Lookup("output"))
 	viper.BindPFlag("type", generateCmd.Flags().Lookup("type"))
@@ -110,6 +124,10 @@ func init() {
 	viper.BindPFlag("show-config", generateCmd.Flags().Lookup("show-config"))
 	viper.BindPFlag("serve", generateCmd.Flags().Lookup("serve"))
 	viper.BindPFlag("write-annotations", generateCmd.Flags().Lookup("write-annotations"))
+	viper.BindPFlag("upload", generateCmd.Flags().Lookup("upload"))
+	viper.BindPFlag("no-upload", generateCmd.Flags().Lookup("no-upload"))
+	viper.BindPFlag("postman-api-key", generateCmd.Flags().Lookup("postman-api-key"))
+	viper.BindPFlag("postman-workspace", generateCmd.Flags().Lookup("postman-workspace"))
 
 	// Add commands
 	rootCmd.AddCommand(generateCmd)
@@ -141,18 +159,22 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := &config.Config{
-		ProjectPath: projectPath,
-		Output:      viper.GetString("output"),
-		DocType:     viper.GetString("type"),
-		Framework:   viper.GetString("framework"),
-		Exclude:     viper.GetStringSlice("exclude"),
-		BasePath:    viper.GetString("base-path"),
-		Title:       viper.GetString("title"),
-		Version:     viper.GetString("version"),
-		Description: viper.GetString("description"),
-		Servers:     []config.ServerConfig{},
-		Verbose:     viper.GetBool("verbose"),
-		Quiet:       viper.GetBool("quiet"),
+		ProjectPath:         projectPath,
+		Output:              viper.GetString("output"),
+		DocType:             viper.GetString("type"),
+		Framework:           viper.GetString("framework"),
+		Exclude:             viper.GetStringSlice("exclude"),
+		BasePath:            viper.GetString("base-path"),
+		Title:               viper.GetString("title"),
+		Version:             viper.GetString("version"),
+		Description:         viper.GetString("description"),
+		Servers:             []config.ServerConfig{},
+		Verbose:             viper.GetBool("verbose"),
+		Quiet:               viper.GetBool("quiet"),
+		PostmanAPIKey:       viper.GetString("postman-api-key"),
+		PostmanWorkspaceUID: viper.GetString("postman-workspace"),
+		PostmanUpload:       viper.GetBool("upload"),
+		PostmanNoUpload:     viper.GetBool("no-upload"),
 	}
 	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
 	_ = viper.UnmarshalKey("servers", &cfg.Servers)
@@ -228,6 +250,16 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		printDocsAccessURL(cfg)
 	}
 
+	// Postman: auto-upload (interactive prompt for API key if needed). Only runs
+	// for --type=postman; respects --no-upload; in non-interactive mode without
+	// a key it silently skips unless --upload was passed (then errors).
+	if cfg.DocType == "postman" {
+		useInteractiveUpload := viper.GetBool("interactive") && !viper.GetBool("no-interactive")
+		if err := runPostmanUpload(cfg, useInteractiveUpload, quiet); err != nil {
+			return err
+		}
+	}
+
 	// --write-annotations: write swag comments above handler functions
 	if viper.GetBool("write-annotations") {
 		n, err := annotations.WriteSwagAnnotations(apiSpec.Endpoints, cfg.BasePath)
@@ -293,6 +325,108 @@ func runServeDocs(outputDir string, quiet bool) error {
 	}
 	if err != nil {
 		return &exitCodeError{fmt.Errorf("serve failed: %w", err), ExitRuntimeError}
+	}
+	return nil
+}
+
+// runPostmanUpload uploads the generated collection.json to Postman, with
+// interactive prompting for an API key if none is configured. It returns nil
+// (and may print a tip) when no key is available in non-interactive mode and
+// --upload was not passed; in that case the user just gets the local file.
+func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
+	if cfg.PostmanNoUpload {
+		return nil
+	}
+
+	collectionPath := filepath.Join(cfg.Output, "collection.json")
+	if _, err := os.Stat(collectionPath); err != nil {
+		// Generation should have produced this file; if not, nothing to upload.
+		return nil
+	}
+
+	apiKey, source := cfg.PostmanAPIKey, "flag:--postman-api-key"
+	if apiKey == "" {
+		apiKey, source = postman.LoadAPIKey()
+	}
+
+	if apiKey == "" {
+		if interactive {
+			key, err := prompt.PromptPostmanAPIKey()
+			if err != nil {
+				if !quiet {
+					fmt.Fprintf(os.Stderr, "   ↳ skipping Postman upload (no API key entered): %v\n", err)
+				}
+				return nil
+			}
+			path, serr := postman.SaveAPIKey(key)
+			if serr != nil {
+				return &exitCodeError{fmt.Errorf("save Postman credentials: %w", serr), ExitRuntimeError}
+			}
+			if !quiet {
+				fmt.Printf("   🔐 Saved Postman API key to %s (mode 0600)\n", path)
+			}
+			apiKey, source = key, "file:"+path
+		} else if cfg.PostmanUpload {
+			return &exitCodeError{
+				errors.New("--upload was set but no Postman API key was found (set --postman-api-key, APIDOC_POSTMAN_API_KEY, or POSTMAN_API_KEY)"),
+				ExitUsageError,
+			}
+		} else {
+			if !quiet {
+				fmt.Println()
+				fmt.Println("💡 Tip: log in to Postman to auto-upload this collection next time:")
+				fmt.Printf("   set %s=<your-key> or run interactively (we'll prompt).\n", postman.EnvAPIDocPostmanKey)
+			}
+			return nil
+		}
+	}
+
+	collectionJSON, err := os.ReadFile(collectionPath)
+	if err != nil {
+		return &exitCodeError{fmt.Errorf("read collection.json: %w", err), ExitRuntimeError}
+	}
+
+	client := postman.NewClient(apiKey)
+
+	if cfg.Verbose && !quiet {
+		fmt.Printf("   🔑 Using Postman API key from %s\n", source)
+	}
+
+	cachedUID := postman.LoadCachedUID(cfg.ProjectPath, cfg.Title)
+	if !quiet {
+		if cachedUID != "" {
+			fmt.Printf("☁️  Updating existing Postman collection (uid=%s)...\n", cachedUID)
+		} else {
+			fmt.Println("☁️  Uploading new Postman collection...")
+		}
+	}
+
+	var resp *postman.CollectionResponse
+	if cachedUID != "" {
+		resp, err = client.UpdateCollection(cachedUID, collectionJSON)
+		if err != nil {
+			// Cached UID may be stale (collection deleted upstream). Fall back to create.
+			if !quiet {
+				fmt.Fprintf(os.Stderr, "   ↳ update failed (%v); creating a new collection instead\n", err)
+			}
+			resp, err = client.CreateCollection(collectionJSON, cfg.PostmanWorkspaceUID)
+		}
+	} else {
+		resp, err = client.CreateCollection(collectionJSON, cfg.PostmanWorkspaceUID)
+	}
+	if err != nil {
+		return &exitCodeError{fmt.Errorf("postman upload failed: %w", err), ExitRuntimeError}
+	}
+
+	if err := postman.SaveCachedUID(cfg.ProjectPath, cfg.Title, resp.Collection.UID); err != nil && !quiet {
+		fmt.Fprintf(os.Stderr, "   ↳ warning: failed to cache collection UID: %v\n", err)
+	}
+
+	if !quiet {
+		fmt.Println()
+		fmt.Println("📮 View in Postman:")
+		fmt.Printf("   • %s\n", postman.WebURL(resp.Collection.UID))
+		fmt.Printf("   • Collection: %s (uid=%s)\n", resp.Collection.Name, resp.Collection.UID)
 	}
 	return nil
 }
@@ -381,6 +515,19 @@ func printShowConfig(cfg *config.Config) {
 	fmt.Printf("servers: %d\n", len(cfg.Servers))
 	for i, s := range cfg.Servers {
 		fmt.Printf("  [%d] url=%q description=%q\n", i, s.URL, s.Description)
+	}
+	if cfg.DocType == "postman" {
+		fmt.Printf("postman.upload: %v\n", cfg.PostmanUpload)
+		fmt.Printf("postman.no_upload: %v\n", cfg.PostmanNoUpload)
+		fmt.Printf("postman.workspace: %q\n", cfg.PostmanWorkspaceUID)
+		_, source := postman.LoadAPIKey()
+		if cfg.PostmanAPIKey != "" {
+			fmt.Println("postman.api_key: <set via --postman-api-key>")
+		} else if source != "" {
+			fmt.Printf("postman.api_key: <set via %s>\n", source)
+		} else {
+			fmt.Println("postman.api_key: <not set>")
+		}
 	}
 }
 

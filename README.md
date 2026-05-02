@@ -106,6 +106,10 @@ Use your API project path instead of `$(pwd)` if you’re not in the project roo
 | `-v, --verbose` | Verbose output |
 | `--dry-run` | Show what would be generated, no files written |
 | `--show-config` | Print effective config and exit |
+| `--upload` | (postman) force upload to Postman; error in CI if no API key |
+| `--no-upload` | (postman) skip the auto-upload step |
+| `--postman-api-key` | (postman) API key for the upload step |
+| `--postman-workspace` | (postman) workspace UID to upload to |
 
 Run `apidoc-gen generate --help` for the full list.
 
@@ -143,8 +147,19 @@ Gin, Echo, Fiber, Gorilla Mux, Chi (auto-detected from `go.mod`), plus generic r
 | Type | Output |
 |------|--------|
 | **swagger** | `openapi.json`, `openapi.yaml`, `index.html` (Swagger UI) |
-| **postman** | `collection.json` (Postman Collection v2.1) |
+| **postman** | `collection.json` (Postman Collection v2.1) — and optional auto-upload to Postman, see below |
 | **custom** | Docusaurus site in output dir (`npm start` to run) |
+
+### Postman auto-upload
+
+When `--type=postman` and a Postman API key is available, `generate` uploads the collection to Postman after writing it locally and prints a clickable URL so you can view it in the Postman web app without an extra import step.
+
+- **First run (interactive):** the CLI prompts for your API key (input is masked). Generate one at <https://postman.co/settings/me/api-keys>. The key is saved to `~/.config/apidoc-gen/credentials.json` (mode `0600`); subsequent runs reuse it without prompting.
+- **CI / `--no-interactive`:** export `APIDOC_POSTMAN_API_KEY=...` (or `POSTMAN_API_KEY`). Without a key, the upload is silently skipped. Pass `--upload` if you want missing-key to fail loudly.
+- **Repeat runs:** the collection's UID is cached in `.apidoc-gen-cache.json` (gitignored) and used to **update** the same collection on subsequent runs, so you do not accumulate duplicates in your workspace.
+- **To opt out:** pass `--no-upload`. To revoke: delete `~/.config/apidoc-gen/credentials.json` and rotate the key in Postman.
+
+See **[SECURITY.md](SECURITY.md#postman-credentials)** for the full data-handling details.
 
 ## Best practices
 

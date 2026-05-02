@@ -1,11 +1,38 @@
 package prompt
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/devenock/api-doc-gen/pkg/config"
 	"github.com/manifoldco/promptui"
 )
+
+// PromptPostmanAPIKey asks the user for a Postman API key with masked input.
+// It only validates that the key is non-empty and looks plausibly long enough;
+// real validation happens via a postman.Client.Me() call by the caller.
+func PromptPostmanAPIKey() (string, error) {
+	fmt.Println()
+	fmt.Println("📮 Postman login")
+	fmt.Println("   Generate an API key at: https://postman.co/settings/me/api-keys")
+	fmt.Println("   (it is saved locally with 0600 permissions; not sent anywhere except api.getpostman.com)")
+	p := promptui.Prompt{
+		Label: "Paste your Postman API key",
+		Mask:  '*',
+		Validate: func(s string) error {
+			if len(strings.TrimSpace(s)) < 10 {
+				return errors.New("that does not look like a Postman API key (too short)")
+			}
+			return nil
+		},
+	}
+	key, err := p.Run()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(key), nil
+}
 
 // GetUserPreferences prompts the user for their preferences
 func GetUserPreferences(cfg *config.Config) error {

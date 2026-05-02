@@ -17,6 +17,9 @@ coverage.txt
 # Local config (optional; remove if you want to track .apidoc-gen.yaml)
 # .apidoc-gen.yaml
 
+# Postman upload cache (collection title -> UID); safe to delete locally
+.apidoc-gen-cache.json
+
 # Generated docs (when testing locally)
 docs-out/
 docs-q/

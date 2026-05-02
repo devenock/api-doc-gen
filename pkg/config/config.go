@@ -19,6 +19,14 @@ type Config struct {
 	Servers     []ServerConfig
 	Verbose     bool
 	Quiet       bool
+
+	// Postman upload settings (only honored when DocType == "postman").
+	// PostmanAPIKey is resolved at runtime from --postman-api-key, env, or the
+	// credentials file; do not persist it to .apidoc-gen.yaml (it is a secret).
+	PostmanAPIKey       string
+	PostmanWorkspaceUID string
+	PostmanUpload       bool // --upload: force upload, error if no API key available
+	PostmanNoUpload     bool // --no-upload: skip the upload step entirely
 }
 
 // ServerConfig represent a server cpnfiguration

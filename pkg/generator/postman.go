@@ -272,12 +272,22 @@ func (g *PostmanGenerator) createPostmanURL(endpoint models.Endpoint, spec *mode
 		}
 	}
 
-	// Add path variables
+	// Add path variables. param.Example is interface{} and may be nil
+	// (the analyzer does not currently set it for path params), so we must
+	// guard the type assertion to avoid a panic.
 	for _, param := range endpoint.Parameters {
 		if param.In == "path" {
+			value := ""
+			if param.Example != nil {
+				if s, ok := param.Example.(string); ok {
+					value = s
+				} else {
+					value = fmt.Sprint(param.Example)
+				}
+			}
 			url.Variable = append(url.Variable, PostmanVariable{
 				Key:   param.Name,
-				Value: param.Example.(string),
+				Value: value,
 				Type:  "string",
 			})
 		}

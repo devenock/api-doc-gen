@@ -65,6 +65,9 @@ The tool works by **statically parsing Go source** with `go/ast` + `go/parser` �
 │   │   ├── swagger.go         # OpenAPI 3.0.3 YAML/JSON + Swagger UI HTML
 │   │   ├── postman.go         # Postman Collection v2.1
 │   │   └── custom.go          # Docusaurus site (uses `npx create-docusaurus@latest` or fallback)
+│   ├── postman/
+│   │   ├── client.go          # HTTP client for api.getpostman.com (Me, CreateCollection, UpdateCollection)
+│   │   └── auth.go            # Credentials file (~/.config/apidoc-gen/credentials.json, 0600) + .apidoc-gen-cache.json UID cache
 │   ├── models/
 │   │   └── models.go          # APISpec, Endpoint, Schema, Parameter, Response, etc.
 │   └── config/
@@ -181,6 +184,10 @@ Defined in `cmd/root.go`. The Cobra root has `Use: "apidoc-gen"` (note: not the 
 | `--show-config` | `false` | `show-config` |
 | `--serve` | `false` | `serve` (only honored when `type == "swagger"`; serves `output` dir on `:8765`) |
 | `--write-annotations` | `false` | `write-annotations` (writes swag `// @...` comment blocks above handler funcs in **same-file** handlers; cross-package handlers resolved via `resolveHandlerSourceFiles`) |
+| `--upload` | `false` | `upload` (postman only; force upload, error if no key) |
+| `--no-upload` | `false` | `no-upload` (postman only; suppress upload entirely) |
+| `--postman-api-key` | `""` | `postman-api-key` (postman only; takes precedence over env / credentials file) |
+| `--postman-workspace` | `""` | `postman-workspace` (postman only; UID; default = user's default workspace) |
 
 ### Configuration precedence
 
@@ -190,6 +197,7 @@ Lowest → highest: **config file → env → flags** (per `docs/CONFIGURATION.m
 - Env prefix: `APIDOC_` (e.g. `APIDOC_TYPE=swagger`, `APIDOC_OUTPUT=./api-docs`). `viper.AutomaticEnv()` is on.
 - Flags: as listed above.
 - A `servers:` list in the config file is loaded via `viper.UnmarshalKey("servers", &cfg.Servers)`.
+- **Secrets are *not* read from the config file.** The Postman API key is resolved separately from `--postman-api-key` → `APIDOC_POSTMAN_API_KEY` → `POSTMAN_API_KEY` → `~/.config/apidoc-gen/credentials.json` → interactive prompt. Don't add a code path that reads it from `.apidoc-gen.yaml`; that violates `SECURITY.md`.
 
 ### Exit codes
 
@@ -220,8 +228,9 @@ Wrapped via the `exitCodeError` type so `runE` returns both an error and a code.
 7. Build analyzer → `analyzer.NewAnalyzer(cfg).Analyze()` → `*models.APISpec`.
 8. Build generator → `generator.NewGenerator(cfg.DocType, cfg).Generate(spec)`.
 9. Print `printDocsAccessURL` (file URL + tip).
-10. If `--write-annotations`, call `annotations.WriteSwagAnnotations(...)`.
-11. If `--serve` and `type == swagger`, call `runServeDocs(cfg.Output, ...)` (blocks on `http.ListenAndServe`).
+10. If `cfg.DocType == "postman"`, call `runPostmanUpload(cfg, interactive, quiet)` — see §6.8.
+11. If `--write-annotations`, call `annotations.WriteSwagAnnotations(...)`.
+12. If `--serve` and `type == swagger`, call `runServeDocs(cfg.Output, ...)` (blocks on `http.ListenAndServe`).
 
 ### 6.2 Analyzer (`pkg/analyzer/analyzer.go`)
 
@@ -305,7 +314,30 @@ Single file, all types live here:
 
 The prompt is skipped entirely when `--no-interactive`/`-y` is set or when `--type` is provided non-empty.
 
-### 6.7 Annotation writer (`internal/annotations/writer.go`)
+### 6.7 Postman upload (`pkg/postman/` + `cmd/root.go::runPostmanUpload`)
+
+Runs only when `cfg.DocType == "postman"`. Skipped entirely when `--no-upload` is set or when no `collection.json` was produced (defensive). Otherwise:
+
+1. Resolve API key in this order: `--postman-api-key` flag → `APIDOC_POSTMAN_API_KEY` → `POSTMAN_API_KEY` → `~/.config/apidoc-gen/credentials.json` (`postman.LoadAPIKey`).
+2. If still empty:
+   - **Interactive mode** → prompt with `prompt.PromptPostmanAPIKey` (masked input, validates length only). Save with `postman.SaveAPIKey` (file mode `0600`, parent dir `0700`).
+   - **`--no-interactive` + `--upload`** → return `&exitCodeError{..., ExitUsageError}` (exit 1).
+   - **`--no-interactive` without `--upload`** → print a `💡 Tip` and return `nil`. The local `collection.json` is still produced; this is the CI-friendly default.
+3. Read `<output>/collection.json` from disk.
+4. `postman.LoadCachedUID(projectPath, title)` → if non-empty, `client.UpdateCollection(uid, body)` (PUT). On failure (e.g. 404 because the collection was deleted upstream), fall back to `CreateCollection`. Otherwise `CreateCollection(body, workspaceUID)` (POST).
+5. `postman.SaveCachedUID(projectPath, title, uid)` writes the returned UID to `.apidoc-gen-cache.json`.
+6. Print `https://go.postman.co/collection/<uid>` so the user clicks once and is in Postman.
+
+Implementation notes:
+
+- `pkg/postman/client.go` is stdlib-only (`net/http`, `encoding/json`). Auth header is `X-Api-Key`, `User-Agent: apidoc-gen`. 30s timeout per request. Errors include the upstream HTTP body (truncated to 200/400 chars) for debuggability.
+- `UpdateCollection` calls `injectPostmanID` to set `info._postman_id = <uid>` before sending; without this the Postman API can reject the PUT.
+- `wrapCollection` re-marshals `{"collection": <body>}`. The body must be a valid Postman v2.1 collection (which is what `pkg/generator/postman.go` writes — it includes `info.schema = ".../v2.1.0/..."`).
+- The cache file `.apidoc-gen-cache.json` lives **in the project directory** (next to `.apidoc-gen.yaml`), not in the user's home. It contains no secrets — just `{"collections": {"<title>": "<uid>"}}`. It's `.gitignore`d.
+- The credentials file `~/.config/apidoc-gen/credentials.json` is the **only** place the API key is persisted. It contains exactly `{"api_key": "..."}`. To revoke locally, run `rm ~/.config/apidoc-gen/credentials.json`.
+- **Network calls**: this is currently the only feature in the codebase that contacts a third-party server with project-derived data. If you add another (telemetry, AI enrichment, etc.), update `SECURITY.md` and this file.
+
+### 6.8 Annotation writer (`internal/annotations/writer.go`)
 
 `WriteSwagAnnotations(endpoints, basePath)`:
 
@@ -407,7 +439,7 @@ These are **observations from the current scan**, not "TODOs from the maintainer
    - Legacy pre-built binary (now moved to `bin/api-doc-gen` and untracked): `api-doc-gen`
 2. **Three different declared Go versions**: `go.mod` `go 1.24.3`, `Dockerfile` `golang:1.22-alpine`, `README.md`/`CONTRIBUTING.md` "Go 1.22+".
 3. **Default exclude entry is `"git"` (no dot)** in `pkg/config/config.go`, but documentation says `.git`. Substring match means both work in practice, but the discrepancy is real.
-4. **`pkg/generator/postman.go`** does `param.Example.(string)` on path params; nothing sets `Example` in the analyzer. This panics on real input. Fix carefully (consider `fmt.Sprint(param.Example)` with a nil-guard).
+4. **`pkg/generator/postman.go`** previously panicked on `param.Example.(string)` for path params (nothing sets `Example` in the analyzer). Fixed: the type assertion is now nil-guarded (defaults to `""` if absent, otherwise `fmt.Sprint`). If you wire up real example values for path params, prefer setting them in the analyzer.
 5. **`schemaToMap`** in `pkg/generator/swagger.go` emits both `type: object` and `$ref` for ref schemas; strict tooling rejects this.
 6. **Echo/Fiber/Chi route parsing** all delegate to `parseGinRoutes`. Edge cases specific to those frameworks (e.g. Chi's `r.Route("/x", func(r chi.Router) { ... })` nested groups, Fiber's `app.Static`) are **not** specially handled.
 7. **Legacy pre-built binary**: a ~12 MB `api-doc-gen` (mach-o arm64) used to live at the repo root and was tracked in git. It has been moved to `./bin/api-doc-gen` and untracked via `git rm --cached`. It still exists on disk as a local artifact. The project rule going forward is that all build outputs live under `bin/` and stay out of git (see §4).
@@ -417,6 +449,8 @@ These are **observations from the current scan**, not "TODOs from the maintainer
 11. **`completion`** subcommand is contributed by Cobra automatically; it isn't declared in `cmd/root.go`. If you want to disable or customize it, do so explicitly via `rootCmd.CompletionOptions`.
 12. **`pkg/generator/custom.go`** uses `strings.Title(...)` (deprecated since Go 1.18). It still compiles; replace with `golang.org/x/text/cases` if you want vet-clean code.
 13. **Analyzer middleware-name detection** for auth uses the substring `auth` or `jwt` (case-insensitive) **plus** an explicit allow-list. Handlers wrapped via custom middleware names (e.g. `RequireRole("admin")`) won't be marked as protected.
+14. **Postman upload is the only network call** the CLI makes with project-derived data. It is opt-in (no key → no call), but if you change defaults so it runs without a key (e.g. add a "demo" mode), you also have to update `SECURITY.md`. The Swagger UI HTML references `cdn.jsdelivr.net` at *view time*, not at generation time.
+15. **`SilenceUsage: true` and `SilenceErrors: true`** are set on every Cobra command. We print errors ourselves in `Execute()`; without these flags Cobra would print the error twice and follow it with the entire help/usage screen. Don't remove them without replacing that behavior.
 
 ---
 
