@@ -256,6 +256,17 @@
       </section>
 
       <section>
+        <details open>
+          <summary>Postman</summary>
+          <ul>
+            <li><a href="#postman-desktop">Desktop installed</a></li>
+            <li><a href="#postman-no-desktop">Not installed</a></li>
+            <li><a href="#postman-ci">CI / no-interactive</a></li>
+          </ul>
+        </details>
+      </section>
+
+      <section>
         <details>
           <summary>Deployment</summary>
           <ul>
@@ -301,7 +312,7 @@ apidoc-gen generate
 apidoc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
         <button class="copy-btn">Copy</button>
       </div>
-      <p>Then open <code>docs/index.html</code> (Swagger) or import <code>docs/collection.json</code> (Postman).</p>
+      <p>Then open <code>docs/index.html</code> (Swagger), or for Postman see the <a href="#postman-desktop">Postman section</a> below.</p>
 
       <h2 id="backend">Using in your backend codebase</h2>
       <p>Run apidoc-gen from your Go API project (or pass that path). It reads your repo and writes docs into the folder you choose.</p>
@@ -341,7 +352,16 @@ apidoc-gen generate -y --type swagger -o ./docs
         <li><code>-v, --verbose</code> – More detail</li>
         <li><code>--dry-run</code> – Show what would be generated, no files written</li>
         <li><code>--show-config</code> – Print effective config and exit</li>
-        <li><code>--title</code>, <code>--version</code>, <code>--base-path</code>, <code>--exclude</code></li>
+        <li><code>--serve</code> – After generating (swagger only), serve docs locally at <code>http://localhost:8765</code></li>
+        <li><code>--write-annotations</code> – Write swag-style <code>// @Summary</code> comment blocks above handler functions</li>
+        <li><code>--title</code>, <code>--version</code>, <code>--base-path</code>, <code>--description</code>, <code>--exclude</code></li>
+      </ul>
+      <p>Postman-specific flags (only used when <code>--type=postman</code>):</p>
+      <ul>
+        <li><code>--upload</code> – Force upload to Postman; error out if no API key is available (good for CI)</li>
+        <li><code>--no-upload</code> – Skip upload entirely, keep only the local <code>collection.json</code></li>
+        <li><code>--postman-api-key</code> – API key for upload (overrides env and credentials file)</li>
+        <li><code>--postman-workspace</code> – Workspace UID to upload into (default: your default workspace)</li>
       </ul>
 
       <h2 id="config">Configuration</h2>
@@ -354,6 +374,38 @@ framework: ""   # auto-detect</code></pre>
         <button class="copy-btn">Copy</button>
       </div>
       <p>Full reference: <a href="../docs/CONFIGURATION.md" target="_blank" rel="noopener">docs/CONFIGURATION.md</a></p>
+
+      <h2 id="postman-desktop">Postman – desktop installed</h2>
+      <p>When <code>--type=postman</code> is chosen, the CLI checks whether the Postman desktop app is installed and adapts automatically.</p>
+      <p><strong>API key already saved (returning user)</strong> — the CLI uploads the collection to your Postman workspace and immediately opens Postman to that collection. No prompts.</p>
+      <p><strong>First run (interactive)</strong> — the CLI asks for your Postman API key (input is masked). Generate one at <a href="https://postman.co/settings/me/api-keys" target="_blank" rel="noopener">postman.co/settings/me/api-keys</a>. The key is saved to <code>~/.config/apidoc-gen/credentials.json</code> (mode 0600). Subsequent runs reuse it and open Postman automatically.</p>
+      <div class="copy-wrap">
+        <pre><code># Interactive — detects Postman, prompts for key on first run, opens Postman after upload
+api-doc-gen generate --type postman -o ./docs</code></pre>
+        <button class="copy-btn">Copy</button>
+      </div>
+
+      <h2 id="postman-no-desktop">Postman – not installed</h2>
+      <p>If Postman is not installed the collection is written to <code>collection.json</code> locally and the CLI prints import instructions:</p>
+      <div class="copy-wrap">
+        <pre><code>📦 Postman is not installed. Collection saved to: ./docs/collection.json
+   Import the file into Postman:
+   • Desktop: https://www.postman.com/downloads/
+   • Web:     https://web.postman.co → Import → Upload File</code></pre>
+        <button class="copy-btn">Copy</button>
+      </div>
+
+      <h2 id="postman-ci">Postman – CI / non-interactive</h2>
+      <p>Set <code>APIDOC_POSTMAN_API_KEY</code> (or <code>POSTMAN_API_KEY</code>) in your environment. Without a key the upload is silently skipped and the local file is kept. Use <code>--upload</code> to make a missing key a hard error. The desktop app is <strong>never</strong> opened in <code>--no-interactive</code> mode.</p>
+      <div class="copy-wrap">
+        <pre><code># CI: upload and fail loudly if key is missing
+api-doc-gen generate -y --type postman --upload -o ./docs
+
+# CI: generate local file only, no upload
+api-doc-gen generate -y --type postman --no-upload -o ./docs</code></pre>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <p>Repeat runs update the same collection (UID cached in <code>.apidoc-gen-cache.json</code>) so you don't accumulate duplicates.</p>
 
       <h2 id="docker">Docker</h2>
       <p>Mount your project as the workspace and run generate:</p>
@@ -372,8 +424,15 @@ docker run --rm -v "$(pwd)":/workspace -w /workspace apidoc-gen generate --no-in
       </div>
 
       <h2 id="help">Help &amp; troubleshooting</h2>
-      <p>In terminal: <code>apidoc-gen --help</code>, <code>apidoc-gen generate --help</code>.</p>
-      <p>No endpoints found? Set <code>--framework</code> or use <code>-v</code>. Config not read? Use <code>--show-config</code> to debug.</p>
+      <p>In terminal: <code>api-doc-gen --help</code>, <code>api-doc-gen generate --help</code>.</p>
+      <ul>
+        <li><strong>No endpoints found</strong> – Set <code>--framework</code> explicitly or use <code>-v</code> to see what was detected.</li>
+        <li><strong>Swagger UI shows "No operations defined in spec!"</strong> – Re-run to regenerate <code>openapi.json</code>; this was a known bug now fixed.</li>
+        <li><strong>Config not read</strong> – Ensure <code>.apidoc-gen.yaml</code> is in your project root or pass <code>--config</code>. Run <code>--show-config</code> to inspect the effective config.</li>
+        <li><strong>Prompts in CI</strong> – Use <code>-y</code> (or <code>--no-interactive</code>) and set <code>--type</code> so the run is fully scripted.</li>
+        <li><strong>npx not found</strong> (Docusaurus output) – Install Node.js/npm and ensure <code>npx</code> is on your PATH.</li>
+        <li><strong>Postman doesn't open automatically</strong> – The CLI uses the <code>postman://</code> URL scheme. If it doesn't launch, open Postman manually — the collection is already in your workspace. On Linux ensure <code>xdg-open</code> is available or <code>postman</code> is on your PATH.</li>
+      </ul>
       <p>Full guide: <a href="../docs/TROUBLESHOOTING.md" target="_blank" rel="noopener">docs/TROUBLESHOOTING.md</a></p>
     </main>
   </div>
