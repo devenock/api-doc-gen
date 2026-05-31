@@ -152,12 +152,29 @@ Gin, Echo, Fiber, Gorilla Mux, Chi (auto-detected from `go.mod`), plus generic r
 
 ### Postman auto-upload
 
-When `--type=postman` and a Postman API key is available, `generate` uploads the collection to Postman after writing it locally and prints a clickable URL so you can view it in the Postman web app without an extra import step.
+When `--type=postman`, the CLI checks whether the Postman desktop app is installed and adapts its behaviour accordingly.
 
-- **First run (interactive):** the CLI prompts for your API key (input is masked). Generate one at <https://postman.co/settings/me/api-keys>. The key is saved to `~/.config/apidoc-gen/credentials.json` (mode `0600`); subsequent runs reuse it without prompting.
-- **CI / `--no-interactive`:** export `APIDOC_POSTMAN_API_KEY=...` (or `POSTMAN_API_KEY`). Without a key, the upload is silently skipped. Pass `--upload` if you want missing-key to fail loudly.
+#### Postman desktop is installed
+
+- **API key already saved (returning user):** the CLI uploads the collection and immediately opens Postman to the collection — no prompts needed.
+- **First run (interactive):** the CLI prompts for your API key (input is masked). Generate one at <https://postman.co/settings/me/api-keys>. The key is saved to `~/.config/apidoc-gen/credentials.json` (mode `0600`); subsequent runs reuse it and open Postman automatically.
+
+#### Postman desktop is not installed
+
+The collection is written to `collection.json` locally and the CLI prints import instructions:
+
+```
+📦 Postman is not installed. Collection saved to: ./docs/collection.json
+   Import the file into Postman:
+   • Desktop: https://www.postman.com/downloads/
+   • Web:     https://web.postman.co → Import → Upload File
+```
+
+#### Other notes
+
+- **CI / `--no-interactive`:** export `APIDOC_POSTMAN_API_KEY=...` (or `POSTMAN_API_KEY`). Without a key the upload is silently skipped and the local file is kept. Pass `--upload` if you want a missing key to fail loudly. The desktop app is never opened in non-interactive mode.
 - **Repeat runs:** the collection's UID is cached in `.apidoc-gen-cache.json` (gitignored) and used to **update** the same collection on subsequent runs, so you do not accumulate duplicates in your workspace.
-- **To opt out:** pass `--no-upload`. To revoke: delete `~/.config/apidoc-gen/credentials.json` and rotate the key in Postman.
+- **To opt out of upload:** pass `--no-upload`. To revoke credentials: delete `~/.config/apidoc-gen/credentials.json` and rotate the key in Postman.
 
 See **[SECURITY.md](SECURITY.md#postman-credentials)** for the full data-handling details.
 
@@ -173,6 +190,7 @@ See **[SECURITY.md](SECURITY.md#postman-credentials)** for the full data-handlin
 ├── cmd/root.go
 ├── pkg/analyzer/   # Code analysis
 ├── pkg/generator/  # Swagger, Postman, Docusaurus
+├── pkg/postman/    # Postman API client, credentials, desktop detection
 ├── pkg/models/     # Data models
 ├── pkg/config/     # Configuration
 ├── internal/prompt/
@@ -198,6 +216,7 @@ make install # install locally
 - **Config not read** – Ensure `.apidoc-gen.yaml` is in cwd or use `--config`. Run `--show-config` to inspect.
 - **Prompts in CI** – Use `-y` and `--type` (and other flags) so the run is non-interactive.
 - **npx not found** (Docusaurus) – Install Node.js/npm and ensure `npx` is on PATH.
+- **Postman doesn't open automatically** – The CLI opens Postman via the `postman://` URL scheme. If it doesn't launch, open Postman manually and the collection will already be in your workspace (it was uploaded). On Linux, ensure `xdg-open` is available or that `postman` is on your PATH.
 
 ## Security and privacy
 

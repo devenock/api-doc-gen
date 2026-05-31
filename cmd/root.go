@@ -374,8 +374,16 @@ func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
 		} else {
 			if !quiet {
 				fmt.Println()
-				fmt.Println("💡 Tip: log in to Postman to auto-upload this collection next time:")
-				fmt.Printf("   set %s=<your-key> or run interactively (we'll prompt).\n", postman.EnvAPIDocPostmanKey)
+				if postman.IsDesktopInstalled() {
+					fmt.Printf("📦 Collection saved: %s\n", collectionPath)
+					fmt.Println("   Postman is installed — run interactively to upload and open it automatically.")
+					fmt.Printf("   💡 Or set %s=<your-key> to upload without prompts.\n", postman.EnvAPIDocPostmanKey)
+				} else {
+					fmt.Printf("📦 Postman is not installed. Collection saved to: %s\n", collectionPath)
+					fmt.Println("   Import the file into Postman:")
+					fmt.Println("   • Desktop: https://www.postman.com/downloads/")
+					fmt.Println("   • Web:     https://web.postman.co → Import → Upload File")
+				}
 			}
 			return nil
 		}
@@ -428,6 +436,17 @@ func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
 		fmt.Printf("   • %s\n", postman.WebURL(resp.Collection.UID))
 		fmt.Printf("   • Collection: %s (uid=%s)\n", resp.Collection.Name, resp.Collection.UID)
 	}
+
+	// Open Postman desktop when available (interactive only — skip in CI).
+	if interactive && postman.IsDesktopInstalled() {
+		if !quiet {
+			fmt.Println("   🚀 Opening Postman...")
+		}
+		if err := postman.OpenDesktop(resp.Collection.UID); err != nil && !quiet {
+			fmt.Fprintf(os.Stderr, "   ↳ could not open Postman: %v\n", err)
+		}
+	}
+
 	return nil
 }
 
