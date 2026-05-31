@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/devenock/api-doc-gen/pkg/config"
 	"github.com/devenock/api-doc-gen/pkg/models"
@@ -92,7 +93,7 @@ func (g *SwaggerGenerator) convertToOpenAPI(spec *models.APISpec) map[string]int
 		}
 
 		pathItem := paths[path].(map[string]interface{})
-		pathItem[endpoint.Method] = g.convertEndpoint(endpoint)
+		pathItem[strings.ToLower(endpoint.Method)] = g.convertEndpoint(endpoint)
 	}
 
 	// Components: schemas and security schemes
@@ -127,6 +128,10 @@ func (g *SwaggerGenerator) convertToOpenAPI(spec *models.APISpec) map[string]int
 
 // schemaToMap converts Schema to a plain map so YAML/JSON encoding never sees struct tags.
 func schemaToMap(s models.Schema) map[string]interface{} {
+	// $ref must be the only property — no siblings allowed in OpenAPI 3.0.
+	if s.Ref != "" {
+		return map[string]interface{}{"$ref": s.Ref}
+	}
 	typ := s.Type
 	if typ == "" {
 		typ = "object"
@@ -159,9 +164,6 @@ func schemaToMap(s models.Schema) map[string]interface{} {
 	}
 	if s.AdditionalProperties != nil {
 		out["additionalProperties"] = s.AdditionalProperties
-	}
-	if s.Ref != "" {
-		out["$ref"] = s.Ref
 	}
 	return out
 }
