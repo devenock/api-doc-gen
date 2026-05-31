@@ -119,6 +119,11 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 	// Resolve SourceFile for handlers in other packages (e.g. controllers.CreateUser -> controllers/user_controller.go)
 	a.resolveHandlerSourceFiles()
 
+	// Final pass: fill request body schemas for any endpoint still missing them.
+	// Covers same-package different-file handlers (bare idents like r.POST("/x", Create)
+	// where Create lives in a sibling file) and any other case the per-file scan missed.
+	a.resolveRemainingRequestBodies()
+
 	// Deduplicate by (method, path), keeping first occurrence
 	a.endpoints = a.deduplicateEndpoints(a.endpoints)
 
@@ -719,6 +724,84 @@ func (a *Analyzer) resolveHandlerSourceFiles() {
 			}
 		}
 	}
+}
+
+// resolveRemainingRequestBodies is a final pass that fills request body schemas
+// for endpoints that still have none after the per-file and cross-package passes.
+// It handles the common case of same-package, different-file handlers: routes like
+// r.POST("/products", Create) where Create is in a sibling file of the same package.
+func (a *Analyzer) resolveRemainingRequestBodies() {
+	for i := range a.endpoints {
+		ep := &a.endpoints[i]
+		if ep.RequestBody != nil || ep.HandlerName == "" {
+			continue
+		}
+		if ep.Method != "POST" && ep.Method != "PUT" && ep.Method != "PATCH" {
+			continue
+		}
+
+		// 1. Try the already-known source file first (cheapest).
+		if ep.SourceFile != "" {
+			if a.extractBodyFromFile(ep, ep.SourceFile) {
+				continue
+			}
+		}
+
+		// 2. Walk the project looking for a file that defines the handler.
+		//    Use a fast string pre-filter to avoid parsing every .go file.
+		_ = filepath.Walk(a.config.ProjectPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil || ep.RequestBody != nil {
+				return nil
+			}
+			if info.IsDir() {
+				for _, ex := range a.config.Exclude {
+					if strings.Contains(path, ex) {
+						return filepath.SkipDir
+					}
+				}
+				return nil
+			}
+			if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") || path == ep.SourceFile {
+				return nil
+			}
+			raw, readErr := os.ReadFile(path)
+			if readErr != nil || !strings.Contains(string(raw), "func "+ep.HandlerName) {
+				return nil
+			}
+			if a.extractBodyFromFile(ep, path) {
+				return errStopWalk
+			}
+			return nil
+		})
+	}
+}
+
+// extractBodyFromFile parses filePath, finds ep.HandlerName, scans its body for
+// binding calls, and populates ep.RequestBody when a known type is resolved.
+// Returns true if a schema was successfully attached.
+func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) bool {
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, filePath, nil, 0)
+	if err != nil {
+		return false
+	}
+	typName := findBindingTypeName(node, ep.HandlerName)
+	if typName == "" {
+		return false
+	}
+	schema, ok := a.typeRegistry[typName]
+	if !ok {
+		return false
+	}
+	ep.RequestTypeName = typName
+	a.addSchemaAndRefsToModels(typName, schema)
+	ep.RequestBody = &models.RequestBody{
+		Required: true,
+		Content: map[string]models.Content{
+			"application/json": {Schema: schema},
+		},
+	}
+	return true
 }
 
 // findFileWithFunction returns the path of a .go file that declares package matching pkgName (or in dir pkgName) and defines func funcName.

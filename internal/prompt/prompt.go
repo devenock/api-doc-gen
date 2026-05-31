@@ -138,6 +138,18 @@ func GetUserPreferences(cfg *config.Config) error {
 		cfg.Output = output
 	}
 
+	// For swagger output, offer to write swag annotations directly to handler files.
+	if cfg.DocType == "swagger" {
+		annotationsPrompt := promptui.Select{
+			Label: "Write swag annotations to handler files? (adds // @Summary etc. above each handler)",
+			Items: []string{"Yes — write annotations", "No — docs only"},
+		}
+		_, annotationsChoice, err := annotationsPrompt.Run()
+		if err == nil {
+			cfg.WriteAnnotations = annotationsChoice == "Yes — write annotations"
+		}
+	}
+
 	fmt.Println("\nConfiguration complete!")
 
 	return nil

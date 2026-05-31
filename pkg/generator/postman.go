@@ -213,8 +213,11 @@ func (g *PostmanGenerator) convertEndpointToItem(endpoint models.Endpoint, spec 
 		}
 	}
 
-	// Add request body if present
-	if endpoint.RequestBody != nil {
+	// Add request body. For POST/PUT/PATCH always include a body editor —
+	// use the inferred schema when available, otherwise an empty object so
+	// Postman still shows the body field for the user to fill in.
+	bodyMethods := map[string]bool{"POST": true, "PUT": true, "PATCH": true}
+	if endpoint.RequestBody != nil || bodyMethods[endpoint.Method] {
 		body := &PostmanBody{
 			Mode: "raw",
 			Options: map[string]interface{}{
@@ -224,11 +227,14 @@ func (g *PostmanGenerator) convertEndpointToItem(endpoint models.Endpoint, spec 
 			},
 		}
 
-		// Generate example body
-		if jsonContent, ok := endpoint.RequestBody.Content["application/json"]; ok {
-			exampleBody := g.generateExampleFromSchema(jsonContent.Schema)
-			bodyBytes, _ := json.MarshalIndent(exampleBody, "", "  ")
-			body.Raw = string(bodyBytes)
+		if endpoint.RequestBody != nil {
+			if jsonContent, ok := endpoint.RequestBody.Content["application/json"]; ok {
+				exampleBody := g.generateExampleFromSchema(jsonContent.Schema, spec.Models)
+				bodyBytes, _ := json.MarshalIndent(exampleBody, "", "  ")
+				body.Raw = string(bodyBytes)
+			}
+		} else {
+			body.Raw = "{}"
 		}
 
 		request.Body = body
@@ -296,8 +302,18 @@ func (g *PostmanGenerator) createPostmanURL(endpoint models.Endpoint, spec *mode
 	return url
 }
 
-// generateExampleFromSchema generates an example object from a schema
-func (g *PostmanGenerator) generateExampleFromSchema(schema models.Schema) interface{} {
+// generateExampleFromSchema generates an example object from a schema.
+// componentSchemas is the OpenAPI components/schemas map used to resolve $ref.
+func (g *PostmanGenerator) generateExampleFromSchema(schema models.Schema, componentSchemas map[string]models.Schema) interface{} {
+	// Resolve $ref before doing anything else.
+	if schema.Ref != "" {
+		refName := strings.TrimPrefix(schema.Ref, "#/components/schemas/")
+		if resolved, ok := componentSchemas[refName]; ok {
+			return g.generateExampleFromSchema(resolved, componentSchemas)
+		}
+		return map[string]interface{}{}
+	}
+
 	if schema.Example != nil {
 		return schema.Example
 	}
@@ -306,12 +322,12 @@ func (g *PostmanGenerator) generateExampleFromSchema(schema models.Schema) inter
 	case "object":
 		obj := make(map[string]interface{})
 		for name, prop := range schema.Properties {
-			obj[name] = g.generateExampleFromSchema(prop)
+			obj[name] = g.generateExampleFromSchema(prop, componentSchemas)
 		}
 		return obj
 	case "array":
 		if schema.Items != nil {
-			return []interface{}{g.generateExampleFromSchema(*schema.Items)}
+			return []interface{}{g.generateExampleFromSchema(*schema.Items, componentSchemas)}
 		}
 		return []interface{}{}
 	case "string":

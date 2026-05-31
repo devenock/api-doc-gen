@@ -175,6 +175,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		PostmanWorkspaceUID: viper.GetString("postman-workspace"),
 		PostmanUpload:       viper.GetBool("upload"),
 		PostmanNoUpload:     viper.GetBool("no-upload"),
+		WriteAnnotations:    viper.GetBool("write-annotations"),
 	}
 	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
 	_ = viper.UnmarshalKey("servers", &cfg.Servers)
@@ -260,8 +261,9 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// --write-annotations: write swag comments above handler functions
-	if viper.GetBool("write-annotations") {
+	// --write-annotations: write swag comments above handler functions.
+	// Enabled by the flag, the config file, or the interactive prompt answer.
+	if viper.GetBool("write-annotations") || cfg.WriteAnnotations {
 		n, err := annotations.WriteSwagAnnotations(apiSpec.Endpoints, cfg.BasePath)
 		if err != nil && !quiet {
 			fmt.Fprintf(os.Stderr, "Warning: write-annotations: %v\n", err)

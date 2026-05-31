@@ -20,6 +20,9 @@ type Config struct {
 	Verbose     bool
 	Quiet       bool
 
+	// WriteAnnotations writes swag-style comment blocks above handler functions.
+	WriteAnnotations bool
+
 	// Postman upload settings (only honored when DocType == "postman").
 	// PostmanAPIKey is resolved at runtime from --postman-api-key, env, or the
 	// credentials file; do not persist it to .apidoc-gen.yaml (it is a secret).
