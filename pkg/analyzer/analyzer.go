@@ -724,10 +724,11 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 		Responses:   make(map[int]models.Response),
 	}
 
-	// Extract handler: may be bare ident (CreateUser) or package-qualified (controllers.CreateUser, handlers.CreateUser)
+	// Extract handler: always use the last argument so middleware chains like
+	// r.GET("/path", authMiddleware, handler) resolve to the real handler.
 	var handlerName, handlerPkg string
 	if len(callExpr.Args) >= 2 {
-		switch arg := callExpr.Args[1].(type) {
+		switch arg := callExpr.Args[len(callExpr.Args)-1].(type) {
 		case *ast.Ident:
 			handlerName = arg.Name
 			handlerPkg = ""
@@ -932,9 +933,11 @@ func (a *Analyzer) parseChiRoutes(n ast.Node, file *ast.File) {
 	a.parseGinRoutes(n, file)
 }
 
-// parseGenericRoutes attempts to extract routes from unknown frameworks
+// parseGenericRoutes attempts to extract routes from unknown frameworks.
+// It handles two patterns:
+//  1. router.GET("/path", handler) — method-named selectors (framework-agnostic)
+//  2. http.HandleFunc("/path", handler) / mux.HandleFunc / mux.Handle — stdlib net/http
 func (a *Analyzer) parseGenericRoutes(n ast.Node, file *ast.File) {
-	// Try to detect HTTP method patterns
 	callExpr, ok := n.(*ast.CallExpr)
 	if !ok {
 		return
@@ -951,29 +954,65 @@ func (a *Analyzer) parseGenericRoutes(n ast.Node, file *ast.File) {
 		"PATCH": true, "HEAD": true, "OPTIONS": true,
 	}
 
+	// Pattern 1: router.GET("/path", handler)
 	if validMethods[method] && len(callExpr.Args) >= 1 {
 		if pathLit, ok := callExpr.Args[0].(*ast.BasicLit); ok && pathLit.Kind == token.STRING {
 			path := strings.Trim(pathLit.Value, `"`)
-			endpoint := models.Endpoint{
-				Path:        path,
-				Method:      method,
-				Summary:     fmt.Sprintf("%s %s", method, path),
-				Parameters:  extractPathParams(path),
-				Responses:   make(map[int]models.Response),
-			}
+			ep := a.newGenericEndpoint(path, method)
+			a.extractHandlerComments(file, lastHandlerName(callExpr.Args), ep)
+			a.endpoints = append(a.endpoints, *ep)
+		}
+		return
+	}
 
-			endpoint.Responses[200] = models.Response{
-				Description: "Successful response",
-				Content: map[string]models.Content{
-					"application/json": {
-						Schema: models.Schema{Type: "object"},
-					},
-				},
-			}
-
-			a.endpoints = append(a.endpoints, endpoint)
+	// Pattern 2: http.HandleFunc("/path", handler) or mux.Handle("/path", handler)
+	// Method is unknown for stdlib registrations; default to GET so the path is visible.
+	if (selExpr.Sel.Name == "HandleFunc" || selExpr.Sel.Name == "Handle") && len(callExpr.Args) >= 2 {
+		if pathLit, ok := callExpr.Args[0].(*ast.BasicLit); ok && pathLit.Kind == token.STRING {
+			path := strings.Trim(pathLit.Value, `"`)
+			ep := a.newGenericEndpoint(path, "GET")
+			a.extractHandlerComments(file, lastHandlerName(callExpr.Args), ep)
+			a.endpoints = append(a.endpoints, *ep)
 		}
 	}
+}
+
+// lastHandlerName returns the function name from the last argument in a route
+// call's arg list. This handles middleware chains like r.GET("/p", mid, handler)
+// where the real handler is always the final argument.
+func lastHandlerName(args []ast.Expr) string {
+	for i := len(args) - 1; i >= 0; i-- {
+		switch arg := args[i].(type) {
+		case *ast.Ident:
+			return arg.Name
+		case *ast.SelectorExpr:
+			return arg.Sel.Name
+		}
+	}
+	return ""
+}
+
+// newGenericEndpoint builds a minimal Endpoint with a default 200 response.
+func (a *Analyzer) newGenericEndpoint(path, method string) *models.Endpoint {
+	var tags []string
+	if t := tagFromPath(path); t != "" {
+		tags = []string{t}
+	}
+	ep := &models.Endpoint{
+		Path:       path,
+		Method:     method,
+		Summary:    fmt.Sprintf("%s %s", method, path),
+		Tags:       tags,
+		Parameters: extractPathParams(path),
+		Responses:  make(map[int]models.Response),
+	}
+	ep.Responses[200] = models.Response{
+		Description: "Successful response",
+		Content: map[string]models.Content{
+			"application/json": {Schema: models.Schema{Type: "object"}},
+		},
+	}
+	return ep
 }
 
 // extractHandlerComments extracts comments from handler functions
