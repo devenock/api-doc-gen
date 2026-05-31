@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/devenock/api-doc-gen/pkg/config"
+	"github.com/devenock/api-doc-gen/pkg/postman"
 	"github.com/manifoldco/promptui"
 )
 
@@ -34,6 +35,43 @@ func PromptPostmanAPIKey() (string, error) {
 	return strings.TrimSpace(key), nil
 }
 
+// setupPostmanInWizard handles Postman desktop detection and API key collection
+// as part of the interactive wizard. The user knows what will happen before
+// generation starts: auto-upload + open, or local file only.
+func setupPostmanInWizard() {
+	fmt.Println()
+	if postman.IsDesktopInstalled() {
+		key, source := postman.LoadAPIKey()
+		if key != "" {
+			fmt.Printf("   ✅ Postman desktop detected — already logged in (%s)\n", source)
+			fmt.Println("   Your collection will be uploaded and Postman will open automatically.")
+			return
+		}
+		// Desktop found but no key yet — prompt now so the user doesn't get
+		// interrupted again after generation finishes.
+		fmt.Println("   📮 Postman desktop detected. Enter your API key to enable auto-upload.")
+		apiKey, err := PromptPostmanAPIKey()
+		if err != nil {
+			// User cancelled or hit Ctrl-C — continue without a key.
+			fmt.Println("   ↳ No key entered. collection.json will be generated for manual import.")
+			return
+		}
+		path, err := postman.SaveAPIKey(apiKey)
+		if err != nil {
+			fmt.Printf("   ↳ Could not save API key (%v). You will be prompted again after generation.\n", err)
+			return
+		}
+		fmt.Printf("   🔐 API key saved to %s\n", path)
+		fmt.Println("   Your collection will be uploaded and Postman will open automatically.")
+	} else {
+		fmt.Println("   📦 Postman desktop not installed.")
+		fmt.Println("   A collection.json will be generated — import it when ready:")
+		fmt.Println("      • Desktop: https://www.postman.com/downloads/")
+		fmt.Println("      • Web:     https://web.postman.co → Import → Upload File")
+	}
+	fmt.Println()
+}
+
 // GetUserPreferences prompts the user for their preferences
 func GetUserPreferences(cfg *config.Config) error {
 	fmt.Println("\nWelcome to API Documentation Generator!")
@@ -55,6 +93,7 @@ func GetUserPreferences(cfg *config.Config) error {
 			cfg.DocType = "swagger"
 		case "Postman Collection":
 			cfg.DocType = "postman"
+			setupPostmanInWizard()
 		case "Custom Docusaurus Site":
 			cfg.DocType = "custom"
 		}
