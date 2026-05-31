@@ -579,6 +579,110 @@ func (a *Analyzer) buildGinAuthGroups(file *ast.File) map[string]bool {
 	return authGroups
 }
 
+// findBindingTypeName scans a handler function body for common JSON-binding
+// calls and returns the unqualified type name bound from the request body, or "".
+//
+// Recognized patterns (Gin / Echo / Fiber / stdlib):
+//
+//	c.ShouldBindJSON(&req) / c.BindJSON(&req) / c.ShouldBind(&req) / c.Bind(&req)
+//	c.BodyParser(&req) / c.BodyParser(req)
+//	json.NewDecoder(r.Body).Decode(&req) / json.Unmarshal(body, &req)
+func findBindingTypeName(file *ast.File, funcName string) string {
+	bindMethods := map[string]bool{
+		"ShouldBindJSON": true, "BindJSON": true,
+		"ShouldBind": true, "Bind": true, "BodyParser": true,
+		"Decode": true, "Unmarshal": true,
+	}
+
+	var body *ast.BlockStmt
+	for _, decl := range file.Decls {
+		fd, ok := decl.(*ast.FuncDecl)
+		if ok && fd.Name.Name == funcName && fd.Body != nil {
+			body = fd.Body
+			break
+		}
+	}
+	if body == nil {
+		return ""
+	}
+
+	// variable name → declared type name within this function
+	varTypes := make(map[string]string)
+	var result string
+
+	ast.Inspect(body, func(n ast.Node) bool {
+		if result != "" {
+			return false
+		}
+		switch s := n.(type) {
+		// var req LoginRequest
+		case *ast.GenDecl:
+			if s.Tok == token.VAR {
+				for _, spec := range s.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok || vs.Type == nil {
+						continue
+					}
+					name := typeExprToName(vs.Type)
+					for _, id := range vs.Names {
+						varTypes[id.Name] = name
+					}
+				}
+			}
+		// req := LoginRequest{} / req := &LoginRequest{} / req := new(LoginRequest)
+		case *ast.AssignStmt:
+			for i, rhs := range s.Rhs {
+				if i >= len(s.Lhs) {
+					break
+				}
+				lhs, ok := s.Lhs[i].(*ast.Ident)
+				if !ok {
+					continue
+				}
+				switch expr := rhs.(type) {
+				case *ast.CompositeLit:
+					if expr.Type != nil {
+						varTypes[lhs.Name] = typeExprToName(expr.Type)
+					}
+				case *ast.UnaryExpr:
+					if expr.Op == token.AND {
+						if cl, ok := expr.X.(*ast.CompositeLit); ok && cl.Type != nil {
+							varTypes[lhs.Name] = typeExprToName(cl.Type)
+						}
+					}
+				case *ast.CallExpr:
+					if id, ok := expr.Fun.(*ast.Ident); ok && id.Name == "new" && len(expr.Args) == 1 {
+						varTypes[lhs.Name] = typeExprToName(expr.Args[0])
+					}
+				}
+			}
+		// c.ShouldBindJSON(&req) / c.Bind(req) / json.Decode(&req) …
+		case *ast.CallExpr:
+			sel, ok := s.Fun.(*ast.SelectorExpr)
+			if !ok || !bindMethods[sel.Sel.Name] || len(s.Args) == 0 {
+				break
+			}
+			last := s.Args[len(s.Args)-1]
+			var varName string
+			switch a := last.(type) {
+			case *ast.UnaryExpr:
+				if a.Op == token.AND {
+					if id, ok := a.X.(*ast.Ident); ok {
+						varName = id.Name
+					}
+				}
+			case *ast.Ident:
+				varName = a.Name
+			}
+			if varName != "" && varTypes[varName] != "" {
+				result = localTypeName(varTypes[varName])
+			}
+		}
+		return true
+	})
+	return result
+}
+
 // resolveHandlerSourceFiles sets SourceFile for endpoints that have HandlerPackage and HandlerName
 // by finding the .go file that defines that function (e.g. controllers.CreateUser -> controllers/user_controller.go).
 func (a *Analyzer) resolveHandlerSourceFiles() {
@@ -593,6 +697,26 @@ func (a *Analyzer) resolveHandlerSourceFiles() {
 		filePath := findFileWithFunction(a.config.ProjectPath, a.config.Exclude, ep.HandlerPackage, ep.HandlerName)
 		if filePath != "" {
 			ep.SourceFile = filePath
+			// For cross-package handlers the function signature is just func(c *gin.Context),
+			// so we can't get the body type from params. Scan the body for binding calls instead.
+			if ep.RequestBody == nil {
+				fset := token.NewFileSet()
+				node, err := parser.ParseFile(fset, filePath, nil, 0)
+				if err == nil {
+					if typName := findBindingTypeName(node, ep.HandlerName); typName != "" {
+						if schema, ok := a.typeRegistry[typName]; ok {
+							ep.RequestTypeName = typName
+							a.addSchemaAndRefsToModels(typName, schema)
+							ep.RequestBody = &models.RequestBody{
+								Required: true,
+								Content: map[string]models.Content{
+									"application/json": {Schema: schema},
+								},
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -744,6 +868,11 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 			if handlerPkg == "" {
 				a.extractHandlerComments(file, handlerName, &endpoint)
 				reqTypeName, respTypeName := getHandlerRequestAndResponseTypes(file, handlerName)
+				// Standard Gin/Echo/Fiber handlers have func(c *gin.Context) — no typed body
+				// param — so fall back to scanning the body for binding calls.
+				if reqTypeName == "" {
+					reqTypeName = findBindingTypeName(file, handlerName)
+				}
 				if reqTypeName != "" {
 					reqTypeName = localTypeName(reqTypeName)
 					if schema, ok := a.typeRegistry[reqTypeName]; ok {
