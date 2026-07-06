@@ -2,82 +2,59 @@
 
 ## Command not found after `go install`
 
-If `go install github.com/devenock/api-doc-gen@latest` succeeds but running the tool gives **command not found**, check:
+The binary is named **`api-doc-gen`** (with a hyphen). If the shell says it cannot find it, Go's bin directory is not on your PATH.
 
-1. **Command name** – The binary is named **`api-doc-gen`** (with a hyphen), from the module path. Use `api-doc-gen init` and `api-doc-gen generate`, not `apidoc-gen`.
-2. **PATH** – Your shell cannot see the binary because Go’s bin directory is not in your PATH.
+**Fix:**
 
-**Fix:** Add Go’s bin directory to your PATH.
-
-1. **Find where the binary was installed:**
-   ```bash
-   go env GOPATH
-   ```
-   If empty, Go uses `$HOME/go`. The binary is in `$GOPATH/bin` or `$HOME/go/bin`.
-
-2. **Add it to PATH** (pick one that matches your shell).
-
-   **Bash** – add to `~/.bashrc` (or `~/.bash_profile`):
-   ```bash
-   export PATH="$PATH:$(go env GOPATH)/bin"
-   ```
-
-   **Zsh** – add to `~/.zshrc`:
-   ```bash
-   export PATH="$PATH:$(go env GOPATH)/bin"
-   ```
-
-   **Fish** – run once or add to config:
-   ```fish
-   set -gx PATH $PATH (go env GOPATH)/bin
-   ```
-
-3. **Reload your shell** (e.g. open a new terminal or run `source ~/.zshrc`).
-
-4. **Verify:** `api-doc-gen --version`
-
-**Alternative:** Run by full path once you know it:
 ```bash
-$(go env GOPATH)/bin/api-doc-gen init
+# Find where Go installs binaries
+go env GOPATH   # empty means $HOME/go
+
+# Add to ~/.zshrc or ~/.bashrc
+export PATH="$PATH:$(go env GOPATH)/bin"
+
+# Reload
+source ~/.zshrc
+```
+
+Verify with `api-doc-gen --version`. Or run by full path:
+
+```bash
 $(go env GOPATH)/bin/api-doc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
-## Panic: "unsupported flag … omitempty" when generating Swagger
-
-You are running an older binary. Update to the latest version:
-
-```bash
-go install github.com/devenock/api-doc-gen@latest
-```
-
-Then run `api-doc-gen generate ...` again from your backend. If the panic persists, a fix may not be in a released version yet; check the repo for the latest release or build from source (`git clone` then `go install .` in the repo root).
-
 ## No endpoints found
 
-- **Framework detection** – Ensure your framework is listed in `go.mod` (Gin, Echo, Fiber, Gorilla, Chi). Or set `--framework` explicitly.
-- **Route patterns** – The analyzer looks for standard patterns (e.g. `router.GET("/path", handler)`). Use `-v` (verbose) to see the detected framework.
-- **Excluded dirs** – Check that your route files are not under an excluded directory (e.g. `vendor`, `test`). Adjust `exclude` in config or `--exclude` if needed.
-- **Path** – Run from the project root or pass the project path: `api-doc-gen generate /path/to/project`.
+- **Framework not detected** — ensure your framework is in `go.mod`. Set `--framework` explicitly if auto-detection misses it: `--framework gin`.
+- **Wrong directory** — run from the project root (where `go.mod` lives), or pass the path: `api-doc-gen generate /path/to/project`.
+- **Excluded directories** — route files inside `vendor`, `test`, or `tests` are skipped by default. Override with `--exclude ""` or adjust `exclude` in `.apidoc-gen.yaml`.
+- **Verbose output** — run with `-v` to see the detected framework and how many files were scanned.
 
 ## Invalid configuration
 
-- **"project path does not exist"** – The path you passed (or `.`) is not a directory. Run from the project root or pass a valid path.
-- **"invalid documentation type"** – You must use `swagger` or `postman`. Set `--type` or run in interactive mode to choose.
+- **"project path does not exist"** — the path you passed (or `.`) is not a directory. Run from the correct root or pass a valid path.
+- **"invalid documentation type"** — `--type` must be `swagger` or `postman`. Run in interactive mode or pass `--type` explicitly.
 
-## Configuration not being read
+## Config file not being read
 
-- Ensure `.apidoc-gen.yaml` is in the current directory, or pass `--config /path/to/config.yaml`.
-- Check YAML syntax (indentation, no tabs). Use `api-doc-gen generate --show-config` to see what is actually loaded.
-- Environment variables must be prefixed with `APIDOC_` (e.g. `APIDOC_TYPE=swagger`).
+- Ensure `.apidoc-gen.yaml` is in the **current working directory** when you run the command, not a parent or child directory.
+- Check for YAML syntax errors (no tabs, correct indentation).
+- Env vars must be prefixed with `APIDOC_` (e.g. `APIDOC_TYPE=swagger`).
+- Inspect what is actually loaded: `api-doc-gen generate --show-config`
 
-## Scripts / CI: prompts or wrong behavior
+## Prompts appearing in CI
 
-- Use **non-interactive** mode so the CLI does not wait for input:
-  - Set `--type` (and other required options), or
-  - Use `--no-interactive` (or `-y`) and ensure all required flags are set.
-- Rely on **exit codes**: `0` = success, `1` = usage/validation error, `2` = runtime error (e.g. analysis or generation failed).
+The CLI is interactive by default. To disable all prompts:
 
-## Quiet / verbose
+```bash
+api-doc-gen generate --no-interactive --type swagger -o ./docs
+```
 
-- Use `-q` / `--quiet` to suppress progress messages (e.g. in CI logs). Errors are still printed to stderr.
-- Use `-v` / `--verbose` for more detail (detected framework, endpoint count).
+Both `--no-interactive` (or `-y`) and `--type` are required — without `--type` the CLI still needs to ask which format to generate.
+
+**Exit codes:** `0` success · `1` validation/usage error · `2` runtime error.
+
+## Quiet and verbose modes
+
+- `-q` / `--quiet` — suppress all progress output. Errors still go to stderr.
+- `-v` / `--verbose` — show detected framework, file count, endpoint list.
