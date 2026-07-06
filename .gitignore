@@ -23,6 +23,10 @@ coverage.txt
 # Generated docs (when testing locally)
 docs-out/
 docs-q/
+docs/*.json
+docs/*.yaml
+docs/*.html
+examples/
 
 # IDE and OS
 .idea/
