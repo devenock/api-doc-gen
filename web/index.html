@@ -288,11 +288,11 @@
 
     <main class="main">
       <h1>apidoc-gen</h1>
-      <p class="lead">Generate API documentation from your Go API in one command. Supports Swagger/OpenAPI, Postman, and Docusaurus. This guide covers installation, usage in your backend, and deployment.</p>
+      <p class="lead">Generate API documentation from your Go API in one command. Supports Swagger/OpenAPI and Postman. This guide covers installation, usage in your backend, and deployment.</p>
       <span class="badge">CLI</span>
 
       <h2 id="install">Install</h2>
-      <p>Requires Go 1.22+. For Docusaurus output you also need Node.js/npm.</p>
+      <p>Requires Go 1.22+.</p>
       <div class="copy-wrap">
         <pre><code>go install github.com/devenock/api-doc-gen@latest</code></pre>
         <button class="copy-btn">Copy</button>
@@ -344,7 +344,7 @@ apidoc-gen generate -y --type swagger -o ./docs
 
       <h2 id="flags">Main flags (generate)</h2>
       <ul>
-        <li><code>-t, --type</code> – swagger | postman | custom</li>
+        <li><code>-t, --type</code> – swagger | postman</li>
         <li><code>-o, --output</code> – Output directory (default <code>./docs</code>)</li>
         <li><code>-f, --framework</code> – gin | echo | fiber | gorilla | chi (or leave empty for auto-detect)</li>
         <li><code>-y, --no-interactive</code> – No prompts (use with <code>--type</code> for CI)</li>
@@ -430,7 +430,6 @@ docker run --rm -v "$(pwd)":/workspace -w /workspace apidoc-gen generate --no-in
         <li><strong>Swagger UI shows "No operations defined in spec!"</strong> – Re-run to regenerate <code>openapi.json</code>; this was a known bug now fixed.</li>
         <li><strong>Config not read</strong> – Ensure <code>.apidoc-gen.yaml</code> is in your project root or pass <code>--config</code>. Run <code>--show-config</code> to inspect the effective config.</li>
         <li><strong>Prompts in CI</strong> – Use <code>-y</code> (or <code>--no-interactive</code>) and set <code>--type</code> so the run is fully scripted.</li>
-        <li><strong>npx not found</strong> (Docusaurus output) – Install Node.js/npm and ensure <code>npx</code> is on your PATH.</li>
         <li><strong>Postman doesn't open automatically</strong> – The CLI uses the <code>postman://</code> URL scheme. If it doesn't launch, open Postman manually — the collection is already in your workspace. On Linux ensure <code>xdg-open</code> is available or <code>postman</code> is on your PATH.</li>
       </ul>
       <p>Full guide: <a href="../docs/TROUBLESHOOTING.md" target="_blank" rel="noopener">docs/TROUBLESHOOTING.md</a></p>
