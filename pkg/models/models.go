@@ -105,5 +105,4 @@ type DocType string
 const (
 	DocTypePostman DocType = "postman"
 	DocTypeSwagger DocType = "swagger"
-	DocTypeCustom  DocType = "custom"
 )

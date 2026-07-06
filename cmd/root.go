@@ -40,8 +40,7 @@ var (
 		Use:   "apidoc-gen",
 		Short: "Automatic API documentation generator",
 		Long: `apidoc-gen is a CLI tool that scans your codebase and automatically
-generates API documentation in various formats including Swagger, Postman,
-or a custom Docusaurus-based website.`,
+generates API documentation as Swagger/OpenAPI or a Postman Collection.`,
 		Version: "1.0.0",
 		Example: `  api-doc-gen init
   api-doc-gen generate
@@ -87,7 +86,7 @@ func init() {
 
 	// Generate command flags
 	generateCmd.Flags().StringP("output", "o", "./docs", "output directory for generated documentation")
-	generateCmd.Flags().StringP("type", "t", "", "documentation type (swagger|postman|custom)")
+	generateCmd.Flags().StringP("type", "t", "", "documentation type (swagger|postman)")
 	generateCmd.Flags().StringP("framework", "f", "", "backend framework (gin|echo|fiber|gorilla|chi)")
 	generateCmd.Flags().Bool("interactive", true, "use interactive mode when type is not set")
 	generateCmd.Flags().BoolP("no-interactive", "y", false, "disable interactive mode (use config/flags only; good for CI)")
@@ -104,6 +103,7 @@ func init() {
 	// Postman upload flags (only honored when --type=postman)
 	generateCmd.Flags().Bool("upload", false, "(postman) force upload to Postman; error out if no API key is available (good for CI)")
 	generateCmd.Flags().Bool("no-upload", false, "(postman) skip the auto-upload step even if a Postman API key is available")
+	generateCmd.Flags().Bool("direct-import", false, "(postman) import directly into the Postman desktop app — no API key or account needed")
 	generateCmd.Flags().String("postman-api-key", "", "(postman) API key for the upload step; takes precedence over env and credentials file")
 	generateCmd.Flags().String("postman-workspace", "", "(postman) workspace UID to upload to (default: your default workspace)")
 
@@ -126,6 +126,7 @@ func init() {
 	viper.BindPFlag("write-annotations", generateCmd.Flags().Lookup("write-annotations"))
 	viper.BindPFlag("upload", generateCmd.Flags().Lookup("upload"))
 	viper.BindPFlag("no-upload", generateCmd.Flags().Lookup("no-upload"))
+	viper.BindPFlag("direct-import", generateCmd.Flags().Lookup("direct-import"))
 	viper.BindPFlag("postman-api-key", generateCmd.Flags().Lookup("postman-api-key"))
 	viper.BindPFlag("postman-workspace", generateCmd.Flags().Lookup("postman-workspace"))
 
@@ -175,6 +176,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		PostmanWorkspaceUID: viper.GetString("postman-workspace"),
 		PostmanUpload:       viper.GetBool("upload"),
 		PostmanNoUpload:     viper.GetBool("no-upload"),
+		PostmanDirectImport: viper.GetBool("direct-import"),
 		WriteAnnotations:    viper.GetBool("write-annotations"),
 	}
 	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
@@ -495,7 +497,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 # Output directory for generated documentation
 output: ./docs
 
-# Documentation type: swagger, postman, or custom
+# Documentation type: swagger or postman
 type: swagger
 
 # Backend framework (optional): gin, echo, fiber, gorilla, chi

@@ -15,14 +15,11 @@ Three complete REST APIs for testing and demonstrating `api-doc-gen` across diff
 From the **repo root**, run the generator against any example:
 
 ```bash
-# Swagger UI (default)
+# Swagger UI
 go run . generate examples/ecommerce-gin --no-interactive --type swagger -o /tmp/ecommerce-docs
 
 # Postman collection
 go run . generate examples/blog-chi --no-interactive --type postman -o /tmp/blog-pm
-
-# Docusaurus site
-go run . generate examples/crm-gorilla --no-interactive --type custom -o /tmp/crm-site
 ```
 
 Or use the interactive wizard (omit `--no-interactive`):

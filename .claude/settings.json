@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:8081/)",
+      "Bash(curl -s http://localhost:8765/)",
+      "Bash(python3 -c ' *)",
+      "Bash(# Check if Postman is installed *)",
+      "Read(//Applications/**)",
+      "Bash(npx create-docusaurus@latest --help)",
+      "Bash(npm start *)",
+      "Bash(curl -s http://localhost:3001/)",
+      "Bash(./node_modules/.bin/docusaurus start *)",
+      "Bash(echo \"started PID $!\")",
+      "Bash(echo \"Docusaurus PID: $!\")",
+      "Bash(curl -s \"http://localhost:3001/docs/intro\")",
+      "Bash(curl -s \"http://localhost:3001/docs/products/get-api-v1-products\")",
+      "Bash(curl -s http://localhost:3002/)",
+      "Bash(/tmp/gin-docs-clean/node_modules/.bin/docusaurus start *)"
+    ]
+  }
+}

@@ -19,8 +19,6 @@ func NewGenerator(docType string, cfg *config.Config) (Generator, error) {
 		return NewSwaggerGenerator(cfg), nil
 	case "postman":
 		return NewPostmanGenerator(cfg), nil
-	case "custom":
-		return NewCustomGenerator(cfg), nil
 	default:
 		return nil, fmt.Errorf("unsupported documentation type: %s", docType)
 	}

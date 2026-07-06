@@ -41,10 +41,24 @@ type PostmanItem struct {
 	Response    []interface{}   `json:"response,omitempty"`
 }
 
+// PostmanAuth represents Postman request/collection auth config
+type PostmanAuth struct {
+	Type   string              `json:"type"`
+	Bearer []PostmanAuthBearer `json:"bearer,omitempty"`
+}
+
+// PostmanAuthBearer is a single key/value pair inside a bearer auth block
+type PostmanAuthBearer struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Type  string `json:"type"`
+}
+
 // PostmanRequest represents a Postman request
 type PostmanRequest struct {
 	Method      string          `json:"method"`
 	Header      []PostmanHeader `json:"header"`
+	Auth        *PostmanAuth    `json:"auth,omitempty"`
 	Body        *PostmanBody    `json:"body,omitempty"`
 	URL         PostmanURL      `json:"url"`
 	Description string          `json:"description,omitempty"`
@@ -128,15 +142,14 @@ func (g *PostmanGenerator) convertToPostman(spec *models.APISpec) *PostmanCollec
 	collection.Info.Description = spec.Description
 	collection.Info.Schema = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 
-	// Add base URL variable
+	// Collection-level variables: baseUrl + bearerToken placeholder
+	baseURL := ""
 	if len(spec.Servers) > 0 {
-		collection.Variable = []PostmanVariable{
-			{
-				Key:   "baseUrl",
-				Value: spec.Servers[0].URL,
-				Type:  "string",
-			},
-		}
+		baseURL = spec.Servers[0].URL
+	}
+	collection.Variable = []PostmanVariable{
+		{Key: "baseUrl", Value: baseURL, Type: "string"},
+		{Key: "bearerToken", Value: "", Type: "string"},
 	}
 
 	// Group endpoints by tags or create a flat structure
@@ -199,6 +212,16 @@ func (g *PostmanGenerator) convertEndpointToItem(endpoint models.Endpoint, spec 
 		},
 		URL:         g.createPostmanURL(endpoint, spec),
 		Description: endpoint.Description,
+	}
+
+	// Wire up bearer auth for protected endpoints
+	if len(endpoint.Security) > 0 {
+		request.Auth = &PostmanAuth{
+			Type: "bearer",
+			Bearer: []PostmanAuthBearer{
+				{Key: "token", Value: "{{bearerToken}}", Type: "string"},
+			},
+		}
 	}
 
 	// Add headers from parameters

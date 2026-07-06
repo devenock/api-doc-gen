@@ -1,6 +1,6 @@
 # API Documentation Generator (apidoc-gen)
 
-CLI that scans your Go API codebase and generates API documentation as **Swagger/OpenAPI**, **Postman**, or a **Docusaurus** site.
+CLI that scans your Go API codebase and generates API documentation as **Swagger/OpenAPI** or a **Postman Collection**.
 
 - **Install:** [Binary](#installation) · [Docker](#docker)
 - **Get started:** [Quick start](#quick-start) below, or open **[web/index.html](web/index.html)** for a single-page guide.
@@ -9,13 +9,13 @@ CLI that scans your Go API codebase and generates API documentation as **Swagger
 ## Features
 
 - Scans Go projects and detects **Gin, Echo, Fiber, Gorilla Mux, Chi**
-- Outputs **Swagger/OpenAPI 3.0** (JSON, YAML, Swagger UI), **Postman Collection v2.1**, or **custom Docusaurus** site
+- Outputs **Swagger/OpenAPI 3.0** (JSON, YAML, Swagger UI) or **Postman Collection v2.1**
 - Config via **file** (`.apidoc-gen.yaml`), **env** (`APIDOC_*`), or **flags**
 - **Interactive** prompts or **non-interactive** for CI (`--no-interactive`, `-y`)
 
 ## Installation
 
-**Prerequisites:** Go 1.24+ (Node.js/npm only for Docusaurus output)
+**Prerequisites:** Go 1.24+
 
 Install the CLI from anywhere (no need to clone this repo):
 
@@ -98,7 +98,7 @@ Use your API project path instead of `$(pwd)` if you’re not in the project roo
 
 | Flag | Description |
 |------|-------------|
-| `-t, --type` | `swagger` \| `postman` \| `custom` |
+| `-t, --type` | `swagger` \| `postman` |
 | `-o, --output` | Output directory (default `./docs`) |
 | `-f, --framework` | `gin` \| `echo` \| `fiber` \| `gorilla` \| `chi` (or empty = auto) |
 | `-y, --no-interactive` | No prompts (for CI/scripts) |
@@ -148,7 +148,6 @@ Gin, Echo, Fiber, Gorilla Mux, Chi (auto-detected from `go.mod`), plus generic r
 |------|--------|
 | **swagger** | `openapi.json`, `openapi.yaml`, `index.html` (Swagger UI) |
 | **postman** | `collection.json` (Postman Collection v2.1) — and optional auto-upload to Postman, see below |
-| **custom** | Docusaurus site in output dir (`npm start` to run) |
 
 ### Postman auto-upload
 
@@ -189,7 +188,7 @@ See **[SECURITY.md](SECURITY.md#postman-credentials)** for the full data-handlin
 ```
 ├── cmd/root.go
 ├── pkg/analyzer/   # Code analysis
-├── pkg/generator/  # Swagger, Postman, Docusaurus
+├── pkg/generator/  # Swagger/OpenAPI, Postman
 ├── pkg/postman/    # Postman API client, credentials, desktop detection
 ├── pkg/models/     # Data models
 ├── pkg/config/     # Configuration
@@ -215,7 +214,6 @@ make install # install locally
 - **No endpoints** – Set `--framework` or use `-v`. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 - **Config not read** – Ensure `.apidoc-gen.yaml` is in cwd or use `--config`. Run `--show-config` to inspect.
 - **Prompts in CI** – Use `-y` and `--type` (and other flags) so the run is non-interactive.
-- **npx not found** (Docusaurus) – Install Node.js/npm and ensure `npx` is on PATH.
 - **Postman doesn't open automatically** – The CLI opens Postman via the `postman://` URL scheme. If it doesn't launch, open Postman manually and the collection will already be in your workspace (it was uploaded). On Linux, ensure `xdg-open` is available or that `postman` is on your PATH.
 
 ## Security and privacy

@@ -53,11 +53,10 @@ func (c *Config) Validate() error {
 	validTypes := map[string]bool{
 		"swagger": true,
 		"postman": true,
-		"custom":  true,
 	}
 
 	if !validTypes[c.DocType] {
-		return errors.New("invalid documentation type \"" + c.DocType + "\": use swagger, postman, or custom (set --type or run with interactive mode)")
+		return errors.New("invalid documentation type \"" + c.DocType + "\": use swagger or postman (set --type or run with interactive mode)")
 	}
 
 	// set defaults

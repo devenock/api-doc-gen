@@ -113,7 +113,7 @@ func GetUserPreferences(cfg *config.Config) error {
 	if cfg.DocType == "" {
 		docTypePrompt := promptui.Select{
 			Label: "Select Documentation type",
-			Items: []string{"Swagger/OpenAPI", "Postman Collection", "Custom Docusaurus Site"},
+			Items: []string{"Swagger/OpenAPI", "Postman Collection"},
 		}
 
 		_, docType, err := docTypePrompt.Run()
@@ -127,8 +127,6 @@ func GetUserPreferences(cfg *config.Config) error {
 		case "Postman Collection":
 			cfg.DocType = "postman"
 			setupPostmanInWizard(cfg)
-		case "Custom Docusaurus Site":
-			cfg.DocType = "custom"
 		}
 	}
 

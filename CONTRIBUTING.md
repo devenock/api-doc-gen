@@ -28,7 +28,7 @@ By participating, you agree to uphold our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 - `cmd/` – CLI commands (Cobra).
 - `pkg/analyzer/` – Code analysis (framework detection, route parsing).
-- `pkg/generator/` – Output generators (Swagger, Postman, Docusaurus).
+- `pkg/generator/` – Output generators (Swagger/OpenAPI, Postman).
 - `pkg/models/` – Shared data structures.
 - `pkg/config/` – Configuration and validation.
 - `internal/prompt/` – Interactive prompts.

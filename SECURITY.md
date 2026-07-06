@@ -8,10 +8,9 @@ apidoc-gen is designed for use in codebases that contain sensitive or proprietar
 - **No telemetry or analytics** – The application does not collect usage data, report errors to external servers, or phone home.
 - **Opt-in network calls** – The tool only contacts the network when you explicitly trigger a feature that needs it:
   - **Postman upload** (only when `--type=postman`) – If you provide a Postman API key (interactively, via `--postman-api-key`, or via the env vars `APIDOC_POSTMAN_API_KEY` / `POSTMAN_API_KEY`), the generated `collection.json` is uploaded to `https://api.getpostman.com/collections` so you can view it in the Postman UI. Skip with `--no-upload`. In `--no-interactive` mode the upload is silently skipped if no key is configured (no prompt, no surprise calls). See **[Postman credentials](#postman-credentials)** below.
-  - **Docusaurus init** (only when `--type=custom`) – Runs `npx create-docusaurus@latest`, which downloads packages from the public npm registry.
   - **Swagger UI HTML** (only when `--type=swagger`) – The generated `index.html` references `cdn.jsdelivr.net/npm/swagger-ui-dist@5/...` for the JS/CSS at *view time* (when you open the HTML). Nothing is fetched at generation time.
 
-  In all three cases your **source code is never transmitted**. The Postman upload sends only the generated collection JSON (route paths, parameters, request/response shapes, descriptions you wrote).
+  In both cases your **source code is never transmitted**. The Postman upload sends only the generated collection JSON (route paths, parameters, request/response shapes, descriptions you wrote).
 
 ## What the tool reads and writes
 
@@ -21,7 +20,7 @@ apidoc-gen is designed for use in codebases that contain sensitive or proprietar
   - `.go` files (to find route definitions and handler comments)
   - Optional config file `.apidoc-gen.yaml` in the project
 - **Skips** – By default it skips directories such as `vendor`, `node_modules`, `.git`, and test directories. You can override exclusions via config or `--exclude`.
-- **Writes** – It writes only to the output directory you specify (default `./docs`): OpenAPI/Swagger files, Postman collection, or Docusaurus site files. It does not modify your source code.
+- **Writes** – It writes only to the output directory you specify (default `./docs`): OpenAPI/Swagger files or Postman collection. It does not modify your source code.
 
 ## Configuration and secrets
 
@@ -43,8 +42,6 @@ The Postman upload feature uses an **API key** (Postman does not expose OAuth / 
 ## Dependency and supply-chain hygiene
 
 - **Go modules** – Dependencies are declared in `go.mod` and `go.sum`. Use `go mod verify` and keep dependencies updated.
-- **Docusaurus (optional)** – The “custom” output runs `npx create-docusaurus@latest`, which installs packages from the npm registry. Use only in environments where you accept that dependency chain.
-
 ## Reporting a vulnerability
 
 If you believe you have found a security vulnerability in apidoc-gen:
