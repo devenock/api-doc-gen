@@ -25,9 +25,10 @@ type Analyzer struct {
 	endpoints      []models.Endpoint
 	models         map[string]models.Schema
 	typeRegistry   map[string]models.Schema // type name -> schema (for request/response resolution)
-	curGroupPrefix map[string]string        // per-file: variable name -> path prefix (Gin/Echo/Fiber Group)
+	curGroupPrefix map[string]string        // per-file: variable name -> path prefix (Gin/Echo/Fiber Group, Gorilla Subrouter)
 	curAuthGroups  map[string]bool          // per-file: variable name -> true if group uses auth middleware
 	curFilePath    string                   // current file being parsed (for SourceFile on endpoints)
+	consumedCalls  map[*ast.CallExpr]bool   // per-file: gorilla HandleFunc/Handle calls already consumed by a .Methods() chain
 }
 
 // NewAnalyzer creates a new Analyzer
@@ -447,12 +448,29 @@ func (a *Analyzer) parseFile(filePath string) error {
 	}
 
 	a.curFilePath = filePath
-	// Build route group prefix map and auth groups for this file (Gin/Echo/Fiber only)
+	// Build route group prefix map and auth groups for this file
 	a.curGroupPrefix = nil
 	a.curAuthGroups = nil
-	if a.framework == models.FrameWorkGin || a.framework == models.FrameWorkEcho || a.framework == models.FrameWorkFiber {
+	a.consumedCalls = nil
+	switch a.framework {
+	case models.FrameWorkGin, models.FrameWorkEcho, models.FrameWorkFiber:
 		a.curGroupPrefix = a.buildGinGroupPrefixes(node)
 		a.curAuthGroups = a.buildGinAuthGroups(node)
+	case models.FrameWorkGorilla:
+		a.curGroupPrefix = a.buildGorillaSubrouterPrefixes(node)
+		a.curAuthGroups = a.buildGinAuthGroups(node) // .Use(...) detection is framework-agnostic
+		a.consumedCalls = make(map[*ast.CallExpr]bool)
+	case models.FrameWorkChi:
+		// Chi's r.Route("/x", func(r chi.Router) {...}) nesting reuses the same
+		// receiver identifier ("r") at every level, so a flat var->prefix map
+		// (like Gin's Group() handling) can't represent it. Walk each function
+		// body recursively instead, carrying prefix/auth state through closures.
+		for _, decl := range node.Decls {
+			if fd, ok := decl.(*ast.FuncDecl); ok && fd.Body != nil {
+				a.walkChiStmts(fd.Body.List, node, "", false)
+			}
+		}
+		return nil
 	}
 
 	// Visit all nodes in the AST
@@ -465,10 +483,8 @@ func (a *Analyzer) parseFile(filePath string) error {
 		case models.FrameWorkFiber:
 			a.parseFiberRoutes(n, node)
 		case models.FrameWorkGorilla:
-			a.parseGorillaMethods(n) // .Methods("POST") chain first
+			a.parseGorillaMethods(n, node) // .Methods("POST") chain first
 			a.parseGorillaRoutes(n, node)
-		case models.FrameWorkChi:
-			a.parseChiRoutes(n, node)
 		default:
 			// Try to detect routes from common patterns
 			a.parseGenericRoutes(n, node)
@@ -688,6 +704,164 @@ func findBindingTypeName(file *ast.File, funcName string) string {
 	return result
 }
 
+// extractQueryParams scans a handler function body for query-parameter reads
+// and returns them as optional query Parameters. Supports Gin/Fiber-style
+// c.Query/DefaultQuery, Echo-style c.QueryParam, and the stdlib/Gorilla/Chi
+// r.URL.Query().Get("name") pattern.
+func extractQueryParams(file *ast.File, funcName string) []models.Parameter {
+	queryMethods := map[string]bool{
+		"Query": true, "DefaultQuery": true, "QueryParam": true,
+	}
+
+	var body *ast.BlockStmt
+	for _, decl := range file.Decls {
+		fd, ok := decl.(*ast.FuncDecl)
+		if ok && fd.Name.Name == funcName && fd.Body != nil {
+			body = fd.Body
+			break
+		}
+	}
+	if body == nil {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var params []models.Parameter
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+
+		var name string
+		switch {
+		case queryMethods[sel.Sel.Name]:
+			if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				name = strings.Trim(lit.Value, `"`)
+			}
+		case sel.Sel.Name == "Get":
+			// r.URL.Query().Get("name") / req.URL.Query().Get("name")
+			inner, ok := sel.X.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			innerSel, ok := inner.Fun.(*ast.SelectorExpr)
+			if !ok || innerSel.Sel.Name != "Query" {
+				return true
+			}
+			if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				name = strings.Trim(lit.Value, `"`)
+			}
+		}
+
+		if name != "" && !seen[name] {
+			seen[name] = true
+			params = append(params, models.Parameter{
+				Name:     name,
+				In:       "query",
+				Required: false,
+				Schema:   models.Schema{Type: "string"},
+			})
+		}
+		return true
+	})
+	return params
+}
+
+// finishEndpoint fills in handler-derived fields for an endpoint whose
+// Path/Method/Tags/Security/Parameters are already set: comments, request/response
+// schemas (resolved from the handler's signature or body-binding calls), query
+// parameters, summary/description fallbacks, and HandlerName/Package/SourceFile
+// (used by --write-annotations). handlerArg is the route call's handler argument
+// (an *ast.Ident for same-file handlers, or *ast.SelectorExpr like controllers.Create
+// for cross-package handlers, which only get HandlerName/HandlerPackage recorded here).
+func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file *ast.File) {
+	var handlerName, handlerPkg string
+	switch h := handlerArg.(type) {
+	case *ast.Ident:
+		handlerName = h.Name
+	case *ast.SelectorExpr:
+		if pkgIdent, ok := h.X.(*ast.Ident); ok {
+			handlerPkg = pkgIdent.Name
+			handlerName = h.Sel.Name
+		}
+	}
+
+	if handlerName != "" {
+		ep.Summary = handlerName
+		// Same-file handler: get comments and request/response types from current file
+		if handlerPkg == "" {
+			a.extractHandlerComments(file, handlerName, ep)
+			reqTypeName, respTypeName := getHandlerRequestAndResponseTypes(file, handlerName)
+			// Standard Gin/Echo/Fiber handlers have func(c *gin.Context) — no typed body
+			// param — so fall back to scanning the body for binding calls.
+			if reqTypeName == "" {
+				reqTypeName = findBindingTypeName(file, handlerName)
+			}
+			if reqTypeName != "" {
+				reqTypeName = localTypeName(reqTypeName)
+				if schema, ok := a.typeRegistry[reqTypeName]; ok {
+					ep.RequestTypeName = reqTypeName
+					a.addSchemaAndRefsToModels(reqTypeName, schema)
+					ep.RequestBody = &models.RequestBody{
+						Required: true,
+						Content: map[string]models.Content{
+							"application/json": {Schema: schema},
+						},
+					}
+				}
+			}
+			if respTypeName != "" {
+				respTypeName = localTypeName(respTypeName)
+				if schema, ok := a.typeRegistry[respTypeName]; ok {
+					ep.ResponseTypeName = respTypeName
+					a.addSchemaAndRefsToModels(respTypeName, schema)
+					ep.Responses[200] = models.Response{
+						Description: "Successful response",
+						Content: map[string]models.Content{
+							"application/json": {Schema: schema},
+						},
+					}
+				}
+			}
+			ep.Parameters = append(ep.Parameters, extractQueryParams(file, handlerName)...)
+		}
+	}
+
+	// Add default response if not set from handler return type
+	if _, has := ep.Responses[200]; !has {
+		ep.Responses[200] = models.Response{
+			Description: "Successful response",
+			Content: map[string]models.Content{
+				"application/json": {
+					Schema: models.Schema{Type: "object"},
+				},
+			},
+		}
+	}
+
+	// Description/summary fallback when no comment
+	if ep.Description == "" && handlerName != "" {
+		ep.Description = humanizeHandlerName(handlerName)
+	}
+	if ep.Summary == handlerName && handlerName != "" {
+		ep.Summary = humanizeHandlerName(handlerName)
+	}
+
+	// For --write-annotations: record handler location (same file or package to resolve later)
+	if handlerName != "" {
+		ep.HandlerName = handlerName
+		ep.HandlerPackage = handlerPkg
+		if handlerPkg == "" && a.curFilePath != "" {
+			ep.SourceFile = a.curFilePath
+		}
+	}
+}
+
 // resolveHandlerSourceFiles sets SourceFile for endpoints that have HandlerPackage and HandlerName
 // by finding the .go file that defines that function (e.g. controllers.CreateUser -> controllers/user_controller.go).
 func (a *Analyzer) resolveHandlerSourceFiles() {
@@ -704,10 +878,10 @@ func (a *Analyzer) resolveHandlerSourceFiles() {
 			ep.SourceFile = filePath
 			// For cross-package handlers the function signature is just func(c *gin.Context),
 			// so we can't get the body type from params. Scan the body for binding calls instead.
-			if ep.RequestBody == nil {
-				fset := token.NewFileSet()
-				node, err := parser.ParseFile(fset, filePath, nil, 0)
-				if err == nil {
+			fset := token.NewFileSet()
+			node, err := parser.ParseFile(fset, filePath, nil, 0)
+			if err == nil {
+				if ep.RequestBody == nil {
 					if typName := findBindingTypeName(node, ep.HandlerName); typName != "" {
 						if schema, ok := a.typeRegistry[typName]; ok {
 							ep.RequestTypeName = typName
@@ -721,6 +895,7 @@ func (a *Analyzer) resolveHandlerSourceFiles() {
 						}
 					}
 				}
+				ep.Parameters = append(ep.Parameters, extractQueryParams(node, ep.HandlerName)...)
 			}
 		}
 	}
@@ -933,87 +1108,13 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 
 	// Extract handler: always use the last argument so middleware chains like
 	// r.GET("/path", authMiddleware, handler) resolve to the real handler.
-	var handlerName, handlerPkg string
+	// finishEndpoint also sets the default 200 response, so call it even when
+	// there's no handler argument (malformed/unusual call).
+	var handlerArg ast.Expr
 	if len(callExpr.Args) >= 2 {
-		switch arg := callExpr.Args[len(callExpr.Args)-1].(type) {
-		case *ast.Ident:
-			handlerName = arg.Name
-			handlerPkg = ""
-		case *ast.SelectorExpr:
-			if pkgIdent, ok := arg.X.(*ast.Ident); ok {
-				handlerPkg = pkgIdent.Name
-				handlerName = arg.Sel.Name
-			}
-		}
-		if handlerName != "" {
-			endpoint.Summary = handlerName
-			// Same-file handler: get comments and request/response types from current file
-			if handlerPkg == "" {
-				a.extractHandlerComments(file, handlerName, &endpoint)
-				reqTypeName, respTypeName := getHandlerRequestAndResponseTypes(file, handlerName)
-				// Standard Gin/Echo/Fiber handlers have func(c *gin.Context) — no typed body
-				// param — so fall back to scanning the body for binding calls.
-				if reqTypeName == "" {
-					reqTypeName = findBindingTypeName(file, handlerName)
-				}
-				if reqTypeName != "" {
-					reqTypeName = localTypeName(reqTypeName)
-					if schema, ok := a.typeRegistry[reqTypeName]; ok {
-						endpoint.RequestTypeName = reqTypeName
-						a.addSchemaAndRefsToModels(reqTypeName, schema)
-						endpoint.RequestBody = &models.RequestBody{
-							Required: true,
-							Content: map[string]models.Content{
-								"application/json": {Schema: schema},
-							},
-						}
-					}
-				}
-				if respTypeName != "" {
-					respTypeName = localTypeName(respTypeName)
-					if schema, ok := a.typeRegistry[respTypeName]; ok {
-						endpoint.ResponseTypeName = respTypeName
-						a.addSchemaAndRefsToModels(respTypeName, schema)
-						endpoint.Responses[200] = models.Response{
-							Description: "Successful response",
-							Content: map[string]models.Content{
-								"application/json": {Schema: schema},
-							},
-						}
-					}
-				}
-			}
-		}
+		handlerArg = callExpr.Args[len(callExpr.Args)-1]
 	}
-
-	// Add default response if not set from handler return type
-	if _, has := endpoint.Responses[200]; !has {
-		endpoint.Responses[200] = models.Response{
-			Description: "Successful response",
-			Content: map[string]models.Content{
-				"application/json": {
-					Schema: models.Schema{Type: "object"},
-				},
-			},
-		}
-	}
-
-	// Description/summary fallback when no comment
-	if endpoint.Description == "" && handlerName != "" {
-		endpoint.Description = humanizeHandlerName(handlerName)
-	}
-	if endpoint.Summary == handlerName && handlerName != "" {
-		endpoint.Summary = humanizeHandlerName(handlerName)
-	}
-
-	// For --write-annotations: record handler location (same file or package to resolve later)
-	if handlerName != "" {
-		endpoint.HandlerName = handlerName
-		endpoint.HandlerPackage = handlerPkg
-		if handlerPkg == "" && a.curFilePath != "" {
-			endpoint.SourceFile = a.curFilePath
-		}
-	}
+	a.finishEndpoint(&endpoint, handlerArg, file)
 
 	a.endpoints = append(a.endpoints, endpoint)
 }
@@ -1030,10 +1131,117 @@ func (a *Analyzer) parseFiberRoutes(n ast.Node, file *ast.File) {
 	a.parseGinRoutes(n, file)
 }
 
-// parseGorillaRoutes extracts routes from Gorilla Mux
+// buildGorillaSubrouterPrefixes builds a map of variable name -> path prefix
+// from gorilla/mux subrouter chains (e.g. api := r.PathPrefix("/api/v1").Subrouter())
+// so nested routes resolve to their full path, mirroring buildGinGroupPrefixes.
+func (a *Analyzer) buildGorillaSubrouterPrefixes(file *ast.File) map[string]string {
+	type link struct{ child, parent, path string }
+	var links []link
+	ast.Inspect(file, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+			return true
+		}
+		outer, ok := assign.Rhs[0].(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		outerSel, ok := outer.Fun.(*ast.SelectorExpr)
+		if !ok || outerSel.Sel.Name != "Subrouter" {
+			return true
+		}
+		inner, ok := outerSel.X.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		innerSel, ok := inner.Fun.(*ast.SelectorExpr)
+		if !ok || innerSel.Sel.Name != "PathPrefix" || len(inner.Args) != 1 {
+			return true
+		}
+		pathLit, ok := inner.Args[0].(*ast.BasicLit)
+		if !ok || pathLit.Kind != token.STRING {
+			return true
+		}
+		path := strings.Trim(pathLit.Value, `"`)
+		childIdent, ok := assign.Lhs[0].(*ast.Ident)
+		if !ok {
+			return true
+		}
+		parentIdent, ok := innerSel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		links = append(links, link{childIdent.Name, parentIdent.Name, path})
+		return true
+	})
+	prefix := make(map[string]string)
+	for {
+		changed := false
+		for _, l := range links {
+			parentPrefix := prefix[l.parent] // empty if root
+			full := joinPath(parentPrefix, l.path)
+			if prefix[l.child] != full {
+				prefix[l.child] = full
+				changed = true
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+	return prefix
+}
+
+// gorillaMethodValidity lists the HTTP methods recognized in .Methods() chains.
+var gorillaValidMethods = map[string]bool{
+	"GET": true, "POST": true, "PUT": true, "DELETE": true,
+	"PATCH": true, "HEAD": true, "OPTIONS": true,
+}
+
+// buildGorillaEndpoints builds one rich endpoint per HTTP method for a gorilla/mux
+// route registration, extracting the same handler comments/request body/query
+// params/auth that parseGinRoutes extracts for Gin/Echo/Fiber/Chi.
+func (a *Analyzer) buildGorillaEndpoints(path string, methods []string, handlerArg ast.Expr, file *ast.File, receiverName string) []models.Endpoint {
+	path = normalizeBracePath(path)
+	if a.curGroupPrefix != nil && receiverName != "" {
+		if p := a.curGroupPrefix[receiverName]; p != "" {
+			path = joinPath(p, path)
+		}
+	}
+
+	var tags []string
+	if tag := tagFromPath(path); tag != "" {
+		tags = []string{tag}
+	}
+
+	var security []map[string][]string
+	if a.curAuthGroups != nil && a.curAuthGroups[receiverName] {
+		security = []map[string][]string{{"BearerAuth": {}}}
+	}
+
+	endpoints := make([]models.Endpoint, 0, len(methods))
+	for _, method := range methods {
+		ep := models.Endpoint{
+			Path:       path,
+			Method:     method,
+			Summary:    fmt.Sprintf("%s %s", method, path),
+			Tags:       tags,
+			Security:   security,
+			Parameters: extractPathParams(path),
+			Responses:  make(map[int]models.Response),
+		}
+		a.finishEndpoint(&ep, handlerArg, file)
+		endpoints = append(endpoints, ep)
+	}
+	return endpoints
+}
+
+// parseGorillaRoutes extracts routes from gorilla/mux HandleFunc/Handle calls
+// that are not wrapped in a .Methods() chain (parseGorillaMethods handles
+// those via a.consumedCalls so the same registration isn't added twice).
 func (a *Analyzer) parseGorillaRoutes(n ast.Node, file *ast.File) {
 	callExpr, ok := n.(*ast.CallExpr)
-	if !ok {
+	if !ok || a.consumedCalls[callExpr] {
 		return
 	}
 
@@ -1042,13 +1250,11 @@ func (a *Analyzer) parseGorillaRoutes(n ast.Node, file *ast.File) {
 		return
 	}
 
-	// Check for HandleFunc or Handle
 	if selExpr.Sel.Name != "HandleFunc" && selExpr.Sel.Name != "Handle" {
 		return
 	}
 
-	// Extract path and method from Methods() chain or inline
-	if len(callExpr.Args) < 1 {
+	if len(callExpr.Args) < 2 {
 		return
 	}
 
@@ -1056,33 +1262,26 @@ func (a *Analyzer) parseGorillaRoutes(n ast.Node, file *ast.File) {
 	if !ok || pathLit.Kind != token.STRING {
 		return
 	}
-
 	path := strings.Trim(pathLit.Value, `"`)
 
-	endpoint := models.Endpoint{
-		Path:        path,
-		Method:      "GET", // default; may be updated when .Methods() is seen
-		Summary:     fmt.Sprintf("Handler for %s", path),
-		Parameters:  extractPathParams(path),
-		Responses:   make(map[int]models.Response),
+	var receiverName string
+	if ident, ok := selExpr.X.(*ast.Ident); ok {
+		receiverName = ident.Name
 	}
 
-	endpoint.Responses[200] = models.Response{
-		Description: "Successful response",
-		Content: map[string]models.Content{
-			"application/json": {
-				Schema: models.Schema{
-					Type: "object",
-				},
-			},
-		},
-	}
-
-	a.endpoints = append(a.endpoints, endpoint)
+	// No .Methods() chain: gorilla/mux matches any HTTP method on this route.
+	// We record it as GET so the path is visible; if a .Methods() call exists
+	// it will have already marked this call as consumed and we won't get here.
+	handlerArg := callExpr.Args[len(callExpr.Args)-1]
+	a.endpoints = append(a.endpoints, a.buildGorillaEndpoints(path, []string{"GET"}, handlerArg, file, receiverName)...)
 }
 
-// parseGorillaMethods handles .Methods("POST") chained after HandleFunc/Handle
-func (a *Analyzer) parseGorillaMethods(n ast.Node) {
+// parseGorillaMethods handles .Methods("POST", ...) chained after HandleFunc/Handle.
+// It marks the inner HandleFunc/Handle call as consumed (via a.consumedCalls) so
+// parseGorillaRoutes skips it when ast.Inspect visits that node directly —
+// otherwise both functions would add an endpoint for the same registration
+// (one with the correct method, one with the wrong default GET).
+func (a *Analyzer) parseGorillaMethods(n ast.Node, file *ast.File) {
 	callExpr, ok := n.(*ast.CallExpr)
 	if !ok || len(callExpr.Args) == 0 {
 		return
@@ -1092,7 +1291,7 @@ func (a *Analyzer) parseGorillaMethods(n ast.Node) {
 		return
 	}
 	inner, ok := sel.X.(*ast.CallExpr)
-	if !ok || len(inner.Args) < 1 {
+	if !ok || len(inner.Args) < 2 {
 		return
 	}
 	innerSel, ok := inner.Fun.(*ast.SelectorExpr)
@@ -1104,45 +1303,167 @@ func (a *Analyzer) parseGorillaMethods(n ast.Node) {
 		return
 	}
 	path := strings.Trim(pathLit.Value, `"`)
-	method := "GET"
-	if lit, ok := callExpr.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-		method = strings.ToUpper(strings.Trim(lit.Value, `"`))
-	}
-	validMethods := map[string]bool{
-		"GET": true, "POST": true, "PUT": true, "DELETE": true,
-		"PATCH": true, "HEAD": true, "OPTIONS": true,
-	}
-	if !validMethods[method] {
-		return
-	}
-	// Update the most recently added endpoint with this path to use the correct method
-	for i := len(a.endpoints) - 1; i >= 0; i-- {
-		if a.endpoints[i].Path == path {
-			a.endpoints[i].Method = method
-			return
+
+	var methods []string
+	for _, arg := range callExpr.Args {
+		lit, ok := arg.(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			continue
+		}
+		method := strings.ToUpper(strings.Trim(lit.Value, `"`))
+		if gorillaValidMethods[method] {
+			methods = append(methods, method)
 		}
 	}
-	// .Methods() visited before HandleFunc: add endpoint with correct method
-	a.endpoints = append(a.endpoints, models.Endpoint{
-		Path:        path,
-		Method:      method,
-		Summary:     fmt.Sprintf("%s %s", method, path),
-		Parameters:  extractPathParams(path),
-		Responses:   make(map[int]models.Response),
-	})
-	ep := &a.endpoints[len(a.endpoints)-1]
-	ep.Responses[200] = models.Response{
-		Description: "Successful response",
-		Content: map[string]models.Content{
-			"application/json": {Schema: models.Schema{Type: "object"}},
-		},
+	if len(methods) == 0 {
+		return
+	}
+
+	if a.consumedCalls == nil {
+		a.consumedCalls = make(map[*ast.CallExpr]bool)
+	}
+	a.consumedCalls[inner] = true
+
+	var receiverName string
+	if ident, ok := innerSel.X.(*ast.Ident); ok {
+		receiverName = ident.Name
+	}
+	handlerArg := inner.Args[len(inner.Args)-1]
+	a.endpoints = append(a.endpoints, a.buildGorillaEndpoints(path, methods, handlerArg, file, receiverName)...)
+}
+
+// chiValidMethods are the HTTP-verb methods chi.Router exposes (Go-cased: Get, Post, ...).
+var chiValidMethods = map[string]bool{
+	"GET": true, "POST": true, "PUT": true, "DELETE": true,
+	"PATCH": true, "HEAD": true, "OPTIONS": true,
+}
+
+// isChiAuthMiddlewareCall reports whether a r.Use(...) call's first argument
+// looks like an auth middleware, using the same name heuristic as buildGinAuthGroups.
+func isChiAuthMiddlewareCall(call *ast.CallExpr) bool {
+	if len(call.Args) == 0 {
+		return false
+	}
+	var name string
+	switch arg := call.Args[0].(type) {
+	case *ast.Ident:
+		name = arg.Name
+	case *ast.CallExpr:
+		if c, ok := arg.Fun.(*ast.Ident); ok {
+			name = c.Name
+		}
+	}
+	if name == "" {
+		return false
+	}
+	lower := strings.ToLower(name)
+	return strings.Contains(lower, "auth") || strings.Contains(lower, "jwt")
+}
+
+// walkChiStmts recursively extracts routes from a chi.Router setup, tracking
+// the path prefix and inherited auth state through nested r.Route(...)/r.Group(...)
+// closures. Chi reuses the same receiver identifier (conventionally "r") at every
+// nesting level, so this can't be modeled with a flat var->prefix map the way
+// Gin's r.Group() assignments are (buildGinGroupPrefixes) — each closure's body
+// has to be walked with its own prefix/auth context instead.
+func (a *Analyzer) walkChiStmts(stmts []ast.Stmt, file *ast.File, prefix string, inheritedAuth bool) {
+	// A .Use(...) call anywhere in this scope protects every route registered
+	// in this scope, per chi's middleware-before-routes convention.
+	scopeAuth := inheritedAuth
+	for _, stmt := range stmts {
+		call := chiCallFromStmt(stmt)
+		if call == nil {
+			continue
+		}
+		sel := call.Fun.(*ast.SelectorExpr)
+		if sel.Sel.Name == "Use" && isChiAuthMiddlewareCall(call) {
+			scopeAuth = true
+		}
+	}
+
+	for _, stmt := range stmts {
+		call := chiCallFromStmt(stmt)
+		if call == nil {
+			continue
+		}
+		sel := call.Fun.(*ast.SelectorExpr)
+
+		switch {
+		case chiValidMethods[strings.ToUpper(sel.Sel.Name)]:
+			a.buildChiEndpoint(call, file, prefix, scopeAuth)
+		case sel.Sel.Name == "Route" && len(call.Args) == 2:
+			pathLit, ok := call.Args[0].(*ast.BasicLit)
+			if !ok || pathLit.Kind != token.STRING {
+				continue
+			}
+			lit, ok := call.Args[1].(*ast.FuncLit)
+			if !ok || lit.Body == nil {
+				continue
+			}
+			subPath := joinPath(prefix, strings.Trim(pathLit.Value, `"`))
+			a.walkChiStmts(lit.Body.List, file, subPath, scopeAuth)
+		case sel.Sel.Name == "Group" && len(call.Args) == 1:
+			lit, ok := call.Args[0].(*ast.FuncLit)
+			if !ok || lit.Body == nil {
+				continue
+			}
+			a.walkChiStmts(lit.Body.List, file, prefix, scopeAuth)
+		}
 	}
 }
 
-// parseChiRoutes extracts routes from Chi router
-func (a *Analyzer) parseChiRoutes(n ast.Node, file *ast.File) {
-	// Similar to Gin
-	a.parseGinRoutes(n, file)
+// chiCallFromStmt returns the CallExpr for a statement like `r.Get("/", h)`
+// (an ExprStmt wrapping a CallExpr whose Fun is a method selector), or nil.
+func chiCallFromStmt(stmt ast.Stmt) *ast.CallExpr {
+	exprStmt, ok := stmt.(*ast.ExprStmt)
+	if !ok {
+		return nil
+	}
+	call, ok := exprStmt.X.(*ast.CallExpr)
+	if !ok {
+		return nil
+	}
+	if _, ok := call.Fun.(*ast.SelectorExpr); !ok {
+		return nil
+	}
+	return call
+}
+
+// buildChiEndpoint builds a rich endpoint (comments, request/response schema,
+// query params, tags) for a single chi.Router HTTP-verb call, mirroring the
+// extraction parseGinRoutes does for Gin/Echo/Fiber.
+func (a *Analyzer) buildChiEndpoint(call *ast.CallExpr, file *ast.File, prefix string, auth bool) {
+	if len(call.Args) < 2 {
+		return
+	}
+	pathLit, ok := call.Args[0].(*ast.BasicLit)
+	if !ok || pathLit.Kind != token.STRING {
+		return
+	}
+	path := normalizeBracePath(joinPath(prefix, strings.Trim(pathLit.Value, `"`)))
+	method := strings.ToUpper(call.Fun.(*ast.SelectorExpr).Sel.Name)
+
+	var tags []string
+	if tag := tagFromPath(path); tag != "" {
+		tags = []string{tag}
+	}
+	var security []map[string][]string
+	if auth {
+		security = []map[string][]string{{"BearerAuth": {}}}
+	}
+
+	ep := models.Endpoint{
+		Path:       path,
+		Method:     method,
+		Summary:    fmt.Sprintf("%s %s", method, path),
+		Tags:       tags,
+		Security:   security,
+		Parameters: extractPathParams(path),
+		Responses:  make(map[int]models.Response),
+	}
+	handlerArg := call.Args[len(call.Args)-1]
+	a.finishEndpoint(&ep, handlerArg, file)
+	a.endpoints = append(a.endpoints, ep)
 }
 
 // parseGenericRoutes attempts to extract routes from unknown frameworks.
@@ -1255,13 +1576,28 @@ func (a *Analyzer) extractHandlerComments(file *ast.File, handlerName string, en
 	}
 }
 
+// gorillaTypedVarRe matches Gorilla's regex-constrained path vars, e.g.
+// {id:[0-9]+} -> captures "id" so callers can normalize to {id}.
+var gorillaTypedVarRe = regexp.MustCompile(`\{([^:{}]+):[^{}]+\}`)
+
+// normalizeBracePath rewrites Gorilla's {param:pattern} segments to plain
+// {param} so the path is a valid OpenAPI path template (and so Swagger UI's
+// "Try it out" can substitute the parameter correctly).
+func normalizeBracePath(path string) string {
+	return gorillaTypedVarRe.ReplaceAllString(path, "{$1}")
+}
+
 // extractPathParams extracts path parameters from route path.
-// Supports :param (Gin, Echo, Fiber) and {param} (Chi).
+// Supports :param (Gin, Echo, Fiber) and {param} (Chi, Gorilla — callers
+// should normalize Gorilla's {param:pattern} form via normalizeBracePath
+// before calling this, so the colon isn't mistaken for :param syntax).
 func extractPathParams(path string) []models.Parameter {
 	var params []models.Parameter
-	// :param style (e.g. /users/:id)
+	// :param style (e.g. /users/:id). Braced segments are stripped first so a
+	// colon inside {id:pattern} (before normalization) is never mistaken for this.
+	braceStripped := regexp.MustCompile(`\{[^}]+\}`).ReplaceAllString(path, "")
 	colonRe := regexp.MustCompile(`:([^/]+)`)
-	for _, name := range colonRe.FindAllStringSubmatch(path, -1) {
+	for _, name := range colonRe.FindAllStringSubmatch(braceStripped, -1) {
 		if len(name) >= 2 {
 			params = append(params, models.Parameter{
 				Name:     name[1],
@@ -1275,8 +1611,12 @@ func extractPathParams(path string) []models.Parameter {
 	braceRe := regexp.MustCompile(`\{([^}]+)\}`)
 	for _, name := range braceRe.FindAllStringSubmatch(path, -1) {
 		if len(name) >= 2 {
+			paramName := name[1]
+			if idx := strings.Index(paramName, ":"); idx >= 0 {
+				paramName = paramName[:idx]
+			}
 			params = append(params, models.Parameter{
-				Name:     name[1],
+				Name:     paramName,
 				In:       "path",
 				Required: true,
 				Schema:   models.Schema{Type: "string"},
