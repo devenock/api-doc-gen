@@ -9,6 +9,8 @@ import (
 
 	"github.com/devenock/api-doc-gen/pkg/config"
 	"github.com/devenock/api-doc-gen/pkg/models"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // CustomGenerator generates a custom Docusaurus site
@@ -327,7 +329,7 @@ API endpoints for %s operations.
 
 		// Create page for each endpoint
 		for i, endpoint := range endpoints {
-			page := g.generateEndpointPage(endpoint, i+1)
+			page := g.generateEndpointPage(endpoint, i+1, spec.Models)
 			filename := fmt.Sprintf("%s-%s.md",
 				strings.ToLower(endpoint.Method),
 				strings.ToLower(strings.ReplaceAll(strings.Trim(endpoint.Path, "/"), "/", "-")))
@@ -355,7 +357,7 @@ func (g *CustomGenerator) groupEndpoints(endpoints []models.Endpoint) map[string
 			// Extract from path
 			parts := strings.Split(strings.Trim(endpoint.Path, "/"), "/")
 			if len(parts) > 0 && parts[0] != "" {
-				group = strings.Title(parts[0])
+				group = cases.Title(language.English).String(parts[0])
 			}
 		}
 
@@ -365,8 +367,10 @@ func (g *CustomGenerator) groupEndpoints(endpoints []models.Endpoint) map[string
 	return grouped
 }
 
-// generateEndpointPage generates a markdown page for an endpoint
-func (g *CustomGenerator) generateEndpointPage(endpoint models.Endpoint, position int) string {
+// generateEndpointPage generates a markdown page for an endpoint.
+// componentSchemas is spec.Models, used to resolve $ref schemas (named structs)
+// to their actual fields instead of rendering them as null.
+func (g *CustomGenerator) generateEndpointPage(endpoint models.Endpoint, position int, componentSchemas map[string]models.Schema) string {
 	method := strings.ToUpper(endpoint.Method)
 
 	page := fmt.Sprintf(`---
@@ -458,7 +462,7 @@ sidebar_position: %d
 
 		if jsonContent, ok := endpoint.RequestBody.Content["application/json"]; ok {
 			page += "```json\n"
-			page += g.schemaToJSON(jsonContent.Schema, 0)
+			page += g.schemaToJSON(jsonContent.Schema, 0, componentSchemas)
 			page += "\n```\n\n"
 		}
 	}
@@ -471,7 +475,7 @@ sidebar_position: %d
 		if len(response.Content) > 0 {
 			if jsonContent, ok := response.Content["application/json"]; ok {
 				page += "```json\n"
-				page += g.schemaToJSON(jsonContent.Schema, 0)
+				page += g.schemaToJSON(jsonContent.Schema, 0, componentSchemas)
 				page += "\n```\n\n"
 			}
 		}
@@ -503,25 +507,38 @@ func (g *CustomGenerator) getMethodColor(method string) string {
 	return "999999"
 }
 
-// schemaToJSON converts a schema to JSON representation
-func (g *CustomGenerator) schemaToJSON(schema models.Schema, indent int) string {
+// schemaToJSON converts a schema to JSON representation. componentSchemas is
+// spec.Models, used to resolve $ref schemas (named structs are recorded as
+// $ref by the analyzer) before rendering their fields.
+func (g *CustomGenerator) schemaToJSON(schema models.Schema, indent int, componentSchemas map[string]models.Schema) string {
+	if schema.Ref != "" {
+		refName := strings.TrimPrefix(schema.Ref, "#/components/schemas/")
+		if resolved, ok := componentSchemas[refName]; ok {
+			return g.schemaToJSON(resolved, indent, componentSchemas)
+		}
+		return "{}"
+	}
+
 	indentStr := strings.Repeat("  ", indent)
 
 	if schema.Type == "object" {
+		if len(schema.Properties) == 0 {
+			return "{}"
+		}
 		result := "{\n"
 		i := 0
 		for name, prop := range schema.Properties {
 			if i > 0 {
 				result += ",\n"
 			}
-			result += fmt.Sprintf("%s  \"%s\": %s", indentStr, name, g.schemaToJSON(prop, indent+1))
+			result += fmt.Sprintf("%s  \"%s\": %s", indentStr, name, g.schemaToJSON(prop, indent+1, componentSchemas))
 			i++
 		}
 		result += fmt.Sprintf("\n%s}", indentStr)
 		return result
 	} else if schema.Type == "array" {
 		if schema.Items != nil {
-			return fmt.Sprintf("[\n%s  %s\n%s]", indentStr, g.schemaToJSON(*schema.Items, indent+1), indentStr)
+			return fmt.Sprintf("[\n%s  %s\n%s]", indentStr, g.schemaToJSON(*schema.Items, indent+1, componentSchemas), indentStr)
 		}
 		return "[]"
 	}
