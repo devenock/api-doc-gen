@@ -876,11 +876,14 @@ func (a *Analyzer) resolveHandlerSourceFiles() {
 		filePath := findFileWithFunction(a.config.ProjectPath, a.config.Exclude, ep.HandlerPackage, ep.HandlerName)
 		if filePath != "" {
 			ep.SourceFile = filePath
-			// For cross-package handlers the function signature is just func(c *gin.Context),
-			// so we can't get the body type from params. Scan the body for binding calls instead.
+			// Parse with comments so extractHandlerComments can read doc blocks.
 			fset := token.NewFileSet()
-			node, err := parser.ParseFile(fset, filePath, nil, 0)
+			node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
 			if err == nil {
+				// Extract the doc comment — overrides the humanized-name fallback.
+				a.extractHandlerComments(node, ep.HandlerName, ep)
+
+				// Scan the body for JSON-binding calls to get the request body type.
 				if ep.RequestBody == nil {
 					if typName := findBindingTypeName(node, ep.HandlerName); typName != "" {
 						if schema, ok := a.typeRegistry[typName]; ok {
@@ -1081,6 +1084,7 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 			}
 		}
 	}
+	path = normalizeColonPath(path)
 
 	// Tag from path for Swagger grouping (e.g. /api/v1/products -> "products")
 	var tags []string
@@ -1304,14 +1308,30 @@ func (a *Analyzer) parseGorillaMethods(n ast.Node, file *ast.File) {
 	}
 	path := strings.Trim(pathLit.Value, `"`)
 
+	// httpMethodConsts maps the net/http package-level constant names to their
+	// string values so that .Methods(http.MethodPost) is handled the same way
+	// as .Methods("POST").
+	httpMethodConsts := map[string]string{
+		"MethodGet": "GET", "MethodPost": "POST", "MethodPut": "PUT",
+		"MethodDelete": "DELETE", "MethodPatch": "PATCH",
+		"MethodHead": "HEAD", "MethodOptions": "OPTIONS",
+	}
+
 	var methods []string
 	for _, arg := range callExpr.Args {
-		lit, ok := arg.(*ast.BasicLit)
-		if !ok || lit.Kind != token.STRING {
-			continue
+		var method string
+		switch v := arg.(type) {
+		case *ast.BasicLit:
+			if v.Kind == token.STRING {
+				method = strings.ToUpper(strings.Trim(v.Value, `"`))
+			}
+		case *ast.SelectorExpr:
+			// e.g. http.MethodPost
+			if mapped, ok := httpMethodConsts[v.Sel.Name]; ok {
+				method = mapped
+			}
 		}
-		method := strings.ToUpper(strings.Trim(lit.Value, `"`))
-		if gorillaValidMethods[method] {
+		if method != "" && gorillaValidMethods[method] {
 			methods = append(methods, method)
 		}
 	}
@@ -1557,19 +1577,19 @@ func (a *Analyzer) extractHandlerComments(file *ast.File, handlerName string, en
 		}
 
 		if funcDecl.Doc != nil {
-			var description strings.Builder
+			var docLines []string
 			for _, comment := range funcDecl.Doc.List {
 				text := strings.TrimPrefix(comment.Text, "//")
 				text = strings.TrimSpace(text)
-				description.WriteString(text)
-				description.WriteString(" ")
+				if text != "" {
+					docLines = append(docLines, text)
+				}
 			}
-			endpoint.Description = strings.TrimSpace(description.String())
-
-			// Use first line as summary if not too long
-			lines := strings.Split(endpoint.Description, "\n")
-			if len(lines) > 0 && len(lines[0]) < 100 {
-				endpoint.Summary = lines[0]
+			if len(docLines) > 0 {
+				// Summary = first comment line (the short one-liner above the func).
+				endpoint.Summary = docLines[0]
+				// Description = all lines joined — gives full context in the spec.
+				endpoint.Description = strings.Join(docLines, " ")
 			}
 		}
 		break
@@ -1585,6 +1605,18 @@ var gorillaTypedVarRe = regexp.MustCompile(`\{([^:{}]+):[^{}]+\}`)
 // "Try it out" can substitute the parameter correctly).
 func normalizeBracePath(path string) string {
 	return gorillaTypedVarRe.ReplaceAllString(path, "{$1}")
+}
+
+// normalizeColonPath converts Gin/Echo/Fiber colon-style path params (:id)
+// to OpenAPI brace style ({id}) so the stored path is spec-compliant.
+func normalizeColonPath(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if strings.HasPrefix(part, ":") {
+			parts[i] = "{" + part[1:] + "}"
+		}
+	}
+	return strings.Join(parts, "/")
 }
 
 // extractPathParams extracts path parameters from route path.
