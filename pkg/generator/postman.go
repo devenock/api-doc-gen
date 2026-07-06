@@ -192,10 +192,73 @@ func (g *PostmanGenerator) groupEndpointsByTag(endpoints []models.Endpoint) map[
 	return grouped
 }
 
+// requestName builds a short Postman request name from the HTTP method and path.
+// Examples: GET /users/:id → get_user, POST /products → add_product
+func requestName(method, path string) string {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+
+	lastResource := ""
+	endsWithParam := false
+
+	for i := len(segments) - 1; i >= 0; i-- {
+		seg := segments[i]
+		if seg == "" {
+			continue
+		}
+		if strings.HasPrefix(seg, ":") || (strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}")) {
+			endsWithParam = true
+			continue
+		}
+		lastResource = strings.ToLower(strings.ReplaceAll(seg, "-", "_"))
+		break
+	}
+
+	if lastResource == "" {
+		lastResource = "resource"
+	}
+
+	m := strings.ToUpper(method)
+	if endsWithParam || m == "POST" || m == "DELETE" {
+		lastResource = singularizeWord(lastResource)
+	}
+
+	var verb string
+	switch m {
+	case "GET":
+		verb = "get"
+	case "POST":
+		verb = "add"
+	case "PUT", "PATCH":
+		verb = "update"
+	case "DELETE":
+		verb = "delete"
+	default:
+		verb = strings.ToLower(method)
+	}
+
+	return verb + "_" + lastResource
+}
+
+// singularizeWord strips a trailing 's' for common English plural patterns.
+func singularizeWord(word string) string {
+	if strings.HasSuffix(word, "ies") && len(word) > 3 {
+		return word[:len(word)-3] + "y"
+	}
+	for _, suffix := range []string{"ics", "us", "ss", "is"} {
+		if strings.HasSuffix(word, suffix) {
+			return word
+		}
+	}
+	if strings.HasSuffix(word, "s") && len(word) > 2 {
+		return word[:len(word)-1]
+	}
+	return word
+}
+
 // convertEndpointToItem converts an endpoint to a Postman item
 func (g *PostmanGenerator) convertEndpointToItem(endpoint models.Endpoint, spec *models.APISpec) PostmanItem {
 	item := PostmanItem{
-		Name:        endpoint.Summary,
+		Name:        requestName(endpoint.Method, endpoint.Path),
 		Description: endpoint.Description,
 		Response:    []interface{}{},
 	}
