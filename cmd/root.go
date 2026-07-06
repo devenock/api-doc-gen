@@ -395,17 +395,30 @@ func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
 				ExitUsageError,
 			}
 		} else {
-			if !quiet {
-				fmt.Println()
-				if postman.IsDesktopInstalled() {
+			// No API key and non-interactive (and --upload not forced).
+			// If the Postman desktop app is installed, import the collection
+			// directly — no account or API key required.
+			if postman.IsDesktopInstalled() {
+				if !quiet {
+					fmt.Println()
+					fmt.Println("🚀 Importing collection into Postman desktop...")
+					fmt.Println("   (Postman will open and import your collection — this may take a moment)")
+				}
+				if err := postman.ImportToDesktop(collectionPath); err != nil {
+					if !quiet {
+						fmt.Fprintf(os.Stderr, "   ↳ Automatic import failed: %v\n", err)
+						fmt.Printf("   Open Postman and import this file manually: %s\n", collectionPath)
+					}
+				} else if !quiet {
+					fmt.Println("   ✅ Collection imported into Postman!")
+				}
+			} else {
+				if !quiet {
+					fmt.Println()
 					fmt.Printf("📦 Collection saved: %s\n", collectionPath)
-					fmt.Println("   Postman is installed — run interactively to upload and open it automatically.")
-					fmt.Printf("   💡 Or set %s=<your-key> to upload without prompts.\n", postman.EnvAPIDocPostmanKey)
-				} else {
-					fmt.Printf("📦 Postman is not installed. Collection saved to: %s\n", collectionPath)
-					fmt.Println("   Import the file into Postman:")
-					fmt.Println("   • Desktop: https://www.postman.com/downloads/")
-					fmt.Println("   • Web:     https://web.postman.co → Import → Upload File")
+					fmt.Println("   Postman is not installed.")
+					fmt.Println("   • Download: https://www.postman.com/downloads/")
+					fmt.Println("   • Web:      https://web.postman.co → Import → Upload File")
 				}
 			}
 			return nil
