@@ -15,7 +15,7 @@ CLI that scans your Go API codebase and generates API documentation as **Swagger
 
 ## Installation
 
-**Prerequisites:** Go 1.22+ (Node.js/npm only for Docusaurus output)
+**Prerequisites:** Go 1.24+ (Node.js/npm only for Docusaurus output)
 
 Install the CLI from anywhere (no need to clone this repo):
 

@@ -15,7 +15,7 @@ By participating, you agree to uphold our [Code of Conduct](CODE_OF_CONDUCT.md).
 ## Development setup
 
 1. **Fork and clone** the repository.
-2. **Prerequisites:** Go 1.22 or later.
+2. **Prerequisites:** Go 1.24 or later.
 3. **Build and test:**
    ```bash
    cd apidoc-gen
