@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/devenock/api-doc-gen/internal/annotations"
 	"github.com/devenock/api-doc-gen/internal/prompt"
@@ -250,21 +253,9 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 
 	if !quiet {
 		fmt.Printf("✅ Documentation generated successfully at: %s\n", cfg.Output)
-		printDocsAccessURL(cfg)
-	}
-
-	// Postman: auto-upload (interactive prompt for API key if needed). Only runs
-	// for --type=postman; respects --no-upload; in non-interactive mode without
-	// a key it silently skips unless --upload was passed (then errors).
-	if cfg.DocType == "postman" {
-		useInteractiveUpload := viper.GetBool("interactive") && !viper.GetBool("no-interactive")
-		if err := runPostmanUpload(cfg, useInteractiveUpload, quiet); err != nil {
-			return err
-		}
 	}
 
 	// --write-annotations: write swag comments above handler functions.
-	// Enabled by the flag, the config file, or the interactive prompt answer.
 	if viper.GetBool("write-annotations") || cfg.WriteAnnotations {
 		n, err := annotations.WriteSwagAnnotations(apiSpec.Endpoints, cfg.BasePath)
 		if err != nil && !quiet {
@@ -274,10 +265,20 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// --serve: start local static server and print URL (swagger only)
-	if viper.GetBool("serve") && cfg.DocType == "swagger" {
+	// Swagger: start a local server and open the browser automatically.
+	// In --quiet mode (CI/scripts) skip the server and browser open.
+	if cfg.DocType == "swagger" && !quiet {
 		return runServeDocs(cfg.Output, quiet)
 	}
+
+	// Postman: import into desktop (or prompt/upload via cloud API).
+	if cfg.DocType == "postman" {
+		useInteractiveUpload := viper.GetBool("interactive") && !viper.GetBool("no-interactive")
+		if err := runPostmanUpload(cfg, useInteractiveUpload, quiet); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -304,7 +305,8 @@ func printDocsAccessURL(cfg *config.Config) {
 	}
 }
 
-// runServeDocs serves the output directory and prints the access URL; blocks until interrupted.
+// runServeDocs serves the output directory on a local port, opens the browser
+// automatically, and blocks until interrupted with Ctrl+C.
 func runServeDocs(outputDir string, quiet bool) error {
 	absDir, err := filepath.Abs(outputDir)
 	if err != nil {
@@ -313,15 +315,24 @@ func runServeDocs(outputDir string, quiet bool) error {
 	if _, err := os.Stat(absDir); os.IsNotExist(err) {
 		return &exitCodeError{fmt.Errorf("output directory does not exist: %s", absDir), ExitRuntimeError}
 	}
+
 	port := "8765"
 	addr := ":" + port
+	browserURL := "http://localhost:" + port + "/index.html"
+
 	if !quiet {
 		fmt.Println()
-		fmt.Printf("🌐 Serving docs at http://localhost%s\n", addr)
-		fmt.Printf("   Open in browser: http://localhost%s/index.html\n", addr)
+		fmt.Printf("🌐 Starting Swagger UI at %s\n", browserURL)
 		fmt.Println("   Press Ctrl+C to stop")
 		fmt.Println()
 	}
+
+	// Open the browser after a short delay so the server is ready to accept connections.
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		openBrowser(browserURL)
+	}()
+
 	handler := http.FileServer(http.Dir(absDir))
 	err = http.ListenAndServe(addr, handler)
 	if err != nil && (err == http.ErrServerClosed || strings.Contains(err.Error(), "closed")) {
@@ -333,95 +344,91 @@ func runServeDocs(outputDir string, quiet bool) error {
 	return nil
 }
 
-// runPostmanUpload uploads the generated collection.json to Postman, with
-// interactive prompting for an API key if none is configured. It returns nil
-// (and may print a tip) when no key is available in non-interactive mode and
-// --upload was not passed; in that case the user just gets the local file.
-func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
-	if cfg.PostmanNoUpload {
-		return nil
+// openBrowser opens url in the system default browser.
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "", url)
+	default:
+		return
 	}
+	cmd.Start() //nolint:errcheck
+}
 
+// runPostmanUpload generates the Postman collection file, tells the user
+// where it is, and opens Postman so it is ready to receive the import.
+// For automated upload via the Postman cloud API, pass --upload.
+func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
 	collectionPath := filepath.Join(cfg.Output, "collection.json")
 	if _, err := os.Stat(collectionPath); err != nil {
-		// Generation should have produced this file; if not, nothing to upload.
 		return nil
 	}
 
-	// Direct-import path: open Postman desktop and import the local file
-	// without touching the Postman cloud API. No API key required.
-	if cfg.PostmanDirectImport && postman.IsDesktopInstalled() {
-		if !quiet {
-			fmt.Println()
-			fmt.Println("🚀 Importing collection into Postman desktop...")
-			fmt.Println("   (Postman will open and import your collection — this may take a moment)")
-		}
-		if err := postman.ImportToDesktop(collectionPath); err != nil {
-			if !quiet {
-				fmt.Fprintf(os.Stderr, "   ↳ Automatic import failed: %v\n", err)
-				fmt.Printf("   Open Postman and import this file manually: %s\n", collectionPath)
-			}
-		} else if !quiet {
-			fmt.Println("   ✅ Collection imported into Postman!")
-		}
-		return nil
+	// --upload: push to Postman cloud (requires API key).
+	if cfg.PostmanUpload {
+		return runPostmanAPIUpload(cfg, collectionPath, interactive, quiet)
 	}
 
+	// Default: show where the file is and how to import it.
+	if !quiet {
+		absPath, _ := filepath.Abs(collectionPath)
+		fmt.Println()
+		fmt.Printf("\U0001f4e6 Postman collection ready: %s\n", absPath)
+		fmt.Println()
+		fmt.Println("   To import into Postman:")
+		fmt.Println("   1. Open Postman")
+		fmt.Println("   2. Click Import (top-left of the sidebar)")
+		fmt.Println("   3. Choose Upload Files and select the file above")
+		fmt.Println()
+		fmt.Println("   Or drag the file directly into the Postman sidebar.")
+	}
+
+	// Open Postman so it is ready for the import (skip in CI/quiet mode).
+	if postman.IsDesktopInstalled() && !quiet {
+		postman.OpenDesktop("") //nolint:errcheck
+	}
+
+	return nil
+}
+
+// runPostmanAPIUpload uploads the collection to Postman cloud and opens the
+// desktop app to the resulting collection. Only called when --upload is set.
+func runPostmanAPIUpload(cfg *config.Config, collectionPath string, interactive, quiet bool) error {
 	apiKey, source := cfg.PostmanAPIKey, "flag:--postman-api-key"
 	if apiKey == "" {
 		apiKey, source = postman.LoadAPIKey()
 	}
-
 	if apiKey == "" {
 		if interactive {
+			if !quiet {
+				fmt.Println()
+				fmt.Println("Postman API key required for upload.")
+				fmt.Println("Get a free key at: https://postman.co/settings/me/api-keys")
+				fmt.Println()
+			}
 			key, err := prompt.PromptPostmanAPIKey()
-			if err != nil {
-				if !quiet {
-					fmt.Fprintf(os.Stderr, "   ↳ skipping Postman upload (no API key entered): %v\n", err)
-				}
-				return nil
+			if err != nil || key == "" {
+				return &exitCodeError{errors.New("no Postman API key provided"), ExitUsageError}
 			}
 			path, serr := postman.SaveAPIKey(key)
 			if serr != nil {
 				return &exitCodeError{fmt.Errorf("save Postman credentials: %w", serr), ExitRuntimeError}
 			}
 			if !quiet {
-				fmt.Printf("   🔐 Saved Postman API key to %s (mode 0600)\n", path)
+				fmt.Printf("   API key saved to %s\n", path)
 			}
 			apiKey, source = key, "file:"+path
-		} else if cfg.PostmanUpload {
+		} else {
 			return &exitCodeError{
-				errors.New("--upload was set but no Postman API key was found (set --postman-api-key, APIDOC_POSTMAN_API_KEY, or POSTMAN_API_KEY)"),
+				errors.New("--upload requires a Postman API key " +
+					"(set --postman-api-key, APIDOC_POSTMAN_API_KEY, or POSTMAN_API_KEY)"),
 				ExitUsageError,
 			}
-		} else {
-			// No API key and non-interactive (and --upload not forced).
-			// If the Postman desktop app is installed, import the collection
-			// directly — no account or API key required.
-			if postman.IsDesktopInstalled() {
-				if !quiet {
-					fmt.Println()
-					fmt.Println("🚀 Importing collection into Postman desktop...")
-					fmt.Println("   (Postman will open and import your collection — this may take a moment)")
-				}
-				if err := postman.ImportToDesktop(collectionPath); err != nil {
-					if !quiet {
-						fmt.Fprintf(os.Stderr, "   ↳ Automatic import failed: %v\n", err)
-						fmt.Printf("   Open Postman and import this file manually: %s\n", collectionPath)
-					}
-				} else if !quiet {
-					fmt.Println("   ✅ Collection imported into Postman!")
-				}
-			} else {
-				if !quiet {
-					fmt.Println()
-					fmt.Printf("📦 Collection saved: %s\n", collectionPath)
-					fmt.Println("   Postman is not installed.")
-					fmt.Println("   • Download: https://www.postman.com/downloads/")
-					fmt.Println("   • Web:      https://web.postman.co → Import → Upload File")
-				}
-			}
-			return nil
 		}
 	}
 
@@ -431,17 +438,16 @@ func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
 	}
 
 	client := postman.NewClient(apiKey)
-
 	if cfg.Verbose && !quiet {
-		fmt.Printf("   🔑 Using Postman API key from %s\n", source)
+		fmt.Printf("   Using Postman API key from %s\n", source)
 	}
 
 	cachedUID := postman.LoadCachedUID(cfg.ProjectPath, cfg.Title)
 	if !quiet {
 		if cachedUID != "" {
-			fmt.Printf("☁️  Updating existing Postman collection (uid=%s)...\n", cachedUID)
+			fmt.Printf("\u2601\ufe0f  Updating Postman collection (uid=%s)...\n", cachedUID)
 		} else {
-			fmt.Println("☁️  Uploading new Postman collection...")
+			fmt.Println("\u2601\ufe0f  Uploading collection to Postman...")
 		}
 	}
 
@@ -449,9 +455,8 @@ func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
 	if cachedUID != "" {
 		resp, err = client.UpdateCollection(cachedUID, collectionJSON)
 		if err != nil {
-			// Cached UID may be stale (collection deleted upstream). Fall back to create.
 			if !quiet {
-				fmt.Fprintf(os.Stderr, "   ↳ update failed (%v); creating a new collection instead\n", err)
+				fmt.Fprintf(os.Stderr, "   update failed (%v); creating new collection\n", err)
 			}
 			resp, err = client.CreateCollection(collectionJSON, cfg.PostmanWorkspaceUID)
 		}
@@ -463,28 +468,23 @@ func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
 	}
 
 	if err := postman.SaveCachedUID(cfg.ProjectPath, cfg.Title, resp.Collection.UID); err != nil && !quiet {
-		fmt.Fprintf(os.Stderr, "   ↳ warning: failed to cache collection UID: %v\n", err)
+		fmt.Fprintf(os.Stderr, "   warning: failed to cache collection UID: %v\n", err)
 	}
 
 	if !quiet {
 		fmt.Println()
-		fmt.Println("📮 View in Postman:")
-		fmt.Printf("   • %s\n", postman.WebURL(resp.Collection.UID))
-		fmt.Printf("   • Collection: %s (uid=%s)\n", resp.Collection.Name, resp.Collection.UID)
+		fmt.Printf("\U0001f4ee Collection uploaded: %s\n", postman.WebURL(resp.Collection.UID))
 	}
 
-	// Open Postman desktop when available (interactive only — skip in CI).
-	if interactive && postman.IsDesktopInstalled() {
-		if !quiet {
-			fmt.Println("   🚀 Opening Postman...")
-		}
-		if err := postman.OpenDesktop(resp.Collection.UID); err != nil && !quiet {
-			fmt.Fprintf(os.Stderr, "   ↳ could not open Postman: %v\n", err)
-		}
+	if postman.IsDesktopInstalled() && !quiet {
+		fmt.Println("   Opening Postman...")
+		time.Sleep(2 * time.Second)
+		postman.OpenDesktop(resp.Collection.UID) //nolint:errcheck
 	}
 
 	return nil
 }
+
 
 func runInit(cmd *cobra.Command, args []string) error {
 	configPath := ".apidoc-gen.yaml"
