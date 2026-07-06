@@ -35,40 +35,73 @@ func PromptPostmanAPIKey() (string, error) {
 	return strings.TrimSpace(key), nil
 }
 
-// setupPostmanInWizard handles Postman desktop detection and API key collection
-// as part of the interactive wizard. The user knows what will happen before
-// generation starts: auto-upload + open, or local file only.
-func setupPostmanInWizard() {
+// setupPostmanInWizard handles Postman desktop detection and lets the user
+// choose how their collection should be delivered. It updates cfg in place so
+// runPostmanUpload knows which path to take after generation.
+func setupPostmanInWizard(cfg *config.Config) {
 	fmt.Println()
-	if postman.IsDesktopInstalled() {
+
+	if !postman.IsDesktopInstalled() {
+		fmt.Println("   📦 Postman desktop not found on this machine.")
+		fmt.Println("   A collection.json will be saved — import it when ready:")
+		fmt.Println("      • Desktop: https://www.postman.com/downloads/")
+		fmt.Println("      • Web:     https://web.postman.co → Import → Upload File")
+		fmt.Println()
+		return
+	}
+
+	fmt.Println("   📮 Postman detected on your machine.")
+
+	const (
+		optDirect = "Import directly into Postman (no account or API key needed)"
+		optCloud  = "Sync to Postman cloud (requires API key — enables team sharing & repeat updates)"
+		optFile   = "Save to file only — I'll import manually"
+	)
+
+	modePrompt := promptui.Select{
+		Label: "How would you like to import your collection?",
+		Items: []string{optDirect, optCloud, optFile},
+	}
+	_, choice, err := modePrompt.Run()
+	if err != nil {
+		// Ctrl-C or error — default to file only.
+		fmt.Println("   ↳ Saving collection to file.")
+		fmt.Println()
+		return
+	}
+
+	switch choice {
+	case optDirect:
+		cfg.PostmanDirectImport = true
+		fmt.Println("   ✅ Postman will open and import your collection automatically after generation.")
+
+	case optCloud:
 		key, source := postman.LoadAPIKey()
 		if key != "" {
-			fmt.Printf("   ✅ Postman desktop detected — already logged in (%s)\n", source)
-			fmt.Println("   Your collection will be uploaded and Postman will open automatically.")
-			return
+			fmt.Printf("   ✅ Already logged in (%s) — collection will be uploaded and Postman will open.\n", source)
+			break
 		}
-		// Desktop found but no key yet — prompt now so the user doesn't get
-		// interrupted again after generation finishes.
-		fmt.Println("   📮 Postman desktop detected. Enter your API key to enable auto-upload.")
 		apiKey, err := PromptPostmanAPIKey()
 		if err != nil {
-			// User cancelled or hit Ctrl-C — continue without a key.
-			fmt.Println("   ↳ No key entered. collection.json will be generated for manual import.")
-			return
+			// User skipped key entry — fall back to direct import.
+			cfg.PostmanDirectImport = true
+			fmt.Println("   ↳ No key entered. Falling back to direct import into Postman desktop.")
+			break
 		}
 		path, err := postman.SaveAPIKey(apiKey)
 		if err != nil {
-			fmt.Printf("   ↳ Could not save API key (%v). You will be prompted again after generation.\n", err)
-			return
+			cfg.PostmanDirectImport = true
+			fmt.Printf("   ↳ Could not save API key (%v). Falling back to direct import.\n", err)
+			break
 		}
 		fmt.Printf("   🔐 API key saved to %s\n", path)
 		fmt.Println("   Your collection will be uploaded and Postman will open automatically.")
-	} else {
-		fmt.Println("   📦 Postman desktop not installed.")
-		fmt.Println("   A collection.json will be generated — import it when ready:")
-		fmt.Println("      • Desktop: https://www.postman.com/downloads/")
-		fmt.Println("      • Web:     https://web.postman.co → Import → Upload File")
+
+	case optFile:
+		cfg.PostmanNoUpload = true
+		fmt.Println("   ↳ collection.json will be saved for manual import.")
 	}
+
 	fmt.Println()
 }
 
@@ -93,7 +126,7 @@ func GetUserPreferences(cfg *config.Config) error {
 			cfg.DocType = "swagger"
 		case "Postman Collection":
 			cfg.DocType = "postman"
-			setupPostmanInWizard()
+			setupPostmanInWizard(cfg)
 		case "Custom Docusaurus Site":
 			cfg.DocType = "custom"
 		}

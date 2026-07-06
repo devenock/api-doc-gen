@@ -1,11 +1,16 @@
 package postman
 
 import (
+	"context"
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 // IsDesktopInstalled reports whether the Postman desktop app is installed on
@@ -45,6 +50,79 @@ func IsDesktopInstalled() bool {
 		return err == nil && len(entries) > 0
 	}
 	return false
+}
+
+// ImportToDesktop imports a collection file directly into the Postman desktop
+// app without requiring a Postman account or API key. It starts a temporary
+// localhost HTTP server, opens the Postman import URL scheme pointing at it,
+// and waits until Postman fetches the file (or 20 s) before shutting down.
+func ImportToDesktop(collectionPath string) error {
+	dir := filepath.Dir(collectionPath)
+	name := filepath.Base(collectionPath)
+
+	// Signal channel — closed when Postman fetches the collection file.
+	fetched := make(chan struct{})
+	once := make(chan struct{}, 1)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/"+name, func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, collectionPath)
+		// Signal only on the first fetch.
+		select {
+		case once <- struct{}{}:
+			close(fetched)
+		default:
+		}
+	})
+	// Serve any other file in the same dir (unlikely to be needed, harmless).
+	mux.Handle("/", http.FileServer(http.Dir(dir)))
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return fmt.Errorf("start local import server: %w", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	srv := &http.Server{Handler: mux}
+	go srv.Serve(ln) //nolint:errcheck
+
+	importURL := fmt.Sprintf(
+		"postman://app/collections/import?url=%s",
+		url.QueryEscape(fmt.Sprintf("http://127.0.0.1:%d/%s", port, name)),
+	)
+
+	var openErr error
+	switch runtime.GOOS {
+	case "darwin":
+		openErr = exec.Command("open", importURL).Start()
+	case "linux":
+		openErr = exec.Command("xdg-open", importURL).Start()
+	case "windows":
+		openErr = exec.Command("cmd", "/c", "start", "", importURL).Start()
+	default:
+		openErr = fmt.Errorf("unsupported OS: %s", runtime.GOOS)
+	}
+
+	shutdown := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		srv.Shutdown(ctx) //nolint:errcheck
+	}
+
+	if openErr != nil {
+		shutdown()
+		return openErr
+	}
+
+	// Wait for Postman to fetch the file, or give up after 20 s.
+	select {
+	case <-fetched:
+		time.Sleep(500 * time.Millisecond) // brief grace period
+	case <-time.After(20 * time.Second):
+	}
+
+	shutdown()
+	return nil
 }
 
 // OpenDesktop launches the Postman desktop app. When collectionUID is non-empty

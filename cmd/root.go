@@ -346,6 +346,25 @@ func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
 		return nil
 	}
 
+	// Direct-import path: open Postman desktop and import the local file
+	// without touching the Postman cloud API. No API key required.
+	if cfg.PostmanDirectImport && postman.IsDesktopInstalled() {
+		if !quiet {
+			fmt.Println()
+			fmt.Println("🚀 Importing collection into Postman desktop...")
+			fmt.Println("   (Postman will open and import your collection — this may take a moment)")
+		}
+		if err := postman.ImportToDesktop(collectionPath); err != nil {
+			if !quiet {
+				fmt.Fprintf(os.Stderr, "   ↳ Automatic import failed: %v\n", err)
+				fmt.Printf("   Open Postman and import this file manually: %s\n", collectionPath)
+			}
+		} else if !quiet {
+			fmt.Println("   ✅ Collection imported into Postman!")
+		}
+		return nil
+	}
+
 	apiKey, source := cfg.PostmanAPIKey, "flag:--postman-api-key"
 	if apiKey == "" {
 		apiKey, source = postman.LoadAPIKey()

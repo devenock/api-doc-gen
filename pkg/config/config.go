@@ -30,6 +30,10 @@ type Config struct {
 	PostmanWorkspaceUID string
 	PostmanUpload       bool // --upload: force upload, error if no API key available
 	PostmanNoUpload     bool // --no-upload: skip the upload step entirely
+	// PostmanDirectImport skips the cloud API entirely and imports the collection
+	// directly into the Postman desktop app via a temporary localhost server.
+	// Set by the interactive wizard when the user picks "Import directly".
+	PostmanDirectImport bool
 }
 
 // ServerConfig represent a server cpnfiguration
