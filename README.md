@@ -1,229 +1,145 @@
-# API Documentation Generator (apidoc-gen)
+# api-doc-gen
 
-CLI that scans your Go API codebase and generates API documentation as **Swagger/OpenAPI** or a **Postman Collection**.
+CLI that scans your Go API and generates **Swagger/OpenAPI** or a **Postman Collection** — no annotations required.
 
-- **Install:** [Binary](#installation) · [Docker](#docker)
-- **Get started:** [Quick start](#quick-start) below, or open **[web/index.html](web/index.html)** for a single-page guide.
-- **Use in your backend:** [Using in your backend codebase](#using-in-your-backend-codebase) (where to run, what it reads, optional Make target).
+Supports **Gin, Echo, Fiber, Gorilla Mux, Chi** (auto-detected).
 
-## Features
+---
 
-- Scans Go projects and detects **Gin, Echo, Fiber, Gorilla Mux, Chi**
-- Outputs **Swagger/OpenAPI 3.0** (JSON, YAML, Swagger UI) or **Postman Collection v2.1**
-- Config via **file** (`.apidoc-gen.yaml`), **env** (`APIDOC_*`), or **flags**
-- **Interactive** prompts or **non-interactive** for CI (`--no-interactive`, `-y`)
-
-## Installation
-
-**Prerequisites:** Go 1.24+
-
-Install the CLI from anywhere (no need to clone this repo):
+## Install
 
 ```bash
 go install github.com/devenock/api-doc-gen@latest
 ```
 
-The binary is installed to `$(go env GOPATH)/bin` (usually `~/go/bin`). Ensure that directory is in your [PATH](docs/TROUBLESHOOTING.md#command-not-found-after-go-install)—then you can run `api-doc-gen` from any directory, including your backend project.
+The binary lands in `$(go env GOPATH)/bin` (usually `~/go/bin`). Make sure that directory is on your `PATH`.
 
-**Command name:** The binary is **`api-doc-gen`** (with a hyphen). Use `api-doc-gen init`, `api-doc-gen generate`, etc.
+---
 
-**Docker:** See [Docker](#docker) below. **From source:** Clone the repo and run `go install .` from its root (for development or unreleased fixes).
+## Generate docs for your project
 
-## Quick start
-
-From your Go API project root:
+Run from your Go project root (the directory that has `go.mod`):
 
 ```bash
-api-doc-gen init                    # optional: create .apidoc-gen.yaml
-api-doc-gen generate               # interactive: choose type, framework, etc.
-# or
-api-doc-gen generate --no-interactive --type swagger -o ./docs
+api-doc-gen generate
 ```
 
-Then open `docs/index.html` (Swagger) or import `docs/collection.json` (Postman).
+This starts an interactive wizard — choose your doc type, output folder, title, and so on.
 
-## Using in your backend codebase
+**Skip the wizard** (CI, scripts, or if you already know what you want):
 
-You run apidoc-gen **from your Go API project** (or point it at that directory). It reads your repo and writes docs into a folder you choose.
+```bash
+api-doc-gen generate --no-interactive --type swagger -o ./docs
+api-doc-gen generate --no-interactive --type postman -o ./docs
+```
 
-1. **Where to run** – From the root of your backend repo (the directory that has `go.mod` and your route definitions). The tool uses the current directory if you don’t pass a path.
-2. **What it reads** – `go.mod` (to detect framework) and `.go` files under that path. It skips `vendor`, `node_modules`, `.git`, and test dirs by default.
-3. **Where output goes** – By default `./docs` in the directory you ran the command from; override with `-o` (e.g. `-o ./api-docs`).
-4. **Optional config in repo** – Run `api-doc-gen init` inside your backend repo to create `.apidoc-gen.yaml` there. Commit it so the team shares the same defaults (output dir, type, title, etc.).
-5. **From another directory** – To generate docs for a backend that isn’t your cwd:  
-   `api-doc-gen generate /path/to/your-api --no-interactive --type swagger -o /path/to/your-api/docs`
+**Point at a project in another directory:**
 
-**Example: backend repo layout**
+```bash
+api-doc-gen generate /path/to/your-api --no-interactive --type swagger -o /path/to/your-api/docs
+```
+
+---
+
+## Output
+
+| Type | Files created |
+|------|--------------|
+| `swagger` | `openapi.json`, `openapi.yaml`, `index.html` (Swagger UI) |
+| `postman` | `collection.json` (Postman Collection v2.1) |
+
+**Swagger** — run `api-doc-gen serve ./docs` to open the Swagger UI in your browser automatically.
+
+**Postman** — open Postman, click **Import** in the sidebar, then drag `collection.json` onto the dialog.
+
+---
+
+## Applying it to your Go project
+
+Your project does not need any changes — the tool reads your existing route definitions.
+
+**Recommended layout:**
 
 ```
 my-go-api/
 ├── go.mod
 ├── main.go
 ├── handlers/
-├── .apidoc-gen.yaml   # optional, from apidoc-gen init
-└── docs/              # generated (e.g. openapi.json, index.html)
+├── .apidoc-gen.yaml   ← optional config (see below)
+└── docs/              ← generated output
 ```
 
-**Optional Make target** (in your backend’s `Makefile`):
+**Optional `Makefile` target** so the whole team runs the same command:
 
 ```makefile
 docs:
 	api-doc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
-Then run `make docs` from your backend root.
+**Optional config file** — run `api-doc-gen init` inside your project to create `.apidoc-gen.yaml`. Commit it so everyone shares the same defaults (output dir, title, framework, etc.). You will not be prompted again for things already in the file.
+
+---
+
+## Key flags
+
+| Flag | What it does |
+|------|-------------|
+| `-t, --type` | `swagger` or `postman` |
+| `-o, --output` | Output directory (default `./docs`) |
+| `-f, --framework` | Force framework: `gin` `echo` `fiber` `gorilla` `chi` |
+| `-y, --no-interactive` | No prompts — required for CI |
+| `--dry-run` | Show what would be generated without writing files |
+| `--upload` | Upload Postman collection via Postman API (prompts for API key once) |
+
+Full reference: `api-doc-gen generate --help`
+
+---
+
+## Postman upload (optional)
+
+If you want the collection to appear in Postman automatically without manual import:
+
+1. Generate a free API key at <https://postman.co/settings/me/api-keys>
+2. Run with `--upload`:
+
+```bash
+api-doc-gen generate --no-interactive --type postman --upload
+```
+
+You will be prompted for the key once. It is saved to `~/.config/apidoc-gen/credentials.json` and reused on future runs. Repeat runs update the same collection — no duplicates.
+
+For CI, export the key as an env variable:
+
+```bash
+export APIDOC_POSTMAN_API_KEY=your_key
+api-doc-gen generate -y --type postman --upload
+```
+
+---
 
 ## Docker
 
-Build and run without installing Go:
+No Go installation needed:
 
 ```bash
 docker build -t apidoc-gen .
 docker run --rm -v "$(pwd)":/workspace -w /workspace apidoc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
-Use your API project path instead of `$(pwd)` if you’re not in the project root.
-
-## Usage
-
-### Commands
-
-| Command | Description |
-|--------|-------------|
-| `generate [path]` | Generate docs (path defaults to `.`) |
-| `init` | Create `.apidoc-gen.yaml` in current directory |
-| `completion <shell>` | Shell completion (bash, zsh, fish) |
-
-### Main flags (generate)
-
-| Flag | Description |
-|------|-------------|
-| `-t, --type` | `swagger` \| `postman` |
-| `-o, --output` | Output directory (default `./docs`) |
-| `-f, --framework` | `gin` \| `echo` \| `fiber` \| `gorilla` \| `chi` (or empty = auto) |
-| `-y, --no-interactive` | No prompts (for CI/scripts) |
-| `-q, --quiet` | Suppress progress output |
-| `-v, --verbose` | Verbose output |
-| `--dry-run` | Show what would be generated, no files written |
-| `--show-config` | Print effective config and exit |
-| `--upload` | (postman) force upload to Postman; error in CI if no API key |
-| `--no-upload` | (postman) skip the auto-upload step |
-| `--postman-api-key` | (postman) API key for the upload step |
-| `--postman-workspace` | (postman) workspace UID to upload to |
-
-Run `apidoc-gen generate --help` for the full list.
-
-### Configuration
-
-- **Config file:** `.apidoc-gen.yaml` in project root (create with `apidoc-gen init`).
-- **Env:** `APIDOC_TYPE`, `APIDOC_OUTPUT`, `APIDOC_FRAMEWORK`, etc.
-- **Precedence:** config file → env → flags.
-
-Full reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
-
-### Automation / CI
-
-Use `--no-interactive` (or `-y`) and set `--type` so the CLI doesn’t wait for input.
-
-- **Exit codes:** `0` success, `1` validation error, `2` runtime error.
-
-```bash
-apidoc-gen generate -y --type swagger -o ./docs --title "My API"
-```
-
-### Shell completion
-
-```bash
-source <(apidoc-gen completion bash)   # or zsh
-apidoc-gen completion fish | source   # fish
-```
-
-## Supported frameworks
-
-Gin, Echo, Fiber, Gorilla Mux, Chi (auto-detected from `go.mod`), plus generic route patterns.
-
-## Output formats
-
-| Type | Output |
-|------|--------|
-| **swagger** | `openapi.json`, `openapi.yaml`, `index.html` (Swagger UI) |
-| **postman** | `collection.json` (Postman Collection v2.1) — and optional auto-upload to Postman, see below |
-
-### Postman auto-upload
-
-When `--type=postman`, the CLI checks whether the Postman desktop app is installed and adapts its behaviour accordingly.
-
-#### Postman desktop is installed
-
-- **API key already saved (returning user):** the CLI uploads the collection and immediately opens Postman to the collection — no prompts needed.
-- **First run (interactive):** the CLI prompts for your API key (input is masked). Generate one at <https://postman.co/settings/me/api-keys>. The key is saved to `~/.config/apidoc-gen/credentials.json` (mode `0600`); subsequent runs reuse it and open Postman automatically.
-
-#### Postman desktop is not installed
-
-The collection is written to `collection.json` locally and the CLI prints import instructions:
-
-```
-📦 Postman is not installed. Collection saved to: ./docs/collection.json
-   Import the file into Postman:
-   • Desktop: https://www.postman.com/downloads/
-   • Web:     https://web.postman.co → Import → Upload File
-```
-
-#### Other notes
-
-- **CI / `--no-interactive`:** export `APIDOC_POSTMAN_API_KEY=...` (or `POSTMAN_API_KEY`). Without a key the upload is silently skipped and the local file is kept. Pass `--upload` if you want a missing key to fail loudly. The desktop app is never opened in non-interactive mode.
-- **Repeat runs:** the collection's UID is cached in `.apidoc-gen-cache.json` (gitignored) and used to **update** the same collection on subsequent runs, so you do not accumulate duplicates in your workspace.
-- **To opt out of upload:** pass `--no-upload`. To revoke credentials: delete `~/.config/apidoc-gen/credentials.json` and rotate the key in Postman.
-
-See **[SECURITY.md](SECURITY.md#postman-credentials)** for the full data-handling details.
-
-## Best practices
-
-1. **Comments** – Plain Go doc comments on handlers become summary/description. Path params are inferred from routes (e.g. `/users/:id`).
-2. **Config file** – Use `.apidoc-gen.yaml` for consistent defaults across the team.
-3. **Exclude dirs** – Default excludes: `vendor`, `node_modules`, `.git`, `test`, `tests`. Override with `exclude` in config or `--exclude`.
-
-## Project structure
-
-```
-├── cmd/root.go
-├── pkg/analyzer/   # Code analysis
-├── pkg/generator/  # Swagger/OpenAPI, Postman
-├── pkg/postman/    # Postman API client, credentials, desktop detection
-├── pkg/models/     # Data models
-├── pkg/config/     # Configuration
-├── internal/prompt/
-├── docs/           # CONFIGURATION.md, TROUBLESHOOTING.md
-├── web/            # Getting-started UI (index.html)
-├── Dockerfile
-├── Makefile
-└── README.md
-```
-
-## Development
-
-```bash
-make build   # build binary
-make test    # run tests
-make run     # build and run generate
-make install # install locally
-```
+---
 
 ## Troubleshooting
 
-- **No endpoints** – Set `--framework` or use `-v`. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
-- **Config not read** – Ensure `.apidoc-gen.yaml` is in cwd or use `--config`. Run `--show-config` to inspect.
-- **Prompts in CI** – Use `-y` and `--type` (and other flags) so the run is non-interactive.
-- **Postman doesn't open automatically** – The CLI opens Postman via the `postman://` URL scheme. If it doesn't launch, open Postman manually and the collection will already be in your workspace (it was uploaded). On Linux, ensure `xdg-open` is available or that `postman` is on your PATH.
+**No endpoints found** — pass `--framework` explicitly or run with `-v` (verbose) to see what the analyzer is reading.
 
-## Security and privacy
+**Config not picked up** — ensure `.apidoc-gen.yaml` is in the directory you are running the command from, or run `--show-config` to inspect the effective config.
 
-apidoc-gen runs entirely on your machine and does not send your code or data anywhere. For handling of sensitive codebases, dependency hygiene, and how to report vulnerabilities, see **[SECURITY.md](SECURITY.md)**.
+**Prompts appearing in CI** — always pass `-y` (`--no-interactive`) and `--type` in CI pipelines.
+
+Full troubleshooting guide: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+
+---
 
 ## Contributing
 
-Contributions are welcome. Please read **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup and pull request guidelines. By participating, you agree to our **[Code of Conduct](CODE_OF_CONDUCT.md)**.
-
-## License
-
-MIT.
+See [CONTRIBUTING.md](CONTRIBUTING.md). MIT licensed.
