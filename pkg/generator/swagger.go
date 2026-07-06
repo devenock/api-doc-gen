@@ -290,49 +290,9 @@ func (g *SwaggerGenerator) generateSwaggerUI(path string) error {
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
     <style>
         body { margin: 0; padding: 0; }
-        #cors-notice {
-            background: #1c3557;
-            border-bottom: 1px solid #2d5a8e;
-            color: #90cdf4;
-            padding: 0.7rem 1.25rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            font-size: 0.875rem;
-            gap: 1rem;
-        }
-        #cors-notice code {
-            background: rgba(255,255,255,0.12);
-            padding: 0.1em 0.4em;
-            border-radius: 3px;
-            font-size: 0.8125rem;
-        }
-        #cors-notice button {
-            background: none;
-            border: none;
-            color: #90cdf4;
-            cursor: pointer;
-            font-size: 1.125rem;
-            flex-shrink: 0;
-            line-height: 1;
-            padding: 0;
-        }
-        #cors-notice button:hover { color: #fff; }
     </style>
 </head>
 <body>
-    <div id="cors-notice">
-        <span>
-            💡 <strong>CORS:</strong> If "Execute" fails with a network error, your backend needs CORS headers.
-            Add CORS middleware:
-            <code>github.com/gin-contrib/cors</code> (Gin) &nbsp;·&nbsp;
-            <code>echo/middleware.CORS()</code> (Echo) &nbsp;·&nbsp;
-            <code>github.com/gofiber/contrib/fibercors</code> (Fiber) &nbsp;·&nbsp;
-            <code>github.com/rs/cors</code> (Gorilla / Chi / stdlib)
-        </span>
-        <button onclick="document.getElementById('cors-notice').remove()" title="Dismiss">✕</button>
-    </div>
     <div id="swagger-ui"></div>
     <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
