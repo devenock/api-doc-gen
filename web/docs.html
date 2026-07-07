@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>api-doc-gen</title>
+  <style>
+    /* ── Tokens ──────────────────────────────────────────────── */
+    :root {
+      --bg:          #090C11;
+      --surface:     #10151E;
+      --surface-hi:  #171E2A;
+      --border:      #1C2535;
+      --text:        #D6E3F0;
+      --muted:       #546478;
+      --accent:      #3E8FFF;
+      --accent-dim:  rgba(62, 143, 255, 0.10);
+      --green:       #2DBF6E;
+      --sidebar-w:   232px;
+      --header-h:    52px;
+      --radius:      6px;
+    }
+    :root[data-theme="light"] {
+      --bg:          #F4F7FB;
+      --surface:     #FFFFFF;
+      --surface-hi:  #EBF0F7;
+      --border:      #D5DDE8;
+      --text:        #0D1825;
+      --muted:       #607080;
+      --accent:      #1468CC;
+      --accent-dim:  rgba(20, 104, 204, 0.08);
+      --green:       #1A9050;
+    }
+
+    /* ── Reset ───────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14.5px;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Header ──────────────────────────────────────────────── */
+    .hdr {
+      position: fixed;
+      inset: 0 0 auto 0;
+      height: var(--header-h);
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.5rem;
+      z-index: 100;
+    }
+    .hdr-brand {
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .hdr-brand:hover { color: var(--accent); text-decoration: none; }
+    .hdr-right { display: flex; align-items: center; gap: 1.25rem; }
+    .hdr-right a { font-size: 0.8125rem; color: var(--muted); }
+    .hdr-right a:hover { color: var(--text); text-decoration: none; }
+    .theme-btn {
+      width: 30px; height: 30px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.12s, color 0.12s;
+    }
+    .theme-btn:hover { border-color: var(--muted); color: var(--text); }
+
+    /* ── Layout ──────────────────────────────────────────────── */
+    .layout { display: flex; padding-top: var(--header-h); min-height: 100vh; }
+
+    /* ── Sidebar ─────────────────────────────────────────────── */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      position: sticky;
+      top: var(--header-h);
+      height: calc(100vh - var(--header-h));
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      padding: 1.75rem 0 2rem;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .sidebar::-webkit-scrollbar { width: 3px; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .nav-section { margin-bottom: 1.5rem; }
+    .nav-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      padding: 0 1.25rem;
+      margin-bottom: 0.375rem;
+      display: block;
+    }
+    .nav-link {
+      display: block;
+      padding: 0.3rem 1.25rem;
+      font-size: 0.8125rem;
+      color: var(--muted);
+      border-left: 2px solid transparent;
+      transition: color 0.1s, background 0.1s, border-color 0.1s;
+    }
+    .nav-link:hover { color: var(--text); background: var(--surface); text-decoration: none; }
+    .nav-link.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-dim); }
+
+    /* ── Main ────────────────────────────────────────────────── */
+    .main {
+      flex: 1;
+      min-width: 0;
+      padding: 3rem 3.5rem 6rem;
+      max-width: 740px;
+    }
+
+    /* ── Hero ────────────────────────────────────────────────── */
+    .hero { padding-bottom: 2.5rem; margin-bottom: 2.5rem; border-bottom: 1px solid var(--border); }
+    .hero-name {
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: 1.875rem;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      color: var(--text);
+      margin-bottom: 0.5rem;
+      line-height: 1.2;
+    }
+    .hero-desc {
+      font-size: 0.9375rem;
+      color: var(--muted);
+      line-height: 1.65;
+      max-width: 480px;
+      margin-bottom: 1.5rem;
+    }
+    .hero-install {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.625rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.5625rem 0.875rem;
+      position: relative;
+    }
+    .hero-prompt {
+      font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+      font-size: 0.8125rem;
+      color: var(--green);
+      user-select: none;
+    }
+    .hero-install code {
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: 0.8125rem;
+      color: var(--text);
+      background: none;
+      border: none;
+      padding: 0;
+    }
+    .hero-copy {
+      margin-left: 0.5rem;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.6875rem;
+      font-family: inherit;
+      background: var(--surface-hi);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: color 0.1s;
+    }
+    .hero-copy:hover { color: var(--text); }
+    .hero-copy.copied { color: var(--green); border-color: var(--green); }
+
+    /* ── Sections ────────────────────────────────────────────── */
+    .section { margin-bottom: 2.75rem; }
+
+    .section-rule {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin-bottom: 2.75rem;
+    }
+
+    h2 {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 1rem;
+      scroll-margin-top: calc(var(--header-h) + 1.25rem);
+    }
+
+    p { color: var(--muted); margin-bottom: 0.875rem; }
+    p:last-child { margin-bottom: 0; }
+    p strong, li strong { color: var(--text); font-weight: 500; }
+
+    ul, ol { color: var(--muted); padding-left: 1.25rem; margin-bottom: 0.875rem; }
+    li { margin-bottom: 0.25rem; }
+    li:last-child { margin-bottom: 0; }
+
+    /* ── Code ────────────────────────────────────────────────── */
+    :not(pre) > code {
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: 0.8125rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.1em 0.38em;
+      color: var(--text);
+    }
+
+    .code-block {
+      position: relative;
+      margin: 0.75rem 0 1rem;
+    }
+    .code-block pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.125rem;
+      overflow-x: auto;
+    }
+    .code-block code {
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: 0.8125rem;
+      color: var(--text);
+      background: none;
+      border: none;
+      padding: 0;
+      line-height: 1.75;
+    }
+    .c { color: var(--muted); }  /* comment */
+    .p { color: var(--green); }  /* prompt $ */
+
+    .copy-btn {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.6875rem;
+      font-family: inherit;
+      background: var(--surface-hi);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .copy-btn:hover { color: var(--text); }
+    .copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+    /* ── Table ───────────────────────────────────────────────── */
+    .tbl-wrap { overflow-x: auto; margin: 0.75rem 0 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+    thead th {
+      padding: 0.5rem 0.875rem;
+      text-align: left;
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 0.5625rem 0.875rem;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    td:first-child { color: var(--text); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface-hi); }
+
+    /* ── Callout ─────────────────────────────────────────────── */
+    .callout {
+      border-left: 2px solid var(--accent);
+      background: var(--accent-dim);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      padding: 0.75rem 1rem;
+      margin: 1rem 0;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+
+    /* ── Responsive ──────────────────────────────────────────── */
+    @media (max-width: 860px) {
+      .sidebar { display: none; }
+      .main { padding: 2rem 1.5rem 4rem; max-width: 100%; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="hdr">
+    <a href="index.html" class="hdr-brand">api-doc-gen</a>
+    <div class="hdr-right">
+      <a href="index.html">Home</a>
+      <a href="https://github.com/devenock/api-doc-gen" target="_blank" rel="noopener">GitHub</a>
+      <button class="theme-btn" id="themeBtn" aria-label="Toggle theme">☀</button>
+    </div>
+  </header>
+
+  <div class="layout">
+
+    <aside class="sidebar" aria-label="Documentation navigation">
+      <nav>
+        <div class="nav-section">
+          <span class="nav-label">Getting started</span>
+          <a class="nav-link" href="#install">Install</a>
+          <a class="nav-link" href="#generate">Generate docs</a>
+          <a class="nav-link" href="#output">Output</a>
+        </div>
+        <div class="nav-section">
+          <span class="nav-label">Usage</span>
+          <a class="nav-link" href="#flags">Flags</a>
+          <a class="nav-link" href="#config">Config file</a>
+          <a class="nav-link" href="#postman">Postman</a>
+          <a class="nav-link" href="#docker">Docker</a>
+          <a class="nav-link" href="#ci">CI &amp; scripts</a>
+        </div>
+        <div class="nav-section">
+          <span class="nav-label">Reference</span>
+          <a class="nav-link" href="#troubleshooting">Troubleshooting</a>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="main">
+
+      <!-- Hero -->
+      <div class="hero">
+        <h1 class="hero-name">api-doc-gen</h1>
+        <p class="hero-desc">
+          Scan your Go API and generate Swagger/OpenAPI or a Postman Collection —
+          no annotations, no code changes. Supports Gin, Echo, Fiber, Gorilla Mux, and Chi.
+        </p>
+        <div class="hero-install">
+          <span class="hero-prompt">$</span>
+          <code>go install github.com/devenock/api-doc-gen@latest</code>
+          <button class="hero-copy">Copy</button>
+        </div>
+      </div>
+
+      <!-- Install -->
+      <div class="section" id="install">
+        <h2>Install</h2>
+        <p>Requires Go 1.24+. The binary is installed to <code>$(go env GOPATH)/bin</code> — usually <code>~/go/bin</code>. Make sure that directory is on your <code>PATH</code>.</p>
+        <div class="code-block">
+          <pre><code><span class="c"># Add to ~/.zshrc or ~/.bashrc if needed</span>
+export PATH="$PATH:$(go env GOPATH)/bin"</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Verify:</p>
+        <div class="code-block">
+          <pre><code>api-doc-gen --version</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Generate -->
+      <div class="section" id="generate">
+        <h2>Generate docs</h2>
+        <p>Run from your Go project root — the directory that contains <code>go.mod</code> and your route definitions.</p>
+        <div class="code-block">
+          <pre><code><span class="c"># Interactive wizard — choose type, output dir, title, etc.</span>
+api-doc-gen generate
+
+<span class="c"># Or non-interactive — skip all prompts</span>
+api-doc-gen generate --no-interactive --type swagger -o ./docs
+api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Point at a project in a different directory:</p>
+        <div class="code-block">
+          <pre><code>api-doc-gen generate /path/to/your-api --no-interactive --type swagger -o /path/to/your-api/docs</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <div class="callout">
+          Run <code>api-doc-gen init</code> inside your project to generate a <code>.apidoc-gen.yaml</code> config file.
+          Commit it so the whole team shares the same defaults.
+        </div>
+        <p>Optional <code>Makefile</code> target:</p>
+        <div class="code-block">
+          <pre><code>docs:
+	api-doc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Output -->
+      <div class="section" id="output">
+        <h2>Output</h2>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Type</th><th>Files</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>swagger</code></td>
+                <td><code>openapi.json</code> · <code>openapi.yaml</code> · <code>index.html</code> (Swagger UI)</td>
+              </tr>
+              <tr>
+                <td><code>postman</code></td>
+                <td><code>collection.json</code> (Postman Collection v2.1)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Swagger</strong> — open <code>docs/index.html</code> directly in your browser, or run <code>api-doc-gen serve ./docs</code> to serve it locally and have it open automatically.</p>
+        <p><strong>Postman</strong> — open Postman, click <strong>Import</strong> in the sidebar, and drag <code>collection.json</code> onto the dialog. Endpoints are organized into folders by tag, with example request bodies and bearer auth pre-wired.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Flags -->
+      <div class="section" id="flags">
+        <h2>Flags</h2>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>-t, --type</code></td><td>Output type: <code>swagger</code> or <code>postman</code></td></tr>
+              <tr><td><code>-o, --output</code></td><td>Output directory (default: <code>./docs</code>)</td></tr>
+              <tr><td><code>-f, --framework</code></td><td>Force framework: <code>gin</code> · <code>echo</code> · <code>fiber</code> · <code>gorilla</code> · <code>chi</code></td></tr>
+              <tr><td><code>-y, --no-interactive</code></td><td>Disable all prompts — required in CI</td></tr>
+              <tr><td><code>--dry-run</code></td><td>Show what would be generated, write nothing</td></tr>
+              <tr><td><code>--show-config</code></td><td>Print effective config and exit</td></tr>
+              <tr><td><code>--upload</code></td><td>Upload Postman collection via API (see <a href="#postman">Postman</a>)</td></tr>
+              <tr><td><code>--title</code></td><td>API title (default: <code>API Documentation</code>)</td></tr>
+              <tr><td><code>--version</code></td><td>API version string (default: <code>1.0.0</code>)</td></tr>
+              <tr><td><code>--base-path</code></td><td>Prefix prepended to every path</td></tr>
+              <tr><td><code>-v, --verbose</code></td><td>Show detected framework, endpoint count, etc.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Full list: <code>api-doc-gen generate --help</code></p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Config -->
+      <div class="section" id="config">
+        <h2>Config file</h2>
+        <p>Create <code>.apidoc-gen.yaml</code> in your project root to set persistent defaults. Run <code>api-doc-gen init</code> to generate one interactively.</p>
+        <div class="code-block">
+          <pre><code><span class="c"># .apidoc-gen.yaml</span>
+type: swagger
+output: ./docs
+framework: ""       <span class="c"># leave blank to auto-detect from go.mod</span>
+title: My API
+version: 1.0.0</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Precedence (highest wins): flags → env vars → config file.</p>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Config key</th><th>Env var</th></tr></thead>
+            <tbody>
+              <tr><td><code>type</code></td><td><code>APIDOC_TYPE</code></td></tr>
+              <tr><td><code>output</code></td><td><code>APIDOC_OUTPUT</code></td></tr>
+              <tr><td><code>framework</code></td><td><code>APIDOC_FRAMEWORK</code></td></tr>
+              <tr><td><code>title</code></td><td><code>APIDOC_TITLE</code></td></tr>
+              <tr><td><code>version</code></td><td><code>APIDOC_VERSION</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Inspect what's loaded: <code>api-doc-gen generate --show-config</code></p>
+        <p>Full reference: <a href="../docs/CONFIGURATION.md" target="_blank" rel="noopener">CONFIGURATION.md</a></p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Postman -->
+      <div class="section" id="postman">
+        <h2>Postman</h2>
+        <p><strong>Manual import (default)</strong> — generate <code>collection.json</code>, then in Postman click <strong>Import</strong> in the sidebar and drag the file onto the dialog.</p>
+        <p><strong>Auto-upload</strong> — pass <code>--upload</code> to have the CLI upload the collection directly to your Postman workspace via the Postman API. You'll be prompted for an API key the first time; generate one at <a href="https://postman.co/settings/me/api-keys" target="_blank" rel="noopener">postman.co/settings/me/api-keys</a>. The key is saved to <code>~/.config/apidoc-gen/credentials.json</code> and reused on future runs. Repeat runs update the same collection — no duplicates.</p>
+        <div class="code-block">
+          <pre><code><span class="c"># First run — prompts for key once, then uploads</span>
+api-doc-gen generate --no-interactive --type postman --upload -o ./docs
+
+<span class="c"># CI — read key from env, fail loudly if missing</span>
+APIDOC_POSTMAN_API_KEY=your_key api-doc-gen generate -y --type postman --upload
+
+<span class="c"># Generate file only, skip upload entirely</span>
+api-doc-gen generate -y --type postman --no-upload</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>The collection UID is cached in <code>.apidoc-gen-cache.json</code> (gitignored) so subsequent uploads always update the same collection.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Docker -->
+      <div class="section" id="docker">
+        <h2>Docker</h2>
+        <p>Run without installing Go locally. Mount your project as the workspace:</p>
+        <div class="code-block">
+          <pre><code>docker build -t apidoc-gen .
+
+docker run --rm \
+  -v "$(pwd)":/workspace \
+  -w /workspace \
+  apidoc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Replace <code>$(pwd)</code> with the path to your API project if you're not running from its root.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- CI -->
+      <div class="section" id="ci">
+        <h2>CI &amp; scripts</h2>
+        <p>Always pass <code>-y</code> and <code>--type</code> so the CLI never waits for input.</p>
+        <div class="code-block">
+          <pre><code><span class="c"># GitHub Actions example</span>
+- name: Generate API docs
+  run: |
+    go install github.com/devenock/api-doc-gen@latest
+    api-doc-gen generate -y --type swagger -o ./docs --title "My API"</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Exit codes: <code>0</code> success · <code>1</code> validation error · <code>2</code> runtime error.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Troubleshooting -->
+      <div class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <p><strong>Command not found after install</strong><br>
+        Go's bin directory is not on your PATH. Add it and reload your shell:</p>
+        <div class="code-block">
+          <pre><code>export PATH="$PATH:$(go env GOPATH)/bin"
+source ~/.zshrc   <span class="c"># or ~/.bashrc</span></code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+
+        <p><strong>No endpoints found</strong><br>
+        Pass <code>--framework</code> explicitly (e.g. <code>--framework gin</code>), or run with <code>-v</code> to see what was detected. Confirm route files are not inside an excluded directory (<code>vendor</code>, <code>test</code>).</p>
+
+        <p><strong>Config not picked up</strong><br>
+        Ensure <code>.apidoc-gen.yaml</code> is in the directory you're running from, not a subdirectory. Inspect with <code>api-doc-gen generate --show-config</code>.</p>
+
+        <p><strong>Prompts appearing in CI</strong><br>
+        Always pass <code>-y</code> (<code>--no-interactive</code>) and <code>--type</code>. Without these the CLI waits for interactive input.</p>
+
+        <p>Full guide: <a href="../docs/TROUBLESHOOTING.md" target="_blank" rel="noopener">TROUBLESHOOTING.md</a></p>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    // ── Theme ──────────────────────────────────────────────────
+    const root = document.documentElement;
+    const btn  = document.getElementById('themeBtn');
+
+    function applyTheme(t) {
+      root.setAttribute('data-theme', t);
+      btn.textContent = t === 'dark' ? '☀' : '🌙';
+      try { localStorage.setItem('apidocTheme', t); } catch {}
+    }
+
+    (function () {
+      let saved;
+      try { saved = localStorage.getItem('apidocTheme'); } catch {}
+      applyTheme(saved || 'dark');
+    })();
+
+    btn.addEventListener('click', () => {
+      applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    });
+
+    // ── Copy buttons ───────────────────────────────────────────
+    function makeCopy(button, getText) {
+      button.addEventListener('click', () => {
+        navigator.clipboard.writeText(getText()).then(() => {
+          const orig = button.textContent;
+          button.textContent = 'Copied!';
+          button.classList.add('copied');
+          setTimeout(() => { button.textContent = orig; button.classList.remove('copied'); }, 1800);
+        });
+      });
+    }
+
+    document.querySelectorAll('.copy-btn').forEach(btn => {
+      makeCopy(btn, () => btn.closest('.code-block').querySelector('code').innerText);
+    });
+
+    makeCopy(document.querySelector('.hero-copy'), () => {
+      return document.querySelector('.hero-install code').innerText;
+    });
+
+    // ── Active nav via IntersectionObserver ────────────────────
+    const links    = document.querySelectorAll('.nav-link');
+    const sections = document.querySelectorAll('.section[id]');
+
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (!e.isIntersecting) return;
+        links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + e.target.id));
+      });
+    }, { rootMargin: '-15% 0px -75% 0px' });
+
+    sections.forEach(s => io.observe(s));
+  </script>
+
+</body>
+</html>
