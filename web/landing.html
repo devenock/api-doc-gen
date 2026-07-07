@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>api-doc-gen — API Docs Generator for Go</title>
+  <meta name="description" content="Scan your Go API and generate Swagger/OpenAPI or a Postman Collection. No annotations. No code changes.">
+  <style>
+    /* ── Tokens ─────────────────────────────────────────── */
+    :root {
+      --bg:           #070A10;
+      --bg-nav:       rgba(7, 10, 16, 0.88);
+      --surface:      #0C1220;
+      --surface-2:    #111B2C;
+      --border:       #192438;
+      --text:         #C0D4E8;
+      --muted:        #4B6278;
+      --accent:       #3D90FF;
+      --accent-dim:   rgba(61, 144, 255, 0.12);
+      --green:        #26C263;
+      --term-bg:      #050709;
+      --term-border:  #111926;
+    }
+    [data-theme="light"] {
+      --bg:           #F1F5FB;
+      --bg-nav:       rgba(241, 245, 251, 0.9);
+      --surface:      #FFFFFF;
+      --surface-2:    #E6EEF8;
+      --border:       #CAD6E8;
+      --text:         #0B1828;
+      --muted:        #5C7286;
+      --accent:       #1464C8;
+      --accent-dim:   rgba(20, 100, 200, 0.08);
+      --green:        #1A8A48;
+      --term-bg:      #060911;
+      --term-border:  #141F30;
+    }
+
+    /* ── Reset ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Nav ────────────────────────────────────────────── */
+    .nav {
+      position: fixed;
+      inset: 0 0 auto;
+      height: 52px;
+      background: var(--bg-nav);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+      z-index: 100;
+    }
+    .nav-brand {
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.025em;
+    }
+    .nav-brand:hover { color: var(--accent); text-decoration: none; }
+    .nav-right { display: flex; align-items: center; gap: 1.5rem; }
+    .nav-right a { font-size: 0.8125rem; color: var(--muted); }
+    .nav-right a:hover { color: var(--text); text-decoration: none; }
+    .nav-theme {
+      width: 30px; height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .nav-theme:hover { border-color: var(--muted); color: var(--text); }
+
+    /* ── Hero ───────────────────────────────────────────── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 8rem 1.5rem 5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Grid texture */
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 44px 44px;
+      opacity: 0.35;
+      mask-image: radial-gradient(ellipse 75% 65% at 50% 45%, black 20%, transparent 100%);
+      -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 45%, black 20%, transparent 100%);
+      pointer-events: none;
+    }
+
+    /* Glow behind terminal */
+    .hero::after {
+      content: '';
+      position: absolute;
+      bottom: 8%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 500px;
+      height: 200px;
+      background: radial-gradient(ellipse at center, var(--accent-dim) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-eyebrow {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 1.25rem;
+      position: relative;
+    }
+    .hero-title {
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: clamp(2.75rem, 7vw, 5rem);
+      font-weight: 800;
+      letter-spacing: -0.05em;
+      color: var(--text);
+      line-height: 1;
+      margin-bottom: 1.25rem;
+      position: relative;
+    }
+    .hero-sub {
+      font-size: clamp(0.9375rem, 2vw, 1.125rem);
+      color: var(--muted);
+      max-width: 440px;
+      line-height: 1.65;
+      margin-bottom: 2.25rem;
+      position: relative;
+    }
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 3rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      position: relative;
+    }
+
+    .btn-fill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.5625rem 1.25rem;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-fill:hover { opacity: 0.82; text-decoration: none; color: #fff; }
+    .btn-outline {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.5625rem 1.25rem;
+      background: transparent;
+      color: var(--text);
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .btn-outline:hover { border-color: var(--muted); text-decoration: none; color: var(--text); }
+
+    /* ── Terminal ───────────────────────────────────────── */
+    .term-wrap {
+      width: 100%;
+      max-width: 600px;
+      position: relative;
+      z-index: 1;
+    }
+    .terminal {
+      background: var(--term-bg);
+      border: 1px solid var(--term-border);
+      border-radius: 10px;
+      overflow: hidden;
+      text-align: left;
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.03) inset,
+        0 30px 80px rgba(0,0,0,0.55);
+    }
+    .term-bar {
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+      padding: 0.625rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot-r { background: #FF5F57; }
+    .dot-y { background: #FEBC2E; }
+    .dot-g { background: #28C840; }
+    .term-cwd {
+      margin-left: auto;
+      font-family: ui-monospace, monospace;
+      font-size: 0.6875rem;
+      color: var(--muted);
+    }
+    .term-body {
+      padding: 1.25rem 1.375rem 1.625rem;
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: 0.8125rem;
+      line-height: 1.85;
+      min-height: 196px;
+    }
+    .t-row { display: block; }
+    .t-ps  { color: var(--green); }
+    .t-cmd { color: #D8E8F8; }
+    .t-out { color: var(--muted); }
+    .t-ok  { color: var(--green); }
+    .t-path{ color: var(--accent); }
+    .cursor {
+      display: inline-block;
+      width: 7px; height: 13px;
+      background: var(--green);
+      vertical-align: middle;
+      margin-left: 1px;
+    }
+    .cursor.blink { animation: blink 1.05s step-end infinite; }
+    @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0;} }
+
+    /* ── Section shared ─────────────────────────────────── */
+    .section {
+      padding: 5.5rem 1.5rem;
+      max-width: 880px;
+      margin: 0 auto;
+    }
+    .eyebrow {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+      text-align: center;
+    }
+    .section-title {
+      font-size: clamp(1.375rem, 3vw, 1.875rem);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.025em;
+      text-align: center;
+      margin-bottom: 3rem;
+      text-wrap: balance;
+    }
+
+    /* ── Steps ──────────────────────────────────────────── */
+    .steps-section { border-top: 1px solid var(--border); }
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+    }
+    .step {
+      padding: 0 2.25rem;
+      border-left: 1px solid var(--border);
+    }
+    .step:first-child { padding-left: 0; border-left: none; }
+    .step-num {
+      font-family: ui-monospace, monospace;
+      font-size: 0.6875rem;
+      color: var(--accent);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.875rem;
+    }
+    .step-name {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.5rem;
+    }
+    .step-desc { font-size: 0.875rem; color: var(--muted); line-height: 1.65; }
+    .step-snippet {
+      margin-top: 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+      font-size: 0.75rem;
+      color: var(--text);
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+
+    /* ── Output cards ───────────────────────────────────── */
+    .outputs-section { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+    .card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.75rem;
+    }
+    [data-theme="light"] .outputs-section { background: var(--surface-2); }
+    [data-theme="light"] .card { background: var(--surface); }
+    .card-tag {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 0.625rem;
+    }
+    .card-name {
+      font-size: 1.0625rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.625rem;
+    }
+    .card-desc {
+      font-size: 0.875rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 1.375rem;
+    }
+    .card-files { display: flex; flex-direction: column; gap: 0.375rem; }
+    .card-file {
+      font-family: ui-monospace, monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .card-file-dot {
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    /* ── Frameworks ─────────────────────────────────────── */
+    .fw-section { border-top: 1px solid var(--border); text-align: center; }
+    .fw-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 0 2.5rem;
+      margin-bottom: 1.375rem;
+    }
+    .fw {
+      font-family: ui-monospace, monospace;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .fw-note { font-size: 0.875rem; color: var(--muted); }
+    code {
+      font-family: ui-monospace, monospace;
+      font-size: 0.8125rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.1em 0.38em;
+      color: var(--text);
+    }
+
+    /* ── CTA banner ─────────────────────────────────────── */
+    .cta-section { border-top: 1px solid var(--border); text-align: center; }
+    .cta-title {
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.025em;
+      margin-bottom: 0.75rem;
+      text-wrap: balance;
+    }
+    .cta-sub {
+      font-size: 0.9375rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+    .cta-install {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.625rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0.625rem 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .cta-ps {
+      font-family: ui-monospace, monospace;
+      font-size: 0.8125rem;
+      color: var(--green);
+      user-select: none;
+    }
+    .cta-install code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 0.8125rem;
+    }
+    .cta-actions { display: flex; align-items: center; justify-content: center; gap: 0.75rem; flex-wrap: wrap; }
+
+    /* ── Footer ─────────────────────────────────────────── */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 1.75rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 880px;
+      margin: 0 auto;
+    }
+    .footer-brand {
+      font-family: ui-monospace, monospace;
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: var(--muted);
+    }
+    .footer-links { display: flex; gap: 1.5rem; align-items: center; }
+    .footer-links a { font-size: 0.8125rem; color: var(--muted); }
+    .footer-links a:hover { color: var(--text); text-decoration: none; }
+    .footer-mit { font-size: 0.8125rem; color: var(--muted); }
+
+    /* ── Responsive ─────────────────────────────────────── */
+    @media (max-width: 680px) {
+      .steps-grid { grid-template-columns: 1fr; gap: 2rem; }
+      .step { border-left: none; border-top: 1px solid var(--border); padding: 2rem 0 0; }
+      .step:first-child { border-top: none; padding-top: 0; }
+      .cards { grid-template-columns: 1fr; }
+      .footer { flex-direction: column; gap: 1.125rem; text-align: center; }
+      .footer-links { justify-content: center; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .cursor { animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <header class="nav">
+    <a href="landing.html" class="nav-brand">api-doc-gen</a>
+    <div class="nav-right">
+      <a href="index.html">Docs</a>
+      <a href="https://github.com/devenock/api-doc-gen" target="_blank" rel="noopener">GitHub</a>
+      <button class="nav-theme" id="themeBtn" aria-label="Toggle theme">☀</button>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <span class="hero-eyebrow">Open source · Go · MIT</span>
+    <h1 class="hero-title">api-doc-gen</h1>
+    <p class="hero-sub">Generate Swagger/OpenAPI or a Postman Collection from your Go API. No annotations. No code changes. One command.</p>
+    <div class="hero-actions">
+      <a href="index.html" class="btn-fill">Get started</a>
+      <a href="https://github.com/devenock/api-doc-gen" target="_blank" rel="noopener" class="btn-outline">View on GitHub</a>
+    </div>
+    <div class="term-wrap" aria-label="Terminal demo" aria-live="polite">
+      <div class="terminal">
+        <div class="term-bar">
+          <span class="dot dot-r"></span>
+          <span class="dot dot-y"></span>
+          <span class="dot dot-g"></span>
+          <span class="term-cwd">~/my-go-api</span>
+        </div>
+        <div class="term-body" id="termBody">
+          <span class="t-row">
+            <span class="t-ps">$&nbsp;</span><span class="t-cmd" id="termCmd"></span><span class="cursor blink" id="termCursor"></span>
+          </span>
+          <div id="termOut"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Steps -->
+  <section class="section steps-section">
+    <p class="eyebrow">How it works</p>
+    <h2 class="section-title">From zero to documented API in three steps</h2>
+    <div class="steps-grid">
+      <div class="step">
+        <div class="step-num">01 &mdash; Install</div>
+        <div class="step-name">One command, any machine</div>
+        <p class="step-desc">Install globally. Works from any Go project root — no per-project setup required.</p>
+        <div class="step-snippet">go install github.com/devenock/api-doc-gen@latest</div>
+      </div>
+      <div class="step">
+        <div class="step-num">02 &mdash; Generate</div>
+        <div class="step-name">Point and run</div>
+        <p class="step-desc">Run from your project root. The tool reads your existing routes and handler comments.</p>
+        <div class="step-snippet">api-doc-gen generate --type swagger</div>
+      </div>
+      <div class="step">
+        <div class="step-num">03 &mdash; Open</div>
+        <div class="step-name">Browse or import</div>
+        <p class="step-desc">Open the Swagger UI in any browser, or drag the Postman collection straight into Postman.</p>
+        <div class="step-snippet">open ./docs/index.html</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Output formats -->
+  <section class="section outputs-section">
+    <p class="eyebrow">Output</p>
+    <h2 class="section-title">Two formats. Zero boilerplate.</h2>
+    <div class="cards">
+      <div class="card">
+        <div class="card-tag">Swagger / OpenAPI 3.0</div>
+        <div class="card-name">Interactive API Explorer</div>
+        <p class="card-desc">A self-contained Swagger UI you can open in any browser, serve locally, or deploy alongside your service. Machine-readable JSON and YAML included.</p>
+        <div class="card-files">
+          <span class="card-file"><span class="card-file-dot"></span>openapi.json</span>
+          <span class="card-file"><span class="card-file-dot"></span>openapi.yaml</span>
+          <span class="card-file"><span class="card-file-dot"></span>index.html &mdash; Swagger UI</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-tag">Postman Collection v2.1</div>
+        <div class="card-name">Ready to Test</div>
+        <p class="card-desc">Endpoints organised into folders by tag. Example request bodies pre-filled. Bearer auth wired up. Import manually or auto-upload via the Postman API.</p>
+        <div class="card-files">
+          <span class="card-file"><span class="card-file-dot"></span>collection.json</span>
+          <span class="card-file"><span class="card-file-dot"></span>folders per route group</span>
+          <span class="card-file"><span class="card-file-dot"></span>bearer auth + request examples</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Frameworks -->
+  <section class="section fw-section">
+    <p class="eyebrow">Framework support</p>
+    <div class="fw-row">
+      <span class="fw">Gin</span>
+      <span class="fw">Echo</span>
+      <span class="fw">Fiber</span>
+      <span class="fw">Gorilla&nbsp;Mux</span>
+      <span class="fw">Chi</span>
+    </div>
+    <p class="fw-note">Auto-detected from <code>go.mod</code> — or override with <code>--framework</code>.</p>
+  </section>
+
+  <!-- CTA -->
+  <section class="section cta-section">
+    <h2 class="cta-title">Start generating docs now</h2>
+    <p class="cta-sub">Requires Go 1.24+. Install takes under ten seconds.</p>
+    <div class="cta-install">
+      <span class="cta-ps">$</span>
+      <code>go install github.com/devenock/api-doc-gen@latest</code>
+    </div>
+    <div class="cta-actions">
+      <a href="index.html" class="btn-fill">Read the docs</a>
+      <a href="https://github.com/devenock/api-doc-gen" target="_blank" rel="noopener" class="btn-outline">GitHub</a>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <span class="footer-brand">api-doc-gen</span>
+    <div class="footer-links">
+      <a href="index.html">Docs</a>
+      <a href="https://github.com/devenock/api-doc-gen" target="_blank" rel="noopener">GitHub</a>
+      <span class="footer-mit">MIT License</span>
+    </div>
+  </footer>
+
+  <script>
+    // ── Theme ──────────────────────────────────────────────
+    const root = document.documentElement;
+    const themeBtn = document.getElementById('themeBtn');
+    function applyTheme(t) {
+      root.setAttribute('data-theme', t);
+      themeBtn.textContent = t === 'dark' ? '☀' : '🌙';
+      try { localStorage.setItem('apidocTheme', t); } catch {}
+    }
+    (function () {
+      let saved; try { saved = localStorage.getItem('apidocTheme'); } catch {}
+      applyTheme(saved || 'dark');
+    })();
+    themeBtn.addEventListener('click', () => {
+      applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    });
+
+    // ── Terminal animation ─────────────────────────────────
+    const cmdEl    = document.getElementById('termCmd');
+    const cursorEl = document.getElementById('termCursor');
+    const outEl    = document.getElementById('termOut');
+
+    const COMMAND = 'api-doc-gen generate';
+    const LINES = [
+      { t: '📊 Analyzing codebase...',                   c: 't-out'  },
+      { t: '📝 Generating swagger documentation...',     c: 't-out'  },
+      { t: '   📄 OpenAPI YAML:  ./docs/openapi.yaml',  c: 't-path' },
+      { t: '   📄 OpenAPI JSON:  ./docs/openapi.json',  c: 't-path' },
+      { t: '   🌐 Swagger UI:    ./docs/index.html',    c: 't-path' },
+      { t: '✅ Done. Generated at: ./docs',              c: 't-ok'   },
+    ];
+
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    async function runTerminal() {
+      while (true) {
+        // Reset
+        cmdEl.textContent = '';
+        outEl.innerHTML   = '';
+        cursorEl.style.display = 'inline-block';
+        cursorEl.classList.add('blink');
+
+        await sleep(900);
+
+        // Type command
+        for (const ch of COMMAND) {
+          cmdEl.textContent += ch;
+          await sleep(52 + Math.random() * 28);
+        }
+
+        await sleep(320);
+        cursorEl.classList.remove('blink');
+        cursorEl.style.display = 'none';
+
+        // Print output lines
+        for (const line of LINES) {
+          await sleep(165);
+          const row = document.createElement('span');
+          row.className = `t-row ${line.c}`;
+          row.textContent = line.t;
+          outEl.appendChild(row);
+          outEl.appendChild(document.createTextNode('\n'));
+        }
+
+        // Show cursor at end
+        const endRow = document.createElement('span');
+        endRow.className = 't-row';
+        endRow.innerHTML = '<span class="t-ps">$&nbsp;</span><span class="cursor blink"></span>';
+        outEl.appendChild(endRow);
+
+        await sleep(4500);
+      }
+    }
+
+    runTerminal();
+  </script>
+
+</body>
+</html>
