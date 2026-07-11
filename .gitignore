@@ -26,7 +26,7 @@ docs-q/
 docs/*.json
 docs/*.yaml
 docs/*.html
-# examples/
+examples/
 
 # IDE and OS
 .idea/
