@@ -147,16 +147,41 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 			})
 		}
 	} else {
-		// Default server
+		// Default server: try to read port from .env, fall back to :8080
 		spec.Servers = []models.Server{
 			{
-				URL:         "http://localhost:8080",
+				URL:         detectServerURL(a.config.ProjectPath),
 				Description: "Development server",
 			},
 		}
 	}
 
 	return spec, nil
+}
+
+// detectServerURL returns the base URL for the API server by scanning the
+// project's .env file for a PORT / APP_PORT / SERVER_PORT entry.
+// Falls back to http://localhost:8080 when nothing is found.
+func detectServerURL(projectPath string) string {
+	data, err := os.ReadFile(filepath.Join(projectPath, ".env"))
+	if err != nil {
+		return "http://localhost:8080"
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
+			continue
+		}
+		for _, key := range []string{"PORT=", "APP_PORT=", "SERVER_PORT=", "HTTP_PORT="} {
+			if strings.HasPrefix(line, key) {
+				port := strings.Trim(strings.TrimPrefix(line, key), `"' `)
+				if port != "" {
+					return "http://localhost:" + port
+				}
+			}
+		}
+	}
+	return "http://localhost:8080"
 }
 
 // DetectFramework scans the project (e.g. go.mod) and returns the framework
@@ -943,7 +968,14 @@ func (a *Analyzer) resolveRemainingRequestBodies() {
 				return nil
 			}
 			raw, readErr := os.ReadFile(path)
-			if readErr != nil || !strings.Contains(string(raw), "func "+ep.HandlerName) {
+			if readErr != nil {
+				return nil
+			}
+			content := string(raw)
+			// Match both standalone functions ("func CreateUser(") and method
+			// receivers ("func (h *Handler) CreateUser(") by checking for the
+			// function name preceded by a space and followed by "(".
+			if !strings.Contains(content, " "+ep.HandlerName+"(") {
 				return nil
 			}
 			if a.extractBodyFromFile(ep, path) {

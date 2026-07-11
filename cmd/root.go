@@ -95,7 +95,7 @@ func init() {
 	generateCmd.Flags().BoolP("no-interactive", "y", false, "disable interactive mode (use config/flags only; good for CI)")
 	generateCmd.Flags().StringSlice("exclude", []string{}, "directories to exclude from scanning")
 	generateCmd.Flags().String("base-path", "", "base path for API endpoints")
-	generateCmd.Flags().String("title", "API Documentation", "API title")
+	generateCmd.Flags().String("title", "", "API title (default: project name from go.mod)")
 	generateCmd.Flags().String("version", "1.0.0", "API version")
 	generateCmd.Flags().String("description", "", "API description")
 	generateCmd.Flags().Bool("dry-run", false, "analyze and show what would be generated without writing files")
@@ -529,7 +529,7 @@ type: swagger
 base_path: ""
 
 # API metadata
-title: "API Documentation"
+title: ""  # leave empty to use the go.mod module name automatically
 version: "1.0.0"
 description: "Auto-generated API documentation"
 

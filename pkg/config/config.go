@@ -3,6 +3,8 @@ package config
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 // Config represent application configuration
@@ -36,10 +38,41 @@ type Config struct {
 	PostmanDirectImport bool
 }
 
-// ServerConfig represent a server cpnfiguration
+// ServerConfig represent a server configuration
 type ServerConfig struct {
-	URL         string
-	Description string
+	URL         string `yaml:"url"`
+	Description string `yaml:"description"`
+}
+
+// detectProjectName reads go.mod and returns a human-readable project name
+// derived from the module path's last segment. Falls back to "API Documentation".
+func detectProjectName(projectPath string) string {
+	data, err := os.ReadFile(filepath.Join(projectPath, "go.mod"))
+	if err != nil {
+		return "API Documentation"
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "module ") {
+			continue
+		}
+		mod := strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		if idx := strings.LastIndex(mod, "/"); idx >= 0 {
+			mod = mod[idx+1:]
+		}
+		mod = strings.ReplaceAll(mod, "-", " ")
+		mod = strings.ReplaceAll(mod, "_", " ")
+		words := strings.Fields(mod)
+		for i, w := range words {
+			if len(w) > 0 {
+				words[i] = strings.ToUpper(w[:1]) + strings.ToLower(w[1:])
+			}
+		}
+		if result := strings.Join(words, " "); result != "" {
+			return result
+		}
+	}
+	return "API Documentation"
 }
 
 // Validate checks if the configuration is valid and returns clear, actionable errors.
@@ -65,7 +98,7 @@ func (c *Config) Validate() error {
 	}
 
 	if c.Title == "" {
-		c.Title = "API Documentation"
+		c.Title = detectProjectName(c.ProjectPath)
 	}
 
 	if c.Version == "" {
