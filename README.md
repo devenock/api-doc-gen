@@ -48,7 +48,7 @@ api-doc-gen generate /path/to/your-api --no-interactive --type swagger -o /path/
 | `swagger` | `openapi.json`, `openapi.yaml`, `index.html` (Swagger UI) |
 | `postman` | `collection.json` (Postman Collection v2.1) |
 
-**Swagger** — run `api-doc-gen serve ./docs` to open the Swagger UI in your browser automatically.
+**Swagger** — the Swagger UI opens in your browser automatically after generation. To reopen it later, open `./docs/index.html` directly in your browser.
 
 **Postman** — open Postman, click **Import** in the sidebar, then drag `collection.json` onto the dialog.
 
