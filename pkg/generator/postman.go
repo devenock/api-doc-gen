@@ -345,11 +345,13 @@ func (g *PostmanGenerator) createPostmanURL(endpoint models.Endpoint, spec *mode
 		}
 	}
 
+	// Do NOT set Protocol here. The {{baseUrl}} variable already contains
+	// the full base URL including scheme (e.g. "http://localhost:8080"), so
+	// adding a separate Protocol field causes Postman to double-prefix it.
 	url := PostmanURL{
-		Raw:      "{{baseUrl}}" + path,
-		Protocol: "http",
-		Host:     []string{"{{baseUrl}}"},
-		Path:     pathSegments,
+		Raw:  "{{baseUrl}}" + path,
+		Host: []string{"{{baseUrl}}"},
+		Path: pathSegments,
 	}
 
 	// Add query parameters

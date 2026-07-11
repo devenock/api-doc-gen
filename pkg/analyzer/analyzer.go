@@ -979,6 +979,10 @@ func (a *Analyzer) resolveRemainingRequestBodies() {
 				return nil
 			}
 			if a.extractBodyFromFile(ep, path) {
+				// Also record the source file so --write-annotations can target it.
+				if ep.SourceFile == "" {
+					ep.SourceFile = path
+				}
 				return errStopWalk
 			}
 			return nil
@@ -1015,17 +1019,28 @@ func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) boo
 }
 
 // findFileWithFunction returns the path of a .go file that declares package matching pkgName (or in dir pkgName) and defines func funcName.
+// When the package-name match finds nothing (pkgName may be a variable/instance name, not a package), it falls back to
+// searching the whole project for any file that defines funcName — handling patterns like "userHandler.CreateUser"
+// where "userHandler" is a struct instance, not a package.
 func findFileWithFunction(projectPath string, exclude []string, pkgName, funcName string) string {
+	skipDir := func(path string) bool {
+		for _, ex := range exclude {
+			if strings.Contains(path, ex) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Pass 1: match by package declaration or directory name.
 	var found string
 	filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
 		if info.IsDir() {
-			for _, ex := range exclude {
-				if strings.Contains(path, ex) {
-					return filepath.SkipDir
-				}
+			if skipDir(path) {
+				return filepath.SkipDir
 			}
 			return nil
 		}
@@ -1039,8 +1054,44 @@ func findFileWithFunction(projectPath string, exclude []string, pkgName, funcNam
 		}
 		pkgDecl := node.Name.Name
 		dirName := filepath.Base(filepath.Dir(path))
-		// Match package name (e.g. "controllers") or directory name (e.g. .../controllers/...)
 		if pkgDecl != pkgName && dirName != pkgName {
+			return nil
+		}
+		for _, decl := range node.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Name.Name != funcName {
+				continue
+			}
+			found = path
+			return errStopWalk
+		}
+		return nil
+	})
+	if found != "" {
+		return found
+	}
+
+	// Pass 2: pkgName may be a variable/instance — search all files by function name using a fast text pre-filter.
+	filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || found != "" {
+			return nil
+		}
+		if info.IsDir() {
+			if skipDir(path) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil || !strings.Contains(string(raw), " "+funcName+"(") {
+			return nil
+		}
+		fset := token.NewFileSet()
+		node, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
 			return nil
 		}
 		for _, decl := range node.Decls {
