@@ -64,7 +64,7 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 		}
 		if info.IsDir() {
 			for _, exclude := range a.config.Exclude {
-				if strings.Contains(path, exclude) {
+				if filepath.Base(path) == exclude {
 					return filepath.SkipDir
 				}
 			}
@@ -86,7 +86,7 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 		}
 		if info.IsDir() {
 			for _, exclude := range a.config.Exclude {
-				if strings.Contains(path, exclude) {
+				if filepath.Base(path) == exclude {
 					return filepath.SkipDir
 				}
 			}
@@ -811,8 +811,17 @@ func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file
 		handlerName = h.Name
 	case *ast.SelectorExpr:
 		if pkgIdent, ok := h.X.(*ast.Ident); ok {
+			// Single-level: handlers.CreateUser  or  userHandler.CreateUser
 			handlerPkg = pkgIdent.Name
 			handlerName = h.Sel.Name
+		} else if _, ok := h.X.(*ast.SelectorExpr); ok {
+			// Multi-level: r.auth.Register, s.user.Create, etc.
+			// Common in dependency-injection style routing where a struct field
+			// holds the handler group. Extract the method name and use "_" as a
+			// sentinel package so resolveHandlerSourceFiles falls through to the
+			// function-name-only fallback in findFileWithFunction.
+			handlerName = h.Sel.Name
+			handlerPkg = "_"
 		}
 	}
 
@@ -958,7 +967,7 @@ func (a *Analyzer) resolveRemainingRequestBodies() {
 			}
 			if info.IsDir() {
 				for _, ex := range a.config.Exclude {
-					if strings.Contains(path, ex) {
+					if filepath.Base(path) == ex {
 						return filepath.SkipDir
 					}
 				}
@@ -979,10 +988,10 @@ func (a *Analyzer) resolveRemainingRequestBodies() {
 				return nil
 			}
 			if a.extractBodyFromFile(ep, path) {
-				// Also record the source file so --write-annotations can target it.
-				if ep.SourceFile == "" {
-					ep.SourceFile = path
-				}
+				// Always update SourceFile to the file that actually contains the
+				// handler — the previous value may have been the router file (set
+				// as a placeholder when handlerPkg was unknown).
+				ep.SourceFile = path
 				return errStopWalk
 			}
 			return nil
@@ -1025,7 +1034,7 @@ func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) boo
 func findFileWithFunction(projectPath string, exclude []string, pkgName, funcName string) string {
 	skipDir := func(path string) bool {
 		for _, ex := range exclude {
-			if strings.Contains(path, ex) {
+			if filepath.Base(path) == ex {
 				return true
 			}
 		}
