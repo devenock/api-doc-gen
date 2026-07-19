@@ -42,6 +42,12 @@ func NewAnalyzer(cfg *config.Config) *Analyzer {
 	}
 }
 
+// Framework returns the framework Analyze() resolved (explicitly configured
+// or auto-detected from go.mod), as a string. Call after Analyze() returns.
+func (a *Analyzer) Framework() string {
+	return string(a.framework)
+}
+
 // Analyze scans the codebase and extracts API information
 func (a *Analyzer) Analyze() (*models.APISpec, error) {
 	// Detect framework if not specified

@@ -234,8 +234,23 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return &exitCodeError{fmt.Errorf("failed to analyze codebase: %w", err), ExitRuntimeError}
 	}
 
+	// A zero-endpoint result is always a degenerate, actionable situation —
+	// warn regardless of --verbose so it isn't mistaken for a normal success
+	// (the generator will otherwise happily write a well-formed but empty
+	// collection/spec and the run will still print "generated successfully").
+	if len(apiSpec.Endpoints) == 0 && !quiet {
+		fmt.Fprintln(os.Stderr, "⚠️  No endpoints found — the generated file will be empty.")
+		fmt.Fprintf(os.Stderr, "   Detected framework: %s\n", apiAnalyzer.Framework())
+		fmt.Fprintln(os.Stderr, "   Common causes:")
+		fmt.Fprintln(os.Stderr, "   - the path passed to 'generate' isn't the directory containing go.mod")
+		fmt.Fprintln(os.Stderr, "   - the framework wasn't auto-detected — pass --framework explicitly (gin|echo|fiber|gorilla|chi)")
+		fmt.Fprintln(os.Stderr, "   - routes are registered through a pattern this tool doesn't recognize yet")
+		fmt.Fprintln(os.Stderr, "   Run with -v for more detail, or --dry-run to inspect without writing files.")
+	}
+
 	if !quiet {
 		if cfg.Verbose {
+			fmt.Printf("   Detected framework: %s\n", apiAnalyzer.Framework())
 			fmt.Printf("   Found %d endpoints\n", len(apiSpec.Endpoints))
 		}
 
