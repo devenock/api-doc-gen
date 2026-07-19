@@ -85,6 +85,10 @@ type Schema struct {
 	Example              interface{}       `json:"example,omitempty" yaml:"example,omitempty"`
 	AdditionalProperties interface{}       `json:"additionalProperties,omitempty" yaml:"additionalProperties,omitempty"`
 	Ref                  string            `json:"$ref,omitempty" yaml:"$ref,omitempty"`
+	// Embeds lists locally-defined struct types anonymously embedded in this
+	// struct (e.g. `gorm.Model`, a shared `BaseModel`). Resolved into
+	// Properties by the analyzer's field-promotion pass; never serialized.
+	Embeds []string `json:"-" yaml:"-"`
 }
 
 // FrameWorkType represents supported frameworks

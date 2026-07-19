@@ -79,6 +79,12 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 		return nil, err
 	}
 
+	// Flatten embedded (anonymous) struct fields now that every type in the
+	// project is known — must run before Pass 2 resolves request/response
+	// schemas so promoted fields (e.g. from a gorm.Model-style base struct)
+	// are present in the schemas handlers reference.
+	a.resolveEmbeddedFields()
+
 	// Pass 2: extract routes and resolve handler request/response from type registry
 	err = filepath.Walk(a.config.ProjectPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -259,25 +265,29 @@ func (a *Analyzer) buildSchemaFromStruct(st *ast.StructType) models.Schema {
 	}
 	props := make(map[string]models.Schema)
 	var required []string
+	var embeds []string
 	for _, f := range st.Fields.List {
 		if len(f.Names) == 0 {
+			// Anonymous (embedded) field, e.g. `gorm.Model` or a local `BaseModel`.
+			// With an explicit json tag it behaves like a normal nested property;
+			// without one, encoding/json promotes its fields to the top level, so
+			// record it for the field-promotion post-pass (resolveEmbeddedFields)
+			// that runs once every type in the project has been collected —
+			// the embedded type may be defined in a file not parsed yet.
+			embeddedName := embeddedTypeName(f.Type)
+			if embeddedName == "" {
+				continue // qualified (cross-package) embed, e.g. gorm.Model — can't resolve locally
+			}
+			if tagName := jsonFieldTagName(f.Tag); tagName != "" {
+				props[tagName] = a.goTypeToSchema(f.Type)
+			} else {
+				embeds = append(embeds, embeddedName)
+			}
 			continue
 		}
 		fieldName := f.Names[0].Name
-		if f.Tag != nil {
-			tag := strings.Trim(f.Tag.Value, "`")
-			for _, part := range strings.Split(tag, " ") {
-				if strings.HasPrefix(part, "json:") {
-					jsonTag := strings.Trim(strings.TrimPrefix(part, "json:"), `"`)
-					if idx := strings.Index(jsonTag, ","); idx >= 0 {
-						jsonTag = jsonTag[:idx]
-					}
-					if jsonTag != "" && jsonTag != "-" {
-						fieldName = jsonTag
-					}
-					break
-				}
-			}
+		if tagName := jsonFieldTagName(f.Tag); tagName != "" {
+			fieldName = tagName
 		}
 		fieldSchema := a.goTypeToSchema(f.Type)
 		props[fieldName] = fieldSchema
@@ -290,6 +300,77 @@ func (a *Analyzer) buildSchemaFromStruct(st *ast.StructType) models.Schema {
 		Type:       "object",
 		Properties: props,
 		Required:   required,
+		Embeds:     embeds,
+	}
+}
+
+// embeddedTypeName returns the local type name for an embedded field's type
+// expression (`Foo` or `*Foo`), or "" for anything not locally resolvable
+// (qualified selectors like `gorm.Model` live in another package/module).
+func embeddedTypeName(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.StarExpr:
+		if id, ok := t.X.(*ast.Ident); ok {
+			return id.Name
+		}
+	}
+	return ""
+}
+
+// jsonFieldTagName extracts the json tag name from a struct field's tag, or
+// "" if there is none (or it's explicitly "-").
+func jsonFieldTagName(tag *ast.BasicLit) string {
+	if tag == nil {
+		return ""
+	}
+	t := strings.Trim(tag.Value, "`")
+	for _, part := range strings.Split(t, " ") {
+		if strings.HasPrefix(part, "json:") {
+			jsonTag := strings.Trim(strings.TrimPrefix(part, "json:"), `"`)
+			if idx := strings.Index(jsonTag, ","); idx >= 0 {
+				jsonTag = jsonTag[:idx]
+			}
+			if jsonTag != "" && jsonTag != "-" {
+				return jsonTag
+			}
+		}
+	}
+	return ""
+}
+
+// resolveEmbeddedFields flattens anonymous (embedded) struct fields recorded
+// during collectTypesInFile into their parent schema's Properties, mirroring
+// Go's field-promotion behavior for JSON marshaling. Runs after every file in
+// the project has been scanned so embedding a type defined in another file
+// resolves correctly regardless of file processing order.
+func (a *Analyzer) resolveEmbeddedFields() {
+	resolved := make(map[string]bool)
+	var flatten func(name string) models.Schema
+	flatten = func(name string) models.Schema {
+		s, ok := a.typeRegistry[name]
+		if !ok || resolved[name] || len(s.Embeds) == 0 {
+			return s
+		}
+		resolved[name] = true // guard against embedding cycles
+		if s.Properties == nil {
+			s.Properties = make(map[string]models.Schema)
+		}
+		for _, embedded := range s.Embeds {
+			parent := flatten(embedded)
+			for propName, propSchema := range parent.Properties {
+				if _, exists := s.Properties[propName]; !exists {
+					s.Properties[propName] = propSchema
+				}
+			}
+			s.Required = append(s.Required, parent.Required...)
+		}
+		a.typeRegistry[name] = s
+		return s
+	}
+	for name := range a.typeRegistry {
+		flatten(name)
 	}
 }
 
@@ -625,14 +706,35 @@ func (a *Analyzer) buildGinAuthGroups(file *ast.File) map[string]bool {
 	return authGroups
 }
 
-// findBindingTypeName scans a handler function body for common JSON-binding
-// calls and returns the unqualified type name bound from the request body, or "".
+// bindMethodHints are substrings (checked case-insensitively against the
+// call's package/receiver-qualified name) that mark a call as a JSON
+// body-binding call even when it's a project-specific wrapper around the
+// standard framework methods (e.g. ShouldBindAndValidate, h.decodeBody,
+// utils.ParseJSON). Real codebases very commonly wrap binding in a shared
+// helper for consistent error handling, so matching by exact method name
+// alone misses a large fraction of real handlers.
+var bindMethodHints = []string{"bind", "decode", "unmarshal", "parse"}
+
+// nonBodyBindMethods are framework methods that contain a bind-like hint but
+// bind from a source other than the JSON body (query string, URI params,
+// headers) and must not be mistaken for request-body binding.
+var nonBodyBindMethods = map[string]bool{
+	"ShouldBindQuery": true, "BindQuery": true,
+	"ShouldBindUri": true, "BindUri": true,
+	"ShouldBindHeader": true, "BindHeader": true,
+}
+
+// findBindingTypeName scans a handler function body for JSON-binding calls
+// and returns the unqualified type name bound from the request body, or "".
 //
-// Recognized patterns (Gin / Echo / Fiber / stdlib):
+// Recognized patterns (Gin / Echo / Fiber / stdlib / wrappers / generics):
 //
 //	c.ShouldBindJSON(&req) / c.BindJSON(&req) / c.ShouldBind(&req) / c.Bind(&req)
 //	c.BodyParser(&req) / c.BodyParser(req)
 //	json.NewDecoder(r.Body).Decode(&req) / json.Unmarshal(body, &req)
+//	h.bindAndValidate(c, &req)          (project-specific wrapper — matched by name hint)
+//	req.Bind(c) / req.Validate()        (self-binding request struct — struct is the receiver)
+//	bind.JSON[LoginRequest](c, &req)    (explicit generic type argument)
 func findBindingTypeName(file *ast.File, funcName string) string {
 	bindMethods := map[string]bool{
 		"ShouldBindJSON": true, "BindJSON": true,
@@ -640,26 +742,122 @@ func findBindingTypeName(file *ast.File, funcName string) string {
 		"Decode": true, "Unmarshal": true,
 	}
 
-	var body *ast.BlockStmt
-	for _, decl := range file.Decls {
-		fd, ok := decl.(*ast.FuncDecl)
-		if ok && fd.Name.Name == funcName && fd.Body != nil {
-			body = fd.Body
-			break
-		}
-	}
+	body := findFuncBody(file, funcName)
 	if body == nil {
 		return ""
 	}
+	varTypes, _, _ := collectLocalTypedVars(body)
 
-	// variable name → declared type name within this function
-	varTypes := make(map[string]string)
 	var result string
-
 	ast.Inspect(body, func(n ast.Node) bool {
 		if result != "" {
 			return false
 		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		exactName := calleeBaseName(call.Fun)
+		if exactName == "" {
+			exactName = calleeBaseName(genericBaseExpr(call.Fun))
+		}
+		if exactName != "" && nonBodyBindMethods[exactName] {
+			return true
+		}
+		hintText := calleeHintText(call.Fun)
+		if hintText == "" {
+			hintText = calleeHintText(genericBaseExpr(call.Fun))
+		}
+		if !(bindMethods[exactName] || hasBindHint(hintText)) {
+			return true
+		}
+
+		// Explicit generic type argument takes priority when present:
+		// bind[LoginRequest](c) / pkg.Bind[LoginRequest](c, &req)
+		if typ := genericTypeArg(call.Fun); typ != "" {
+			result = localTypeName(typ)
+			return false
+		}
+
+		if len(call.Args) == 0 {
+			return true
+		}
+
+		// Pattern 1: bindJSON(c, &req) / c.ShouldBindJSON(&req) — struct var is an argument.
+		last := call.Args[len(call.Args)-1]
+		if varName := identOrAddrIdentName(last); varName != "" && varTypes[varName] != "" {
+			result = localTypeName(varTypes[varName])
+			return false
+		}
+		// Pattern 2: req.Bind(c) — struct var is the method receiver.
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+			if id, ok := sel.X.(*ast.Ident); ok && varTypes[id.Name] != "" {
+				result = localTypeName(varTypes[id.Name])
+				return false
+			}
+		}
+		return true
+	})
+	return result
+}
+
+// findAddressTakenStructVar is a last-resort structural fallback for request
+// body detection on POST/PUT/PATCH handlers: it looks for a locally-declared
+// variable of a named type whose address is taken somewhere in the function
+// body — the overwhelmingly common reason being a call to a project-specific
+// bind/validate helper this package can't recognize by name at all (a fluent
+// builder, a validation library, a helper named nothing like "bind"). Picks
+// the first such variable in declaration order, skipping obvious response
+// types so a response DTO built later in the handler isn't mistaken for the
+// request body.
+func findAddressTakenStructVar(file *ast.File, funcName string) string {
+	body := findFuncBody(file, funcName)
+	if body == nil {
+		return ""
+	}
+	varTypes, order, addressTaken := collectLocalTypedVars(body)
+	for _, name := range order {
+		if !addressTaken[name] {
+			continue
+		}
+		typ := localTypeName(varTypes[name])
+		if strings.Contains(strings.ToLower(typ), "response") {
+			continue
+		}
+		return typ
+	}
+	return ""
+}
+
+// findFuncBody returns the body of the top-level function or method named
+// funcName in file, or nil if not found.
+func findFuncBody(file *ast.File, funcName string) *ast.BlockStmt {
+	for _, decl := range file.Decls {
+		if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == funcName && fd.Body != nil {
+			return fd.Body
+		}
+	}
+	return nil
+}
+
+// collectLocalTypedVars walks body and returns every local variable declared
+// with a named type (`var x T`, `x := T{}`, `x := &T{}`, `x := new(T)`), its
+// declaration order, and the set of variable names whose address is taken
+// (`&x`) anywhere in the body.
+func collectLocalTypedVars(body *ast.BlockStmt) (varTypes map[string]string, order []string, addressTaken map[string]bool) {
+	varTypes = make(map[string]string)
+	addressTaken = make(map[string]bool)
+	recordVar := func(name, typ string) {
+		if typ == "" {
+			return
+		}
+		if _, seen := varTypes[name]; !seen {
+			order = append(order, name)
+		}
+		varTypes[name] = typ
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
 		switch s := n.(type) {
 		// var req LoginRequest
 		case *ast.GenDecl:
@@ -671,7 +869,7 @@ func findBindingTypeName(file *ast.File, funcName string) string {
 					}
 					name := typeExprToName(vs.Type)
 					for _, id := range vs.Names {
-						varTypes[id.Name] = name
+						recordVar(id.Name, name)
 					}
 				}
 			}
@@ -688,45 +886,120 @@ func findBindingTypeName(file *ast.File, funcName string) string {
 				switch expr := rhs.(type) {
 				case *ast.CompositeLit:
 					if expr.Type != nil {
-						varTypes[lhs.Name] = typeExprToName(expr.Type)
+						recordVar(lhs.Name, typeExprToName(expr.Type))
 					}
 				case *ast.UnaryExpr:
 					if expr.Op == token.AND {
 						if cl, ok := expr.X.(*ast.CompositeLit); ok && cl.Type != nil {
-							varTypes[lhs.Name] = typeExprToName(cl.Type)
+							recordVar(lhs.Name, typeExprToName(cl.Type))
 						}
 					}
 				case *ast.CallExpr:
 					if id, ok := expr.Fun.(*ast.Ident); ok && id.Name == "new" && len(expr.Args) == 1 {
-						varTypes[lhs.Name] = typeExprToName(expr.Args[0])
+						recordVar(lhs.Name, typeExprToName(expr.Args[0]))
 					}
 				}
 			}
-		// c.ShouldBindJSON(&req) / c.Bind(req) / json.Decode(&req) …
-		case *ast.CallExpr:
-			sel, ok := s.Fun.(*ast.SelectorExpr)
-			if !ok || !bindMethods[sel.Sel.Name] || len(s.Args) == 0 {
-				break
-			}
-			last := s.Args[len(s.Args)-1]
-			var varName string
-			switch a := last.(type) {
-			case *ast.UnaryExpr:
-				if a.Op == token.AND {
-					if id, ok := a.X.(*ast.Ident); ok {
-						varName = id.Name
-					}
+		case *ast.UnaryExpr:
+			if s.Op == token.AND {
+				if id, ok := s.X.(*ast.Ident); ok {
+					addressTaken[id.Name] = true
 				}
-			case *ast.Ident:
-				varName = a.Name
-			}
-			if varName != "" && varTypes[varName] != "" {
-				result = localTypeName(varTypes[varName])
 			}
 		}
 		return true
 	})
-	return result
+	return
+}
+
+// identOrAddrIdentName returns the identifier name from `&x` or a plain `x`
+// expression, or "" for anything else.
+func identOrAddrIdentName(e ast.Expr) string {
+	switch a := e.(type) {
+	case *ast.UnaryExpr:
+		if a.Op == token.AND {
+			if id, ok := a.X.(*ast.Ident); ok {
+				return id.Name
+			}
+		}
+	case *ast.Ident:
+		return a.Name
+	}
+	return ""
+}
+
+// calleeBaseName returns the exact method/function name being called
+// (`Sel.Name` for a selector, the identifier itself for a plain call), used
+// for matching against the known bindMethods whitelist.
+func calleeBaseName(e ast.Expr) string {
+	switch x := e.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.SelectorExpr:
+		return x.Sel.Name
+	}
+	return ""
+}
+
+// calleeHintText returns a lowercase-friendly "qualifier.name" (or just
+// "name") string for hint-based matching, so a package/receiver qualifier
+// like "bind" in `bind.JSON(...)` still counts even though the method name
+// itself ("JSON") doesn't contain a bind-like hint.
+func calleeHintText(e ast.Expr) string {
+	switch x := e.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.SelectorExpr:
+		if id, ok := x.X.(*ast.Ident); ok {
+			return id.Name + "." + x.Sel.Name
+		}
+		return x.Sel.Name
+	}
+	return ""
+}
+
+// hasBindHint reports whether text (as produced by calleeHintText) looks
+// like a binding/decoding call by name even though it isn't one of the known
+// framework methods.
+func hasBindHint(text string) bool {
+	if text == "" {
+		return false
+	}
+	lower := strings.ToLower(text)
+	for _, hint := range bindMethodHints {
+		if strings.Contains(lower, hint) {
+			return true
+		}
+	}
+	return false
+}
+
+// genericBaseExpr returns the callee expression underneath an explicit
+// generic type-argument list (the `bind` in `bind[T](...)`), or nil if fun
+// isn't a generic instantiation.
+func genericBaseExpr(fun ast.Expr) ast.Expr {
+	switch f := fun.(type) {
+	case *ast.IndexExpr:
+		return f.X
+	case *ast.IndexListExpr:
+		return f.X
+	}
+	return nil
+}
+
+// genericTypeArg extracts the first explicit generic type argument from a
+// call's function expression, e.g. the "LoginRequest" in bind[LoginRequest]
+// or bind.JSON[LoginRequest]. Returns "" when fun has no type arguments.
+func genericTypeArg(fun ast.Expr) string {
+	switch f := fun.(type) {
+	case *ast.IndexExpr:
+		return typeExprToName(f.Index)
+	case *ast.IndexListExpr:
+		if len(f.Indices) > 0 {
+			return typeExprToName(f.Indices[0])
+		}
+	}
+	return ""
 }
 
 // extractQueryParams scans a handler function body for query-parameter reads
@@ -836,6 +1109,12 @@ func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file
 			if reqTypeName == "" {
 				reqTypeName = findBindingTypeName(file, handlerName)
 			}
+			// Last resort for POST/PUT/PATCH: a locally-declared struct var whose
+			// address is taken somewhere in the body, even if we don't recognize
+			// the call it's passed to (project-specific bind/validate helpers).
+			if reqTypeName == "" && (ep.Method == "POST" || ep.Method == "PUT" || ep.Method == "PATCH") {
+				reqTypeName = findAddressTakenStructVar(file, handlerName)
+			}
 			if reqTypeName != "" {
 				reqTypeName = localTypeName(reqTypeName)
 				if schema, ok := a.typeRegistry[reqTypeName]; ok {
@@ -919,7 +1198,11 @@ func (a *Analyzer) resolveHandlerSourceFiles() {
 
 				// Scan the body for JSON-binding calls to get the request body type.
 				if ep.RequestBody == nil {
-					if typName := findBindingTypeName(node, ep.HandlerName); typName != "" {
+					typName := findBindingTypeName(node, ep.HandlerName)
+					if typName == "" && (ep.Method == "POST" || ep.Method == "PUT" || ep.Method == "PATCH") {
+						typName = findAddressTakenStructVar(node, ep.HandlerName)
+					}
+					if typName != "" {
 						if schema, ok := a.typeRegistry[typName]; ok {
 							ep.RequestTypeName = typName
 							a.addSchemaAndRefsToModels(typName, schema)
@@ -1009,6 +1292,11 @@ func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) boo
 		return false
 	}
 	typName := findBindingTypeName(node, ep.HandlerName)
+	if typName == "" {
+		// extractBodyFromFile is only ever called for POST/PUT/PATCH endpoints
+		// (see resolveRemainingRequestBodies), so the structural fallback is safe here.
+		typName = findAddressTakenStructVar(node, ep.HandlerName)
+	}
 	if typName == "" {
 		return false
 	}
