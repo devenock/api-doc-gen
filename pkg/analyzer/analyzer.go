@@ -761,6 +761,13 @@ var nonBodyBindMethods = map[string]bool{
 //	req.Bind(c) / req.Validate()        (self-binding request struct — struct is the receiver)
 //	bind.JSON[LoginRequest](c, &req)    (explicit generic type argument)
 func findBindingTypeName(file *ast.File, funcName string) string {
+	return findBindingTypeNameDepth(file, funcName, 0)
+}
+
+// findBindingTypeNameDepth is findBindingTypeName's implementation, plus a
+// bounded fallback (findDelegatedBindingTypeName) for thin wrapper handlers.
+// depth caps delegation-chain recursion so a cycle can't loop forever.
+func findBindingTypeNameDepth(file *ast.File, funcName string, depth int) string {
 	bindMethods := map[string]bool{
 		"ShouldBindJSON": true, "BindJSON": true,
 		"ShouldBind": true, "Bind": true, "BodyParser": true,
@@ -824,7 +831,63 @@ func findBindingTypeName(file *ast.File, funcName string) string {
 		}
 		return true
 	})
-	return result
+	if result != "" {
+		return result
+	}
+	if depth >= 2 {
+		return "" // cap delegation-chain recursion
+	}
+	return findDelegatedBindingTypeName(file, funcName, depth)
+}
+
+// findDelegatedBindingTypeName handles thin wrapper handlers whose entire
+// job is delegating to another method on the same receiver, e.g.:
+//
+//	func (h *MpesaHandler) B2CResult(c *fiber.Ctx) error  { return h.handleB2CCallback(c) }
+//	func (h *MpesaHandler) B2CTimeout(c *fiber.Ctx) error { return h.handleB2CCallback(c) }
+//
+// where the real binding call lives in handleB2CCallback, not in the
+// wrapper. Only follows a call whose receiver identifier matches the
+// wrapper's own receiver, so it can't wander into an unrelated type's
+// same-named method.
+func findDelegatedBindingTypeName(file *ast.File, funcName string, depth int) string {
+	var fd *ast.FuncDecl
+	for _, decl := range file.Decls {
+		if f, ok := decl.(*ast.FuncDecl); ok && f.Name.Name == funcName && f.Body != nil {
+			fd = f
+			break
+		}
+	}
+	if fd == nil || fd.Recv == nil || len(fd.Recv.List) == 0 || len(fd.Recv.List[0].Names) == 0 {
+		return ""
+	}
+	recvName := fd.Recv.List[0].Names[0].Name
+	if recvName == "" {
+		return ""
+	}
+
+	var delegateFunc string
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		if delegateFunc != "" {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if id, ok := sel.X.(*ast.Ident); ok && id.Name == recvName {
+			delegateFunc = sel.Sel.Name
+		}
+		return true
+	})
+	if delegateFunc == "" || delegateFunc == funcName {
+		return ""
+	}
+	return findBindingTypeNameDepth(file, delegateFunc, depth+1)
 }
 
 // findAddressTakenStructVar is a last-resort structural fallback for request
@@ -853,6 +916,55 @@ func findAddressTakenStructVar(file *ast.File, funcName string) string {
 		return typ
 	}
 	return ""
+}
+
+// findLocalStructType looks for a struct type declared LOCALLY inside the
+// named function's body (`type req struct {...}` as a statement, not a
+// package-level declaration) — a common pattern for small, handler-specific
+// request DTOs that don't warrant a dedicated exported type. Local types are
+// resolved per-function rather than added to the global type registry
+// because their names are not unique across the project — it's idiomatic for
+// many unrelated handlers to each independently name their local request
+// struct "req".
+func (a *Analyzer) findLocalStructType(file *ast.File, funcName, typeName string) (models.Schema, bool) {
+	body := findFuncBody(file, funcName)
+	if body == nil {
+		return models.Schema{}, false
+	}
+	var found *ast.StructType
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found != nil {
+			return false
+		}
+		genDecl, ok := n.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.TYPE {
+			return true
+		}
+		for _, spec := range genDecl.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok || typeSpec.Name.Name != typeName {
+				continue
+			}
+			if st, ok := typeSpec.Type.(*ast.StructType); ok {
+				found = st
+			}
+		}
+		return true
+	})
+	if found == nil {
+		return models.Schema{}, false
+	}
+	return a.buildSchemaFromStruct(found), true
+}
+
+// resolveRequestSchema looks up typeName in the global type registry first
+// (package-level types, resolvable across files), then falls back to a type
+// declared locally inside funcName's own body. See findLocalStructType.
+func (a *Analyzer) resolveRequestSchema(file *ast.File, funcName, typeName string) (models.Schema, bool) {
+	if schema, ok := a.typeRegistry[typeName]; ok {
+		return schema, true
+	}
+	return a.findLocalStructType(file, funcName, typeName)
 }
 
 // findFuncBody returns the body of the top-level function or method named
@@ -1152,7 +1264,7 @@ func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file
 			}
 			if reqTypeName != "" {
 				reqTypeName = localTypeName(reqTypeName)
-				if schema, ok := a.typeRegistry[reqTypeName]; ok {
+				if schema, ok := a.resolveRequestSchema(file, handlerName, reqTypeName); ok {
 					ep.RequestTypeName = reqTypeName
 					a.addSchemaAndRefsToModels(reqTypeName, schema)
 					ep.RequestBody = &models.RequestBody{
@@ -1165,7 +1277,7 @@ func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file
 			}
 			if respTypeName != "" {
 				respTypeName = localTypeName(respTypeName)
-				if schema, ok := a.typeRegistry[respTypeName]; ok {
+				if schema, ok := a.resolveRequestSchema(file, handlerName, respTypeName); ok {
 					ep.ResponseTypeName = respTypeName
 					a.addSchemaAndRefsToModels(respTypeName, schema)
 					ep.Responses[200] = models.Response{
@@ -1238,7 +1350,7 @@ func (a *Analyzer) resolveHandlerSourceFiles() {
 						typName = findAddressTakenStructVar(node, ep.HandlerName)
 					}
 					if typName != "" {
-						if schema, ok := a.typeRegistry[typName]; ok {
+						if schema, ok := a.resolveRequestSchema(node, ep.HandlerName, typName); ok {
 							ep.RequestTypeName = typName
 							a.addSchemaAndRefsToModels(typName, schema)
 							ep.RequestBody = &models.RequestBody{
@@ -1335,7 +1447,7 @@ func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) boo
 	if typName == "" {
 		return false
 	}
-	schema, ok := a.typeRegistry[typName]
+	schema, ok := a.resolveRequestSchema(node, ep.HandlerName, typName)
 	if !ok {
 		return false
 	}
@@ -1456,7 +1568,28 @@ func tagFromPath(path string) string {
 	return ""
 }
 
-// parseGinRoutes extracts routes from Gin framework
+// ginCasedMethods and fiberCasedMethods list the HTTP-verb method names as
+// each framework's router actually spells them: Gin and Echo use Go's
+// ALL-CAPS HTTP method constants (GET, POST, ...); Fiber uses Go-idiomatic
+// capitalized method names (Get, Post, ...) — the same casing Chi uses,
+// though Chi is parsed by a separate, structurally narrower walk
+// (walkChiStmts) that isn't exposed to this ambiguity in the first place.
+// Matching must be exact-case and framework-aware: case-insensitive matching
+// reintroduces false positives from unrelated single-arg calls that happen
+// to share a method name with a routing verb — most importantly Fiber's own
+// c.Get("X-Header") for reading a request header, which uses the exact same
+// casing as a Fiber route registration.
+var ginCasedMethods = map[string]bool{
+	"GET": true, "POST": true, "PUT": true, "DELETE": true,
+	"PATCH": true, "HEAD": true, "OPTIONS": true,
+}
+var fiberCasedMethods = map[string]bool{
+	"Get": true, "Post": true, "Put": true, "Delete": true,
+	"Patch": true, "Head": true, "Options": true,
+}
+
+// parseGinRoutes extracts routes from Gin, Echo, and Fiber (all three share
+// this AST shape: router.METHOD("/path", handlers...)).
 func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 	callExpr, ok := n.(*ast.CallExpr)
 	if !ok {
@@ -1468,23 +1601,15 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 		return
 	}
 
-	// Check for Gin route methods (GET, POST, PUT, DELETE, PATCH, etc.). Every
-	// mainstream Go router (Gin, Echo, Fiber, Chi) spells these in all caps —
-	// never case-normalize this match. A prior version upper-cased the method
-	// name before comparing, which meant ANY single-arg `.Get(...)`/`.Post(...)`
-	// call matched too, including extremely common non-routing calls like
-	// `r.Header.Get("X-Forwarded-For")`, `c.Get("someKey")` (Gin's context
-	// value store), or `url.Values.Get(...)` — each one fabricating a bogus
-	// endpoint named after whatever string was passed in.
-	method := selExpr.Sel.Name
-	validMethods := map[string]bool{
-		"GET": true, "POST": true, "PUT": true, "DELETE": true,
-		"PATCH": true, "HEAD": true, "OPTIONS": true,
+	validMethods := ginCasedMethods
+	if a.framework == models.FrameWorkFiber {
+		validMethods = fiberCasedMethods
 	}
-
+	method := selExpr.Sel.Name
 	if !validMethods[method] {
 		return
 	}
+	method = strings.ToUpper(method) // normalize for the stored Endpoint.Method / spec output
 
 	// Extract path
 	if len(callExpr.Args) < 1 {
@@ -1493,6 +1618,18 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 
 	pathLit, ok := callExpr.Args[0].(*ast.BasicLit)
 	if !ok || pathLit.Kind != token.STRING {
+		return
+	}
+
+	// A genuine route registration always passes at least one handler after
+	// the path, and a handler is always a function reference — never a
+	// literal. This is what keeps non-routing calls that share a method name
+	// with a routing verb (Fiber's c.Get("X-Header", "default")) from being
+	// mistaken for a route now that Fiber's capitalized casing is accepted.
+	if len(callExpr.Args) < 2 {
+		return
+	}
+	if _, isLiteral := callExpr.Args[len(callExpr.Args)-1].(*ast.BasicLit); isLiteral {
 		return
 	}
 
@@ -1535,12 +1672,8 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 
 	// Extract handler: always use the last argument so middleware chains like
 	// r.GET("/path", authMiddleware, handler) resolve to the real handler.
-	// finishEndpoint also sets the default 200 response, so call it even when
-	// there's no handler argument (malformed/unusual call).
-	var handlerArg ast.Expr
-	if len(callExpr.Args) >= 2 {
-		handlerArg = callExpr.Args[len(callExpr.Args)-1]
-	}
+	// The >=2-args check above guarantees this is present and non-literal.
+	handlerArg := callExpr.Args[len(callExpr.Args)-1]
 	a.finishEndpoint(&endpoint, handlerArg, file)
 
 	a.endpoints = append(a.endpoints, endpoint)
@@ -1915,21 +2048,23 @@ func (a *Analyzer) parseGenericRoutes(n ast.Node, file *ast.File) {
 		return
 	}
 
-	// Same reasoning as parseGinRoutes: never case-normalize the method match,
-	// or unrelated single-arg `.Get(...)`-style calls get fabricated into endpoints.
+	// Framework is unknown here, so accept either casing convention
+	// (ginCasedMethods for Gin/Echo, fiberCasedMethods for Fiber) — but still
+	// require a real handler (>=2 args, last arg not a literal) so unrelated
+	// single-arg/literal-arg calls like header or context-value lookups
+	// aren't fabricated into endpoints.
 	method := selExpr.Sel.Name
-	validMethods := map[string]bool{
-		"GET": true, "POST": true, "PUT": true, "DELETE": true,
-		"PATCH": true, "HEAD": true, "OPTIONS": true,
-	}
+	isRouteMethod := ginCasedMethods[method] || fiberCasedMethods[method]
 
-	// Pattern 1: router.GET("/path", handler)
-	if validMethods[method] && len(callExpr.Args) >= 1 {
+	// Pattern 1: router.GET("/path", handler) / router.Get("/path", handler)
+	if isRouteMethod && len(callExpr.Args) >= 2 {
 		if pathLit, ok := callExpr.Args[0].(*ast.BasicLit); ok && pathLit.Kind == token.STRING {
-			path := strings.Trim(pathLit.Value, `"`)
-			ep := a.newGenericEndpoint(path, method)
-			a.extractHandlerComments(file, lastHandlerName(callExpr.Args), ep)
-			a.endpoints = append(a.endpoints, *ep)
+			if _, isLiteral := callExpr.Args[len(callExpr.Args)-1].(*ast.BasicLit); !isLiteral {
+				path := strings.Trim(pathLit.Value, `"`)
+				ep := a.newGenericEndpoint(path, strings.ToUpper(method))
+				a.extractHandlerComments(file, lastHandlerName(callExpr.Args), ep)
+				a.endpoints = append(a.endpoints, *ep)
+			}
 		}
 		return
 	}
