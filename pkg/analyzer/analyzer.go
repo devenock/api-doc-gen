@@ -1023,11 +1023,19 @@ func (a *Analyzer) findLocalStructType(file *ast.File, funcName, typeName string
 // resolveRequestSchema looks up typeName in the global type registry first
 // (package-level types, resolvable across files), then falls back to a type
 // declared locally inside funcName's own body. See findLocalStructType.
-func (a *Analyzer) resolveRequestSchema(file *ast.File, funcName, typeName string) (models.Schema, bool) {
+// The third return value reports whether the match came from a local
+// (function-scoped) declaration — callers must not register those in the
+// project-wide component-schema map (addSchemaAndRefsToModels), since local
+// type names are not unique across the project (many handlers independently
+// name their request struct "req"); doing so would silently and
+// non-deterministically overwrite one handler's schema with another's under
+// a shared, misleading name in the published spec.
+func (a *Analyzer) resolveRequestSchema(file *ast.File, funcName, typeName string) (schema models.Schema, ok bool, isLocal bool) {
 	if schema, ok := a.typeRegistry[typeName]; ok {
-		return schema, true
+		return schema, true, false
 	}
-	return a.findLocalStructType(file, funcName, typeName)
+	localSchema, localOk := a.findLocalStructType(file, funcName, typeName)
+	return localSchema, localOk, true
 }
 
 // findFuncBody returns the body of the top-level function or method named
@@ -1327,9 +1335,11 @@ func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file
 			}
 			if reqTypeName != "" {
 				reqTypeName = localTypeName(reqTypeName)
-				if schema, ok := a.resolveRequestSchema(file, handlerName, reqTypeName); ok {
+				if schema, ok, isLocal := a.resolveRequestSchema(file, handlerName, reqTypeName); ok {
 					ep.RequestTypeName = reqTypeName
-					a.addSchemaAndRefsToModels(reqTypeName, schema)
+					if !isLocal {
+						a.addSchemaAndRefsToModels(reqTypeName, schema)
+					}
 					ep.RequestBody = &models.RequestBody{
 						Required: true,
 						Content: map[string]models.Content{
@@ -1340,9 +1350,11 @@ func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file
 			}
 			if respTypeName != "" {
 				respTypeName = localTypeName(respTypeName)
-				if schema, ok := a.resolveRequestSchema(file, handlerName, respTypeName); ok {
+				if schema, ok, isLocal := a.resolveRequestSchema(file, handlerName, respTypeName); ok {
 					ep.ResponseTypeName = respTypeName
-					a.addSchemaAndRefsToModels(respTypeName, schema)
+					if !isLocal {
+						a.addSchemaAndRefsToModels(respTypeName, schema)
+					}
 					ep.Responses[200] = models.Response{
 						Description: "Successful response",
 						Content: map[string]models.Content{
@@ -1413,9 +1425,11 @@ func (a *Analyzer) resolveHandlerSourceFiles() {
 						typName = findAddressTakenStructVar(node, ep.HandlerName)
 					}
 					if typName != "" {
-						if schema, ok := a.resolveRequestSchema(node, ep.HandlerName, typName); ok {
+						if schema, ok, isLocal := a.resolveRequestSchema(node, ep.HandlerName, typName); ok {
 							ep.RequestTypeName = typName
-							a.addSchemaAndRefsToModels(typName, schema)
+							if !isLocal {
+								a.addSchemaAndRefsToModels(typName, schema)
+							}
 							ep.RequestBody = &models.RequestBody{
 								Required: true,
 								Content: map[string]models.Content{
@@ -1510,12 +1524,14 @@ func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) boo
 	if typName == "" {
 		return false
 	}
-	schema, ok := a.resolveRequestSchema(node, ep.HandlerName, typName)
+	schema, ok, isLocal := a.resolveRequestSchema(node, ep.HandlerName, typName)
 	if !ok {
 		return false
 	}
 	ep.RequestTypeName = typName
-	a.addSchemaAndRefsToModels(typName, schema)
+	if !isLocal {
+		a.addSchemaAndRefsToModels(typName, schema)
+	}
 	ep.RequestBody = &models.RequestBody{
 		Required: true,
 		Content: map[string]models.Content{
