@@ -644,7 +644,11 @@ func (a *Analyzer) buildGinGroupPrefixes(file *ast.File) map[string]string {
 			return true
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Group" || len(call.Args) != 1 {
+		// Group() takes the path plus optional variadic middleware in both Gin
+		// (Group(path string, handlers ...HandlerFunc)) and Fiber (Group(prefix
+		// string, handlers ...Handler)) — admin := app.Group("/admin", authMW) is
+		// extremely common, so only the path (first arg) is required, not exactly one.
+		if !ok || sel.Sel.Name != "Group" || len(call.Args) < 1 {
 			return true
 		}
 		pathLit, ok := call.Args[0].(*ast.BasicLit)
@@ -695,39 +699,98 @@ func joinPath(prefix, path string) string {
 
 // buildGinAuthGroups returns variable names for route groups that use auth-like middleware (.Use(Auth()), .Use(JWT()), etc.).
 func (a *Analyzer) buildGinAuthGroups(file *ast.File) map[string]bool {
-	authGroups := make(map[string]bool)
 	authNames := map[string]bool{
 		"Auth": true, "JWT": true, "JWTAuth": true, "AuthRequired": true,
 		"MiddlewareAuth": true, "AuthMiddleware": true, "RequireAuth": true,
 	}
-	ast.Inspect(file, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || len(call.Args) == 0 {
-			return true
-		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Use" {
-			return true
-		}
-		key := groupVarKey(sel.X)
-		if key == "" {
-			return true
-		}
-		// First arg to Use() is the middleware (e.g. Auth(), JWT())
+	// looksLikeAuth checks a middleware argument expression by name, however
+	// it's referenced: Auth (bare ident), Auth() (called), or c.AuthMW (a
+	// method/field value passed without invocation — common when middleware
+	// lives on a DI container, e.g. app.Group("/admin", c.AuthMW, ...)).
+	looksLikeAuth := func(arg ast.Expr) bool {
 		var name string
-		switch arg := call.Args[0].(type) {
+		switch e := arg.(type) {
 		case *ast.Ident:
-			name = arg.Name
+			name = e.Name
+		case *ast.SelectorExpr:
+			name = e.Sel.Name
 		case *ast.CallExpr:
-			if c, ok := arg.Fun.(*ast.Ident); ok {
-				name = c.Name
+			switch f := e.Fun.(type) {
+			case *ast.Ident:
+				name = f.Name
+			case *ast.SelectorExpr:
+				name = f.Sel.Name
 			}
 		}
-		if authNames[name] || strings.Contains(strings.ToLower(name), "auth") || strings.Contains(strings.ToLower(name), "jwt") {
-			authGroups[key] = true
+		if name == "" {
+			return false
+		}
+		lower := strings.ToLower(name)
+		return authNames[name] || strings.Contains(lower, "auth") || strings.Contains(lower, "jwt")
+	}
+
+	authGroups := make(map[string]bool)
+	type link struct{ child, parent string }
+	var links []link
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch stmt := n.(type) {
+		case *ast.CallExpr:
+			// group.Use(authMiddleware) — middleware attached after the group exists.
+			sel, ok := stmt.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "Use" || len(stmt.Args) == 0 {
+				return true
+			}
+			key := groupVarKey(sel.X)
+			if key != "" && looksLikeAuth(stmt.Args[0]) {
+				authGroups[key] = true
+			}
+		case *ast.AssignStmt:
+			// child := parent.Group("/path", authMiddleware, ...) — middleware
+			// passed inline at group creation, which both Gin's and Fiber's
+			// Group() accept as variadic trailing args.
+			if len(stmt.Lhs) != 1 || len(stmt.Rhs) != 1 {
+				return true
+			}
+			call, ok := stmt.Rhs[0].(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "Group" || len(call.Args) < 1 {
+				return true
+			}
+			childKey := groupVarKey(stmt.Lhs[0])
+			parentKey := groupVarKey(sel.X)
+			if childKey == "" || parentKey == "" {
+				return true
+			}
+			links = append(links, link{childKey, parentKey})
+			for _, arg := range call.Args[1:] {
+				if looksLikeAuth(arg) {
+					authGroups[childKey] = true
+					break
+				}
+			}
 		}
 		return true
 	})
+
+	// Propagate auth protection down through nested groups — middleware set
+	// on a parent group applies to every route registered on its sub-groups
+	// too, in both Gin and Fiber.
+	for {
+		changed := false
+		for _, l := range links {
+			if authGroups[l.parent] && !authGroups[l.child] {
+				authGroups[l.child] = true
+				changed = true
+			}
+		}
+		if !changed {
+			break
+		}
+	}
 	return authGroups
 }
 
