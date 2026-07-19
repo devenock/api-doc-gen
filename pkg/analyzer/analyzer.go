@@ -18,6 +18,20 @@ import (
 
 var errStopWalk = errors.New("stop walk")
 
+// isSymlink reports whether info describes a symbolic link. filepath.Walk
+// never recurses into a symlinked directory (Lstat reports it as a symlink,
+// not a directory), but it does NOT protect against a symlinked *file* —
+// os.ReadFile/parser.ParseFile follow symlinks at the OS level regardless of
+// how Walk reached the path. Without this check, a crafted repository
+// containing a `.go`-named symlink pointing outside the project tree (e.g.
+// at another local Go module, or any other file that happens to parse as
+// Go) would have that target's content read and folded into the generated
+// docs — and, with --write-annotations, written back to. Every
+// filepath.Walk callback in this file must skip symlinks.
+func isSymlink(info os.FileInfo) bool {
+	return info.Mode()&os.ModeSymlink != 0
+}
+
 // Analyzer analyzes the codebase to extract API information
 type Analyzer struct {
 	config         *config.Config
@@ -68,6 +82,9 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 		if err != nil {
 			return err
 		}
+		if isSymlink(info) {
+			return nil
+		}
 		if info.IsDir() {
 			for _, exclude := range a.config.Exclude {
 				if filepath.Base(path) == exclude {
@@ -95,6 +112,9 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 	err = filepath.Walk(a.config.ProjectPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+		if isSymlink(info) {
+			return nil
 		}
 		if info.IsDir() {
 			for _, exclude := range a.config.Exclude {
@@ -1472,6 +1492,9 @@ func (a *Analyzer) resolveRemainingRequestBodies() {
 			if err != nil || ep.RequestBody != nil {
 				return nil
 			}
+			if isSymlink(info) {
+				return nil
+			}
 			if info.IsDir() {
 				for _, ex := range a.config.Exclude {
 					if filepath.Base(path) == ex {
@@ -1561,6 +1584,9 @@ func findFileWithFunction(projectPath string, exclude []string, pkgName, funcNam
 		if err != nil {
 			return nil
 		}
+		if isSymlink(info) {
+			return nil
+		}
 		if info.IsDir() {
 			if skipDir(path) {
 				return filepath.SkipDir
@@ -1597,6 +1623,9 @@ func findFileWithFunction(projectPath string, exclude []string, pkgName, funcNam
 	// Pass 2: pkgName may be a variable/instance — search all files by function name using a fast text pre-filter.
 	filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil || found != "" {
+			return nil
+		}
+		if isSymlink(info) {
 			return nil
 		}
 		if info.IsDir() {

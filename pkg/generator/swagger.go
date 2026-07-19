@@ -3,6 +3,7 @@ package generator
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"os"
 	"path/filepath"
 	"strings"
@@ -279,14 +280,20 @@ func (g *SwaggerGenerator) writeJSON(path string, data interface{}) error {
 	return encoder.Encode(data)
 }
 
-// generateSwaggerUI generates a Swagger UI HTML file
+// generateSwaggerUI generates a Swagger UI HTML file. g.config.Title is
+// attacker-controllable (a malicious go.mod module name, or --title in a
+// scripted/CI context reading an untrusted value) and this file gets
+// auto-opened in the user's browser after generation, so it must be
+// HTML-escaped before being embedded — otherwise a title like
+// `</title><script>...` would execute as stored XSS in the locally
+// generated page.
 func (g *SwaggerGenerator) generateSwaggerUI(path string) error {
-	html := `<!DOCTYPE html>
+	pageHTML := `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>` + g.config.Title + `</title>
+    <title>` + html.EscapeString(g.config.Title) + `</title>
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
     <style>
         body { margin: 0; padding: 0; }
@@ -324,5 +331,5 @@ func (g *SwaggerGenerator) generateSwaggerUI(path string) error {
 </body>
 </html>`
 
-	return os.WriteFile(path, []byte(html), 0644)
+	return os.WriteFile(path, []byte(pageHTML), 0644)
 }
