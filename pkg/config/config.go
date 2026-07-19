@@ -32,9 +32,15 @@ type Config struct {
 	PostmanWorkspaceUID string
 	PostmanUpload       bool // --upload: force upload, error if no API key available
 	PostmanNoUpload     bool // --no-upload: skip the upload step entirely
-	// PostmanDirectImport skips the cloud API entirely and imports the collection
-	// directly into the Postman desktop app via a temporary localhost server.
-	// Set by the interactive wizard when the user picks "Import directly".
+	// PostmanDirectImport records that the user chose "import directly" (no
+	// API key) in the interactive wizard, or passed --direct-import. It is
+	// currently NOT read anywhere in the upload flow — runPostmanUpload
+	// (cmd/root.go) only branches on PostmanUpload — so today it has no
+	// effect beyond skipping the cloud-upload API-key prompt inside the
+	// wizard itself; the actual outcome (open Postman desktop if installed,
+	// print manual-import instructions) is identical to the default path.
+	// True one-step local-file import (e.g. via a temporary localhost server
+	// + a postman:// import-by-URL request) is not implemented.
 	PostmanDirectImport bool
 }
 
@@ -106,7 +112,10 @@ func (c *Config) Validate() error {
 	}
 
 	if len(c.Exclude) == 0 {
-		c.Exclude = []string{"vendor", "node_modules", "git", "test", "tests"}
+		// Matched by exact basename (see analyzer.go), so this must be ".git"
+		// — a bare "git" never matches a real directory and silently excludes
+		// nothing.
+		c.Exclude = []string{"vendor", "node_modules", ".git", "test", "tests"}
 	}
 	return nil
 }

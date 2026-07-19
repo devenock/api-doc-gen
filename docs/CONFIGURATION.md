@@ -16,7 +16,7 @@ Configuration is merged from lowest to highest precedence: **config file** → *
 | `--type`, `-t` | `APIDOC_TYPE` | `type` | _(none)_ |
 | `--framework`, `-f` | `APIDOC_FRAMEWORK` | `framework` | _(auto-detect)_ |
 | `--base-path` | `APIDOC_BASE_PATH` | `base_path` | `""` |
-| `--title` | `APIDOC_TITLE` | `title` | `API Documentation` |
+| `--title` | `APIDOC_TITLE` | `title` | auto-detected from `go.mod`'s module name (falls back to `API Documentation` if `go.mod` can't be read) |
 | `--version` | `APIDOC_VERSION` | `version` | `1.0.0` |
 | `--description` | `APIDOC_DESCRIPTION` | `description` | `""` |
 | `--exclude` | `APIDOC_EXCLUDE` | `exclude` | see below |
@@ -25,13 +25,16 @@ Configuration is merged from lowest to highest precedence: **config file** → *
 | `--quiet`, `-q` | `APIDOC_QUIET` | `quiet` | `false` |
 | `--dry-run` | _(n/a)_ | _(n/a)_ | `false` |
 | `--show-config` | _(n/a)_ | _(n/a)_ | `false` |
+| `--serve` _(swagger)_ | _(n/a)_ | _(n/a)_ | `false` — after generating, serves `./docs` at `http://localhost:8765` and opens it in your browser |
+| `--write-annotations` | _(n/a)_ | _(n/a)_ | `false` — writes swag-style `// @...` comments above same-file handler functions |
 | `--upload` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` |
 | `--no-upload` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` |
+| `--direct-import` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` — no functional effect outside the interactive wizard today (see note below) |
 | `--postman-api-key` | `APIDOC_POSTMAN_API_KEY` · `POSTMAN_API_KEY` | _(not in config — secret)_ | _(none)_ |
 | `--postman-workspace` | _(n/a)_ | _(n/a)_ | _(default workspace)_ |
 | `[path]` _(positional)_ | _(n/a)_ | _(n/a)_ | `.` |
 
-Default `exclude` dirs: `vendor`, `node_modules`, `git`, `test`, `tests`.
+Default `exclude` dirs: `vendor`, `node_modules`, `.git`, `test`, `tests`. Matching is by exact directory name (basename), not substring.
 
 ## Postman API key resolution
 
@@ -56,6 +59,8 @@ The Postman API key is never stored in `.apidoc-gen.yaml`. Resolution order:
 | any | — | — | yes | Skip upload |
 
 The collection UID is cached in `.apidoc-gen-cache.json` (project root, gitignored by default). Delete it to force a new collection on the next upload.
+
+**`--direct-import` / the wizard's "Import directly into Postman" option** currently produce the same outcome as doing nothing: if Postman desktop is installed, it opens; either way you still drag `collection.json` into the sidebar (or File > Import) yourself. There is no automatic local-file import yet — only `--upload` (cloud API) results in Postman opening pre-loaded with the collection.
 
 ## Inspect effective config
 

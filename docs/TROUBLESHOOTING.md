@@ -25,10 +25,12 @@ $(go env GOPATH)/bin/api-doc-gen generate --no-interactive --type swagger -o ./d
 
 ## No endpoints found
 
-- **Framework not detected** — ensure your framework is in `go.mod`. Set `--framework` explicitly if auto-detection misses it: `--framework gin`.
+If the analyzer finds zero endpoints, the CLI prints a warning by default (no `-v` needed) showing the detected framework and the likely cause, right before it writes the (empty) output file. If you see that warning:
+
+- **Framework not detected** — ensure your framework is in `go.mod`. Set `--framework` explicitly if auto-detection misses it: `--framework gin`. Supported: `gin`, `echo`, `fiber`, `gorilla`, `chi`.
 - **Wrong directory** — run from the project root (where `go.mod` lives), or pass the path: `api-doc-gen generate /path/to/project`.
 - **Excluded directories** — route files inside `vendor`, `test`, or `tests` are skipped by default. Override with `--exclude ""` or adjust `exclude` in `.apidoc-gen.yaml`.
-- **Verbose output** — run with `-v` to see the detected framework and how many files were scanned.
+- **Verbose output** — run with `-v` to also see the file count and the full endpoint list once found, or `--dry-run` to inspect without writing files.
 
 ## Invalid configuration
 

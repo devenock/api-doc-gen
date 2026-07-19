@@ -73,11 +73,12 @@ func setupPostmanInWizard(cfg *config.Config) {
 	switch choice {
 	case optDirect:
 		cfg.PostmanDirectImport = true
-		fmt.Println("   ✅ Postman will open and import your collection automatically after generation.")
+		fmt.Println("   ✅ Postman will open after generation — drag collection.json into the sidebar (or File > Import) to load it. No API key needed.")
 
 	case optCloud:
 		key, source := postman.LoadAPIKey()
 		if key != "" {
+			cfg.PostmanUpload = true
 			fmt.Printf("   ✅ Already logged in (%s) — collection will be uploaded and Postman will open.\n", source)
 			break
 		}
@@ -94,6 +95,7 @@ func setupPostmanInWizard(cfg *config.Config) {
 			fmt.Printf("   ↳ Could not save API key (%v). Falling back to direct import.\n", err)
 			break
 		}
+		cfg.PostmanUpload = true
 		fmt.Printf("   🔐 API key saved to %s\n", path)
 		fmt.Println("   Your collection will be uploaded and Postman will open automatically.")
 

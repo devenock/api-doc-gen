@@ -76,7 +76,7 @@ docs:
 	api-doc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
-**Optional config file** — run `api-doc-gen init` inside your project to create `.apidoc-gen.yaml`. Commit it so everyone shares the same defaults (output dir, title, framework, etc.). You will not be prompted again for things already in the file.
+**Optional config file** — run `api-doc-gen init` inside your project to create `.apidoc-gen.yaml`. Commit it so everyone shares the same defaults (output dir, title, framework, etc.). In interactive mode, doc type and framework are skipped entirely once set in the file; title, version, base path, and output directory are still prompted but pre-filled with the file's value — press Enter to accept it. Use `--no-interactive` to skip all prompts and use the file (plus flags/env) as-is.
 
 ---
 

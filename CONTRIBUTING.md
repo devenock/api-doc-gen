@@ -26,14 +26,17 @@ By participating, you agree to uphold our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Project layout
 
-- `cmd/` – CLI commands (Cobra).
-- `pkg/analyzer/` – Code analysis (framework detection, route parsing).
+- `cmd/` – CLI commands (Cobra), flags, and the generate/init run logic.
+- `pkg/analyzer/` – Code analysis (framework detection, route/schema parsing).
 - `pkg/generator/` – Output generators (Swagger/OpenAPI, Postman).
 - `pkg/models/` – Shared data structures.
 - `pkg/config/` – Configuration and validation.
+- `pkg/postman/` – Postman API client and credentials/cache management.
 - `internal/prompt/` – Interactive prompts.
+- `internal/annotations/` – `--write-annotations`: writes swag comment blocks to handler source.
 - `docs/` – User docs (CONFIGURATION, TROUBLESHOOTING).
-- `web/` – Getting-started UI (`index.html`).
+- `web/` – Landing/docs pages (`index.html`, `docs.html`) — not part of the CLI itself.
+- `examples/` – Sample Go APIs (Gin, Chi, Gorilla Mux) for testing the generator end to end.
 
 ## Submitting changes
 
