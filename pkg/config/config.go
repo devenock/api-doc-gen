@@ -53,7 +53,14 @@ type ServerConfig struct {
 // detectProjectName reads go.mod and returns a human-readable project name
 // derived from the module path's last segment. Falls back to "API Documentation".
 func detectProjectName(projectPath string) string {
-	data, err := os.ReadFile(filepath.Join(projectPath, "go.mod"))
+	modPath := filepath.Join(projectPath, "go.mod")
+	// Don't follow a symlinked go.mod — a crafted project could point it at
+	// an arbitrary file elsewhere on disk (see the matching check in
+	// pkg/analyzer for the same reasoning applied to the directory walk).
+	if info, err := os.Lstat(modPath); err != nil || info.Mode()&os.ModeSymlink != 0 {
+		return "API Documentation"
+	}
+	data, err := os.ReadFile(modPath)
 	if err != nil {
 		return "API Documentation"
 	}

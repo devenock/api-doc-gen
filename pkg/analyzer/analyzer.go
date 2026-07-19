@@ -32,6 +32,21 @@ func isSymlink(info os.FileInfo) bool {
 	return info.Mode()&os.ModeSymlink != 0
 }
 
+// readNonSymlinkFile reads path only if it is a regular file, not a
+// symlink — the same defense-in-depth reasoning as isSymlink, applied to
+// the handful of single-file reads (go.mod, .env) that sit outside the
+// filepath.Walk callbacks and so aren't covered by that check.
+func readNonSymlinkFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if isSymlink(info) {
+		return nil, os.ErrNotExist
+	}
+	return os.ReadFile(path)
+}
+
 // Analyzer analyzes the codebase to extract API information
 type Analyzer struct {
 	config         *config.Config
@@ -195,7 +210,7 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 // project's .env file for a PORT / APP_PORT / SERVER_PORT entry.
 // Falls back to http://localhost:8080 when nothing is found.
 func detectServerURL(projectPath string) string {
-	data, err := os.ReadFile(filepath.Join(projectPath, ".env"))
+	data, err := readNonSymlinkFile(filepath.Join(projectPath, ".env"))
 	if err != nil {
 		return "http://localhost:8080"
 	}
@@ -221,7 +236,7 @@ func detectServerURL(projectPath string) string {
 // Useful for init so the config file can be pre-filled.
 func DetectFramework(projectPath string) string {
 	goModPath := filepath.Join(projectPath, "go.mod")
-	content, err := os.ReadFile(goModPath)
+	content, err := readNonSymlinkFile(goModPath)
 	if err != nil {
 		return ""
 	}
