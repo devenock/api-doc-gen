@@ -601,8 +601,30 @@ func (a *Analyzer) parseFile(filePath string) error {
 	return nil
 }
 
+// groupVarKey returns a stable string identity for a router-group variable
+// expression, so both `v1 := r.Group(...)` (plain identifier) and
+// `rt.staff = api.Group(...)` / route calls like `rt.staff.POST(...)`
+// (struct-field-based, common in DI-style router setups where routers are
+// organized as named fields on a struct) can be tracked and looked up by the
+// same prefix/auth maps. Returns "" for anything else (e.g. a function call
+// result), which callers treat as "no known prefix."
+func groupVarKey(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name
+	case *ast.SelectorExpr:
+		base := groupVarKey(e.X)
+		if base == "" {
+			return ""
+		}
+		return base + "." + e.Sel.Name
+	}
+	return ""
+}
+
 // buildGinGroupPrefixes builds a map of variable name -> path prefix from
-// Group() calls (e.g. v1 := r.Group("/api/v1")) so we can emit full paths.
+// Group() calls (e.g. v1 := r.Group("/api/v1"), or rt.staff = api.Group("/staff"))
+// so we can emit full paths.
 func (a *Analyzer) buildGinGroupPrefixes(file *ast.File) map[string]string {
 	type link struct{ child, parent, path string }
 	var links []link
@@ -624,15 +646,12 @@ func (a *Analyzer) buildGinGroupPrefixes(file *ast.File) map[string]string {
 			return true
 		}
 		path := strings.Trim(pathLit.Value, `"`)
-		childIdent, ok := assign.Lhs[0].(*ast.Ident)
-		if !ok {
+		childKey := groupVarKey(assign.Lhs[0])
+		parentKey := groupVarKey(sel.X)
+		if childKey == "" || parentKey == "" {
 			return true
 		}
-		parentIdent, ok := sel.X.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		links = append(links, link{childIdent.Name, parentIdent.Name, path})
+		links = append(links, link{childKey, parentKey, path})
 		return true
 	})
 	prefix := make(map[string]string)
@@ -684,8 +703,8 @@ func (a *Analyzer) buildGinAuthGroups(file *ast.File) map[string]bool {
 		if !ok || sel.Sel.Name != "Use" {
 			return true
 		}
-		ident, ok := sel.X.(*ast.Ident)
-		if !ok {
+		key := groupVarKey(sel.X)
+		if key == "" {
 			return true
 		}
 		// First arg to Use() is the middleware (e.g. Auth(), JWT())
@@ -699,7 +718,7 @@ func (a *Analyzer) buildGinAuthGroups(file *ast.File) map[string]bool {
 			}
 		}
 		if authNames[name] || strings.Contains(strings.ToLower(name), "auth") || strings.Contains(strings.ToLower(name), "jwt") {
-			authGroups[ident.Name] = true
+			authGroups[key] = true
 		}
 		return true
 	})
@@ -746,7 +765,7 @@ func findBindingTypeName(file *ast.File, funcName string) string {
 	if body == nil {
 		return ""
 	}
-	varTypes, _, _ := collectLocalTypedVars(body)
+	varTypes, _, _, _ := collectLocalTypedVars(body)
 
 	var result string
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -816,9 +835,9 @@ func findAddressTakenStructVar(file *ast.File, funcName string) string {
 	if body == nil {
 		return ""
 	}
-	varTypes, order, addressTaken := collectLocalTypedVars(body)
+	varTypes, order, addressTaken, typeAsserted := collectLocalTypedVars(body)
 	for _, name := range order {
-		if !addressTaken[name] {
+		if !addressTaken[name] && !typeAsserted[name] {
 			continue
 		}
 		typ := localTypeName(varTypes[name])
@@ -842,12 +861,17 @@ func findFuncBody(file *ast.File, funcName string) *ast.BlockStmt {
 }
 
 // collectLocalTypedVars walks body and returns every local variable declared
-// with a named type (`var x T`, `x := T{}`, `x := &T{}`, `x := new(T)`), its
-// declaration order, and the set of variable names whose address is taken
-// (`&x`) anywhere in the body.
-func collectLocalTypedVars(body *ast.BlockStmt) (varTypes map[string]string, order []string, addressTaken map[string]bool) {
+// with a named type (`var x T`, `x := T{}`, `x := &T{}`, `x := new(T)`,
+// `x := v.(T)`), its declaration order, the set of variable names whose
+// address is taken (`&x`) anywhere in the body, and the set of variable
+// names obtained via a type assertion (`x := v.(*T)` / `x, ok := v.(*T)`) —
+// the latter is how frameworks that bind the request body in middleware and
+// hand it to the handler through a context value typically surface it
+// (e.g. `req := c.MustGet("body").(*CreateRequest)`).
+func collectLocalTypedVars(body *ast.BlockStmt) (varTypes map[string]string, order []string, addressTaken map[string]bool, typeAsserted map[string]bool) {
 	varTypes = make(map[string]string)
 	addressTaken = make(map[string]bool)
+	typeAsserted = make(map[string]bool)
 	recordVar := func(name, typ string) {
 		if typ == "" {
 			return
@@ -873,7 +897,7 @@ func collectLocalTypedVars(body *ast.BlockStmt) (varTypes map[string]string, ord
 					}
 				}
 			}
-		// req := LoginRequest{} / req := &LoginRequest{} / req := new(LoginRequest)
+		// req := LoginRequest{} / req := &LoginRequest{} / req := new(LoginRequest) / req := v.(*LoginRequest)
 		case *ast.AssignStmt:
 			for i, rhs := range s.Rhs {
 				if i >= len(s.Lhs) {
@@ -897,6 +921,11 @@ func collectLocalTypedVars(body *ast.BlockStmt) (varTypes map[string]string, ord
 				case *ast.CallExpr:
 					if id, ok := expr.Fun.(*ast.Ident); ok && id.Name == "new" && len(expr.Args) == 1 {
 						recordVar(lhs.Name, typeExprToName(expr.Args[0]))
+					}
+				case *ast.TypeAssertExpr:
+					if expr.Type != nil {
+						recordVar(lhs.Name, typeExprToName(expr.Type))
+						typeAsserted[lhs.Name] = true
 					}
 				}
 			}
@@ -1433,8 +1462,15 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 		return
 	}
 
-	// Check for Gin route methods (GET, POST, PUT, DELETE, PATCH, etc.)
-	method := strings.ToUpper(selExpr.Sel.Name)
+	// Check for Gin route methods (GET, POST, PUT, DELETE, PATCH, etc.). Every
+	// mainstream Go router (Gin, Echo, Fiber, Chi) spells these in all caps —
+	// never case-normalize this match. A prior version upper-cased the method
+	// name before comparing, which meant ANY single-arg `.Get(...)`/`.Post(...)`
+	// call matched too, including extremely common non-routing calls like
+	// `r.Header.Get("X-Forwarded-For")`, `c.Get("someKey")` (Gin's context
+	// value store), or `url.Values.Get(...)` — each one fabricating a bogus
+	// endpoint named after whatever string was passed in.
+	method := selExpr.Sel.Name
 	validMethods := map[string]bool{
 		"GET": true, "POST": true, "PUT": true, "DELETE": true,
 		"PATCH": true, "HEAD": true, "OPTIONS": true,
@@ -1456,10 +1492,11 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 
 	path := strings.Trim(pathLit.Value, `"`)
 
-	// Prepend group prefix if receiver is a variable (e.g. products.GET("/", ...))
+	// Prepend group prefix if receiver is a tracked group variable, whether a
+	// plain local (products.GET(...)) or a struct field (rt.products.GET(...)).
 	if a.curGroupPrefix != nil {
-		if ident, ok := selExpr.X.(*ast.Ident); ok && ident.Name != "" {
-			if p := a.curGroupPrefix[ident.Name]; p != "" {
+		if key := groupVarKey(selExpr.X); key != "" {
+			if p := a.curGroupPrefix[key]; p != "" {
 				path = joinPath(p, path)
 			}
 		}
@@ -1475,7 +1512,7 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 	// Mark protected routes when this group uses auth middleware
 	var security []map[string][]string
 	if a.curAuthGroups != nil {
-		if ident, ok := selExpr.X.(*ast.Ident); ok && a.curAuthGroups[ident.Name] {
+		if key := groupVarKey(selExpr.X); key != "" && a.curAuthGroups[key] {
 			security = []map[string][]string{{"BearerAuth": {}}}
 		}
 	}
@@ -1547,15 +1584,12 @@ func (a *Analyzer) buildGorillaSubrouterPrefixes(file *ast.File) map[string]stri
 			return true
 		}
 		path := strings.Trim(pathLit.Value, `"`)
-		childIdent, ok := assign.Lhs[0].(*ast.Ident)
-		if !ok {
+		childKey := groupVarKey(assign.Lhs[0])
+		parentKey := groupVarKey(innerSel.X)
+		if childKey == "" || parentKey == "" {
 			return true
 		}
-		parentIdent, ok := innerSel.X.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		links = append(links, link{childIdent.Name, parentIdent.Name, path})
+		links = append(links, link{childKey, parentKey, path})
 		return true
 	})
 	prefix := make(map[string]string)
@@ -1648,10 +1682,7 @@ func (a *Analyzer) parseGorillaRoutes(n ast.Node, file *ast.File) {
 	}
 	path := strings.Trim(pathLit.Value, `"`)
 
-	var receiverName string
-	if ident, ok := selExpr.X.(*ast.Ident); ok {
-		receiverName = ident.Name
-	}
+	receiverName := groupVarKey(selExpr.X)
 
 	// No .Methods() chain: gorilla/mux matches any HTTP method on this route.
 	// We record it as GET so the path is visible; if a .Methods() call exists
@@ -1724,10 +1755,7 @@ func (a *Analyzer) parseGorillaMethods(n ast.Node, file *ast.File) {
 	}
 	a.consumedCalls[inner] = true
 
-	var receiverName string
-	if ident, ok := innerSel.X.(*ast.Ident); ok {
-		receiverName = ident.Name
-	}
+	receiverName := groupVarKey(innerSel.X)
 	handlerArg := inner.Args[len(inner.Args)-1]
 	a.endpoints = append(a.endpoints, a.buildGorillaEndpoints(path, methods, handlerArg, file, receiverName)...)
 }
@@ -1881,7 +1909,9 @@ func (a *Analyzer) parseGenericRoutes(n ast.Node, file *ast.File) {
 		return
 	}
 
-	method := strings.ToUpper(selExpr.Sel.Name)
+	// Same reasoning as parseGinRoutes: never case-normalize the method match,
+	// or unrelated single-arg `.Get(...)`-style calls get fabricated into endpoints.
+	method := selExpr.Sel.Name
 	validMethods := map[string]bool{
 		"GET": true, "POST": true, "PUT": true, "DELETE": true,
 		"PATCH": true, "HEAD": true, "OPTIONS": true,
