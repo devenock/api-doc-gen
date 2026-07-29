@@ -1,0 +1,21 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - staticcheck
+    - unused
+    - errcheck
+    - govet
+    - ineffassign
+    - misspell
+    - unconvert
+  exclusions:
+    presets:
+      - comments
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
