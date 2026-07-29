@@ -899,7 +899,7 @@ func findBindingTypeNameDepth(file *ast.File, funcName string, depth int) string
 		if hintText == "" {
 			hintText = calleeHintText(genericBaseExpr(call.Fun))
 		}
-		if !(bindMethods[exactName] || hasBindHint(hintText)) {
+		if !bindMethods[exactName] && !hasBindHint(hintText) {
 			return true
 		}
 
@@ -1595,7 +1595,7 @@ func findFileWithFunction(projectPath string, exclude []string, pkgName, funcNam
 
 	// Pass 1: match by package declaration or directory name.
 	var found string
-	filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -1636,7 +1636,7 @@ func findFileWithFunction(projectPath string, exclude []string, pkgName, funcNam
 	}
 
 	// Pass 2: pkgName may be a variable/instance — search all files by function name using a fast text pre-filter.
-	filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil || found != "" {
 			return nil
 		}
@@ -1784,13 +1784,13 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 	}
 
 	endpoint := models.Endpoint{
-		Path:        path,
-		Method:      method,
-		Summary:     fmt.Sprintf("%s %s", method, path),
-		Tags:        tags,
-		Security:    security,
-		Parameters:  extractPathParams(path),
-		Responses:   make(map[int]models.Response),
+		Path:       path,
+		Method:     method,
+		Summary:    fmt.Sprintf("%s %s", method, path),
+		Tags:       tags,
+		Security:   security,
+		Parameters: extractPathParams(path),
+		Responses:  make(map[int]models.Response),
 	}
 
 	// Extract handler: always use the last argument so middleware chains like
@@ -2293,6 +2293,17 @@ func normalizeColonPath(path string) string {
 	return strings.Join(parts, "/")
 }
 
+// pathParamBraceStripRe, pathParamColonRe, and pathParamBraceRe back
+// extractPathParams. Compiled once at package init — extractPathParams runs
+// once per endpoint, so recompiling them on every call (as before) meant
+// three regexp compilations per endpoint for no benefit, mirroring the
+// package-level gorillaTypedVarRe right above.
+var (
+	pathParamBraceStripRe = regexp.MustCompile(`\{[^}]+\}`)
+	pathParamColonRe      = regexp.MustCompile(`:([^/]+)`)
+	pathParamBraceRe      = regexp.MustCompile(`\{([^}]+)\}`)
+)
+
 // extractPathParams extracts path parameters from route path.
 // Supports :param (Gin, Echo, Fiber) and {param} (Chi, Gorilla — callers
 // should normalize Gorilla's {param:pattern} form via normalizeBracePath
@@ -2301,9 +2312,8 @@ func extractPathParams(path string) []models.Parameter {
 	var params []models.Parameter
 	// :param style (e.g. /users/:id). Braced segments are stripped first so a
 	// colon inside {id:pattern} (before normalization) is never mistaken for this.
-	braceStripped := regexp.MustCompile(`\{[^}]+\}`).ReplaceAllString(path, "")
-	colonRe := regexp.MustCompile(`:([^/]+)`)
-	for _, name := range colonRe.FindAllStringSubmatch(braceStripped, -1) {
+	braceStripped := pathParamBraceStripRe.ReplaceAllString(path, "")
+	for _, name := range pathParamColonRe.FindAllStringSubmatch(braceStripped, -1) {
 		if len(name) >= 2 {
 			params = append(params, models.Parameter{
 				Name:     name[1],
@@ -2314,8 +2324,7 @@ func extractPathParams(path string) []models.Parameter {
 		}
 	}
 	// {param} style (e.g. /users/{id})
-	braceRe := regexp.MustCompile(`\{([^}]+)\}`)
-	for _, name := range braceRe.FindAllStringSubmatch(path, -1) {
+	for _, name := range pathParamBraceRe.FindAllStringSubmatch(path, -1) {
 		if len(name) >= 2 {
 			paramName := name[1]
 			if idx := strings.Index(paramName, ":"); idx >= 0 {

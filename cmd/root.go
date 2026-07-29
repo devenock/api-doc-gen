@@ -23,9 +23,9 @@ import (
 
 // Exit codes for scripting (0 = success, 1 = usage/validation, 2 = runtime error).
 const (
-	ExitSuccess       = 0
-	ExitUsageError    = 1
-	ExitRuntimeError  = 2
+	ExitSuccess      = 0
+	ExitUsageError   = 1
+	ExitRuntimeError = 2
 )
 
 // exitCodeError allows RunE to specify exit code.
@@ -70,11 +70,11 @@ generates API documentation as Swagger/OpenAPI or a Postman Collection.`,
 	}
 
 	initCmd = &cobra.Command{
-		Use:   "init",
-		Short: "Initialize configuration file",
-		Long:  `Create a configuration file (.apidoc-gen.yaml) in the current directory.`,
-		RunE:  runInit,
-		Example: `  api-doc-gen init`,
+		Use:          "init",
+		Short:        "Initialize configuration file",
+		Long:         `Create a configuration file (.apidoc-gen.yaml) in the current directory.`,
+		RunE:         runInit,
+		Example:      `  api-doc-gen init`,
 		SilenceUsage: true,
 	}
 )
@@ -110,28 +110,31 @@ func init() {
 	generateCmd.Flags().String("postman-api-key", "", "(postman) API key for the upload step; takes precedence over env and credentials file")
 	generateCmd.Flags().String("postman-workspace", "", "(postman) workspace UID to upload to (default: your default workspace)")
 
-	// Bind flags to viper
-	viper.BindPFlag("output", generateCmd.Flags().Lookup("output"))
-	viper.BindPFlag("type", generateCmd.Flags().Lookup("type"))
-	viper.BindPFlag("framework", generateCmd.Flags().Lookup("framework"))
-	viper.BindPFlag("interactive", generateCmd.Flags().Lookup("interactive"))
-	viper.BindPFlag("no-interactive", generateCmd.Flags().Lookup("no-interactive"))
-	viper.BindPFlag("exclude", generateCmd.Flags().Lookup("exclude"))
-	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
-	viper.BindPFlag("quiet", rootCmd.PersistentFlags().Lookup("quiet"))
-	viper.BindPFlag("base-path", generateCmd.Flags().Lookup("base-path"))
-	viper.BindPFlag("title", generateCmd.Flags().Lookup("title"))
-	viper.BindPFlag("version", generateCmd.Flags().Lookup("version"))
-	viper.BindPFlag("description", generateCmd.Flags().Lookup("description"))
-	viper.BindPFlag("dry-run", generateCmd.Flags().Lookup("dry-run"))
-	viper.BindPFlag("show-config", generateCmd.Flags().Lookup("show-config"))
-	viper.BindPFlag("serve", generateCmd.Flags().Lookup("serve"))
-	viper.BindPFlag("write-annotations", generateCmd.Flags().Lookup("write-annotations"))
-	viper.BindPFlag("upload", generateCmd.Flags().Lookup("upload"))
-	viper.BindPFlag("no-upload", generateCmd.Flags().Lookup("no-upload"))
-	viper.BindPFlag("direct-import", generateCmd.Flags().Lookup("direct-import"))
-	viper.BindPFlag("postman-api-key", generateCmd.Flags().Lookup("postman-api-key"))
-	viper.BindPFlag("postman-workspace", generateCmd.Flags().Lookup("postman-workspace"))
+	// Bind flags to viper. Errors are discarded: they can only occur if the
+	// flag name doesn't exist on the FlagSet, which would mean a typo above —
+	// a programmer error that go vet/tests would catch, not a runtime
+	// condition worth surfacing to the user.
+	_ = viper.BindPFlag("output", generateCmd.Flags().Lookup("output"))
+	_ = viper.BindPFlag("type", generateCmd.Flags().Lookup("type"))
+	_ = viper.BindPFlag("framework", generateCmd.Flags().Lookup("framework"))
+	_ = viper.BindPFlag("interactive", generateCmd.Flags().Lookup("interactive"))
+	_ = viper.BindPFlag("no-interactive", generateCmd.Flags().Lookup("no-interactive"))
+	_ = viper.BindPFlag("exclude", generateCmd.Flags().Lookup("exclude"))
+	_ = viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	_ = viper.BindPFlag("quiet", rootCmd.PersistentFlags().Lookup("quiet"))
+	_ = viper.BindPFlag("base-path", generateCmd.Flags().Lookup("base-path"))
+	_ = viper.BindPFlag("title", generateCmd.Flags().Lookup("title"))
+	_ = viper.BindPFlag("version", generateCmd.Flags().Lookup("version"))
+	_ = viper.BindPFlag("description", generateCmd.Flags().Lookup("description"))
+	_ = viper.BindPFlag("dry-run", generateCmd.Flags().Lookup("dry-run"))
+	_ = viper.BindPFlag("show-config", generateCmd.Flags().Lookup("show-config"))
+	_ = viper.BindPFlag("serve", generateCmd.Flags().Lookup("serve"))
+	_ = viper.BindPFlag("write-annotations", generateCmd.Flags().Lookup("write-annotations"))
+	_ = viper.BindPFlag("upload", generateCmd.Flags().Lookup("upload"))
+	_ = viper.BindPFlag("no-upload", generateCmd.Flags().Lookup("no-upload"))
+	_ = viper.BindPFlag("direct-import", generateCmd.Flags().Lookup("direct-import"))
+	_ = viper.BindPFlag("postman-api-key", generateCmd.Flags().Lookup("postman-api-key"))
+	_ = viper.BindPFlag("postman-workspace", generateCmd.Flags().Lookup("postman-workspace"))
 
 	// Add commands
 	rootCmd.AddCommand(generateCmd)
@@ -295,29 +298,6 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
-}
-
-// printDocsAccessURL prints how to open the generated docs (file URL and optional server URL).
-func printDocsAccessURL(cfg *config.Config) {
-	absOut, err := filepath.Abs(cfg.Output)
-	if err != nil {
-		absOut = cfg.Output
-	}
-	switch cfg.DocType {
-	case "swagger":
-		indexPath := filepath.Join(absOut, "index.html")
-		fmt.Println()
-		fmt.Println("📖 View Swagger UI:")
-		fmt.Printf("   • File:  file://%s\n", filepath.ToSlash(indexPath))
-		serverURL := "http://localhost:8080"
-		if len(cfg.Servers) > 0 && cfg.Servers[0].URL != "" {
-			serverURL = strings.TrimSuffix(cfg.Servers[0].URL, "/")
-		}
-		fmt.Printf("   • If your API serves the %q directory at /docs: %s/docs\n", cfg.Output, serverURL)
-		fmt.Println("   • Or run: api-doc-gen generate --serve  (starts a local preview server)")
-	default:
-		fmt.Printf("   Output directory: %s\n", absOut)
-	}
 }
 
 // runServeDocs serves the output directory on a local port, opens the browser
@@ -499,7 +479,6 @@ func runPostmanAPIUpload(cfg *config.Config, collectionPath string, interactive,
 
 	return nil
 }
-
 
 func runInit(cmd *cobra.Command, args []string) error {
 	configPath := ".apidoc-gen.yaml"

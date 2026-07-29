@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/devenock/api-doc-gen/pkg/config"
@@ -156,13 +157,21 @@ func (g *PostmanGenerator) convertToPostman(spec *models.APISpec) *PostmanCollec
 	endpointsByTag := g.groupEndpointsByTag(spec.Endpoints)
 
 	if len(endpointsByTag) > 1 {
-		// Create folders for each tag
-		for tag, endpoints := range endpointsByTag {
+		// Create folders for each tag, in a stable (sorted) order — ranging a
+		// Go map directly would randomize folder order on every run, which
+		// breaks reproducible output and makes generated collection.json
+		// diffs noisy in CI/version control for no reason.
+		tags := make([]string, 0, len(endpointsByTag))
+		for tag := range endpointsByTag {
+			tags = append(tags, tag)
+		}
+		sort.Strings(tags)
+		for _, tag := range tags {
 			folder := PostmanItem{
 				Name: tag,
 				Item: []PostmanItem{},
 			}
-			for _, endpoint := range endpoints {
+			for _, endpoint := range endpointsByTag[tag] {
 				folder.Item = append(folder.Item, g.convertEndpointToItem(endpoint, spec))
 			}
 			collection.Item = append(collection.Item, folder)
@@ -393,11 +402,26 @@ func (g *PostmanGenerator) createPostmanURL(endpoint models.Endpoint, spec *mode
 // generateExampleFromSchema generates an example object from a schema.
 // componentSchemas is the OpenAPI components/schemas map used to resolve $ref.
 func (g *PostmanGenerator) generateExampleFromSchema(schema models.Schema, componentSchemas map[string]models.Schema) interface{} {
+	return g.generateExample(schema, componentSchemas, map[string]bool{})
+}
+
+// generateExample is generateExampleFromSchema's implementation. seenRefs
+// tracks $ref names already expanded on the current recursion path so a
+// self-referential schema (e.g. `type Category struct { Children []Category }`
+// — trees, comments, org charts are all common real-world shapes) terminates
+// instead of recursing forever and crashing with a stack overflow.
+func (g *PostmanGenerator) generateExample(schema models.Schema, componentSchemas map[string]models.Schema, seenRefs map[string]bool) interface{} {
 	// Resolve $ref before doing anything else.
 	if schema.Ref != "" {
 		refName := strings.TrimPrefix(schema.Ref, "#/components/schemas/")
+		if seenRefs[refName] {
+			// Cycle: stop expanding and return an empty placeholder instead of
+			// recursing into the same type again.
+			return map[string]interface{}{}
+		}
 		if resolved, ok := componentSchemas[refName]; ok {
-			return g.generateExampleFromSchema(resolved, componentSchemas)
+			seenRefs = withRef(seenRefs, refName)
+			return g.generateExample(resolved, componentSchemas, seenRefs)
 		}
 		return map[string]interface{}{}
 	}
@@ -410,12 +434,12 @@ func (g *PostmanGenerator) generateExampleFromSchema(schema models.Schema, compo
 	case "object":
 		obj := make(map[string]interface{})
 		for name, prop := range schema.Properties {
-			obj[name] = g.generateExampleFromSchema(prop, componentSchemas)
+			obj[name] = g.generateExample(prop, componentSchemas, seenRefs)
 		}
 		return obj
 	case "array":
 		if schema.Items != nil {
-			return []interface{}{g.generateExampleFromSchema(*schema.Items, componentSchemas)}
+			return []interface{}{g.generateExample(*schema.Items, componentSchemas, seenRefs)}
 		}
 		return []interface{}{}
 	case "string":
@@ -429,4 +453,17 @@ func (g *PostmanGenerator) generateExampleFromSchema(schema models.Schema, compo
 	default:
 		return nil
 	}
+}
+
+// withRef returns a copy of seenRefs with name added, leaving the original
+// untouched — sibling branches of the schema tree (e.g. two different
+// properties both $ref-ing the same type) must not affect each other's cycle
+// detection.
+func withRef(seenRefs map[string]bool, name string) map[string]bool {
+	out := make(map[string]bool, len(seenRefs)+1)
+	for k := range seenRefs {
+		out[k] = true
+	}
+	out[name] = true
+	return out
 }
