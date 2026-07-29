@@ -898,3 +898,63 @@ func TestDetectFramework(t *testing.T) {
 		}
 	}
 }
+
+// TestDetectFramework_AmbiguousReturnsEmpty is a regression test: a project
+// genuinely depending on two routing frameworks (Gin for the API, Chi in a
+// vendored subpackage is the review's own example) used to silently resolve
+// to whichever framework's case came first in the old switch statement.
+// Silently picking wrong is worse than admitting "unknown".
+func TestDetectFramework_AmbiguousReturnsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	content := "module example.com/x\n\ngo 1.24\n\nrequire (\n\tgithub.com/gin-gonic/gin v1.9.0\n\tgithub.com/go-chi/chi/v5 v5.0.0\n)\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := DetectFramework(dir); got != "" {
+		t.Errorf("DetectFramework = %q, want \"\" (ambiguous — two frameworks present)", got)
+	}
+	frameworks := DetectFrameworks(dir)
+	if !slicesEqualUnordered(frameworks, []string{"gin", "chi"}) {
+		t.Errorf("DetectFrameworks = %v, want both gin and chi reported", frameworks)
+	}
+}
+
+// TestDetectFrameworks_IgnoresIndirectDependencies covers the false-positive
+// case: a framework pulled in transitively by some other dependency (never
+// imported by the project's own routing code) must not count as "this
+// project uses it" and trigger a spurious ambiguity warning.
+func TestDetectFrameworks_IgnoresIndirectDependencies(t *testing.T) {
+	dir := t.TempDir()
+	content := "module example.com/x\n\ngo 1.24\n\nrequire (\n\tgithub.com/gin-gonic/gin v1.9.0\n\tgithub.com/go-chi/chi/v5 v5.0.0 // indirect\n)\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := DetectFramework(dir); got != "gin" {
+		t.Errorf("DetectFramework = %q, want gin (chi is only an indirect dependency)", got)
+	}
+}
+
+// TestAnalyze_AmbiguousFrameworkFallsBackToUnknown covers the end-to-end
+// behavior: Analyze() with no explicit --framework and an ambiguous go.mod
+// must not silently guess — it should behave the same as a genuinely
+// unrecognized framework (generic net/http-style route detection).
+func TestAnalyze_AmbiguousFrameworkFallsBackToUnknown(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n\nrequire (\n\tgithub.com/gin-gonic/gin v1.9.0\n\tgithub.com/go-chi/chi/v5 v5.0.0\n)\n",
+		"main.go": `package main
+
+import "net/http"
+
+func Health(w http.ResponseWriter, r *http.Request) {}
+
+func main() {
+	http.HandleFunc("/health", Health)
+}
+`,
+	})
+
+	// framework="" triggers auto-detection, which must resolve to unknown
+	// (not silently pick gin or chi) given both appear as direct dependencies.
+	spec := analyze(t, dir, "")
+	findEndpoint(t, spec, "GET", "/health")
+}

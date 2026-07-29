@@ -492,7 +492,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		projectPath = args[0]
 	}
-	detectedFramework := analyzer.DetectFramework(projectPath)
+	detectedFrameworks := analyzer.DetectFrameworks(projectPath)
+	detectedFramework := ""
+	if len(detectedFrameworks) == 1 {
+		detectedFramework = detectedFrameworks[0]
+	}
 	frameworkLine := `framework: ""`
 	if detectedFramework != "" {
 		frameworkLine = fmt.Sprintf(`framework: %q`, detectedFramework)
@@ -543,6 +547,9 @@ verbose: false
 	fmt.Printf("✅ Configuration file created: %s\n", configPath)
 	if detectedFramework != "" {
 		fmt.Printf("   Detected framework: %s (from go.mod)\n", detectedFramework)
+	} else if len(detectedFrameworks) > 1 {
+		fmt.Printf("   ⚠️  Multiple frameworks detected in go.mod (%s) — set \"framework\" in %s explicitly.\n",
+			strings.Join(detectedFrameworks, ", "), configPath)
 	}
 	fmt.Println("You can now customize the configuration and run 'api-doc-gen generate'")
 	return nil

@@ -252,40 +252,77 @@ func detectServerURL(projectPath string) string {
 	return "http://localhost:8080"
 }
 
-// DetectFramework scans the project (e.g. go.mod) and returns the framework
-// identifier: "gin", "echo", "fiber", "gorilla", "chi", or "" if unknown.
-// Useful for init so the config file can be pre-filled.
-func DetectFramework(projectPath string) string {
+// frameworkMarkers maps each supported framework to the go.mod dependency
+// substring that identifies it, in detection priority/display order.
+var frameworkMarkers = []struct {
+	framework string
+	marker    string
+}{
+	{string(models.FrameWorkGin), "github.com/gin-gonic/gin"},
+	{string(models.FrameWorkEcho), "github.com/labstack/echo"},
+	{string(models.FrameWorkFiber), "github.com/gofiber/fiber"},
+	{string(models.FrameWorkGorilla), "github.com/gorilla/mux"},
+	{string(models.FrameWorkChi), "github.com/go-chi/chi"},
+}
+
+// DetectFrameworks scans the project's go.mod for every supported
+// framework's dependency and returns all that are found — zero, one, or
+// more than one. A project can genuinely depend on two routing frameworks
+// at once (e.g. Gin for the API, Chi in a vendored subpackage), so unlike a
+// single best-guess this doesn't hide that ambiguity from the caller.
+// Lines marked `// indirect` are skipped: a framework pulled in transitively
+// by some other dependency, and never imported by the project's own code,
+// must not count as "this project uses it".
+func DetectFrameworks(projectPath string) []string {
 	goModPath := filepath.Join(projectPath, "go.mod")
 	content, err := readNonSymlinkFile(goModPath)
 	if err != nil {
-		return ""
+		return nil
 	}
-	contentStr := string(content)
-	switch {
-	case strings.Contains(contentStr, "github.com/gin-gonic/gin"):
-		return string(models.FrameWorkGin)
-	case strings.Contains(contentStr, "github.com/labstack/echo"):
-		return string(models.FrameWorkEcho)
-	case strings.Contains(contentStr, "github.com/gofiber/fiber"):
-		return string(models.FrameWorkFiber)
-	case strings.Contains(contentStr, "github.com/gorilla/mux"):
-		return string(models.FrameWorkGorilla)
-	case strings.Contains(contentStr, "github.com/go-chi/chi"):
-		return string(models.FrameWorkChi)
-	default:
-		return ""
+	var found []string
+	for _, fm := range frameworkMarkers {
+		for _, line := range strings.Split(string(content), "\n") {
+			if strings.Contains(line, "// indirect") {
+				continue
+			}
+			if strings.Contains(line, fm.marker) {
+				found = append(found, fm.framework)
+				break
+			}
+		}
 	}
+	return found
+}
+
+// DetectFramework scans the project (e.g. go.mod) and returns the framework
+// identifier: "gin", "echo", "fiber", "gorilla", "chi", or "" when zero or
+// more than one framework is detected — on ambiguity, a caller silently
+// picking one is worse than an honest "unknown", so this deliberately
+// returns "" rather than the first match the way a naive switch would.
+// Callers that can act on the ambiguity (a warning, prompting for
+// --framework) should call DetectFrameworks directly instead; see
+// (*Analyzer).detectFramework and runInit in cmd/root.go.
+func DetectFramework(projectPath string) string {
+	frameworks := DetectFrameworks(projectPath)
+	if len(frameworks) == 1 {
+		return frameworks[0]
+	}
+	return ""
 }
 
 // detectFramework attempts to detect the framework being used
 func (a *Analyzer) detectFramework() error {
-	detected := DetectFramework(a.config.ProjectPath)
-	if detected == "" {
+	frameworks := DetectFrameworks(a.config.ProjectPath)
+	if len(frameworks) > 1 && !a.config.Quiet {
+		fmt.Fprintf(os.Stderr,
+			"⚠️  Multiple frameworks detected in go.mod (%s) — pass --framework to disambiguate. Falling back to generic route detection.\n",
+			strings.Join(frameworks, ", "))
+	}
+	if len(frameworks) != 1 {
 		a.framework = models.FrameWorkUnknown
 		return nil
 	}
-	a.framework = models.FrameWorkType(detected)
+	a.framework = models.FrameWorkType(frameworks[0])
 	return nil
 }
 
