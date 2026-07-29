@@ -78,6 +78,22 @@ func TestSchemaToMap_RefIsExclusive(t *testing.T) {
 	}
 }
 
+func TestSchemaToMap_NullableOnNonRefSchema(t *testing.T) {
+	s := models.Schema{Type: "number", Format: "double", Nullable: true}
+	m := schemaToMap(s)
+	if m["nullable"] != true {
+		t.Errorf("schemaToMap = %v, want nullable: true for a pointer-derived schema", m)
+	}
+}
+
+func TestSchemaToMap_OmitsNullableWhenFalse(t *testing.T) {
+	s := models.Schema{Type: "string"}
+	m := schemaToMap(s)
+	if _, ok := m["nullable"]; ok {
+		t.Errorf("schemaToMap = %v, want no \"nullable\" key for a non-nullable schema", m)
+	}
+}
+
 func TestConvertToOpenAPI_AddsBearerSecuritySchemeOnlyWhenUsed(t *testing.T) {
 	cfg := &config.Config{Title: "T", Version: "1.0.0"}
 	g := NewSwaggerGenerator(cfg)

@@ -84,6 +84,7 @@ type Schema struct {
 	Enum                 []interface{}     `json:"enum,omitempty" yaml:"enum,omitempty"`
 	Example              interface{}       `json:"example,omitempty" yaml:"example,omitempty"`
 	AdditionalProperties interface{}       `json:"additionalProperties,omitempty" yaml:"additionalProperties,omitempty"`
+	Nullable             bool              `json:"nullable,omitempty" yaml:"nullable,omitempty"`
 	Ref                  string            `json:"$ref,omitempty" yaml:"$ref,omitempty"`
 	// Embeds lists locally-defined struct types anonymously embedded in this
 	// struct (e.g. `gorm.Model`, a shared `BaseModel`). Resolved into

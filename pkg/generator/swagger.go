@@ -166,6 +166,9 @@ func schemaToMap(s models.Schema) map[string]interface{} {
 	if s.AdditionalProperties != nil {
 		out["additionalProperties"] = s.AdditionalProperties
 	}
+	if s.Nullable {
+		out["nullable"] = true
+	}
 	return out
 }
 

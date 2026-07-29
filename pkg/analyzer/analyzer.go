@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"unicode"
@@ -319,21 +320,48 @@ func (a *Analyzer) buildSchemaFromStruct(st *ast.StructType) models.Schema {
 			if embeddedName == "" {
 				continue // qualified (cross-package) embed, e.g. gorm.Model — can't resolve locally
 			}
-			if tagName := jsonFieldTagName(f.Tag); tagName != "" {
-				props[tagName] = a.goTypeToSchema(f.Type)
+			tags := parseFieldTags(f.Tag)
+			if tags.skip {
+				continue
+			}
+			if tags.name != "" {
+				props[tags.name] = a.goTypeToSchema(f.Type)
 			} else {
 				embeds = append(embeds, embeddedName)
 			}
 			continue
 		}
+		// encoding/json never marshals unexported fields — a schema property
+		// for one could never appear in a real request/response payload.
+		if !f.Names[0].IsExported() {
+			continue
+		}
+		tags := parseFieldTags(f.Tag)
+		if tags.skip {
+			// json:"-" — the idiomatic tag for secret-bearing fields
+			// (password hashes, API tokens, internal IDs). Must not appear
+			// in the generated public spec at all.
+			continue
+		}
 		fieldName := f.Names[0].Name
-		if tagName := jsonFieldTagName(f.Tag); tagName != "" {
-			fieldName = tagName
+		if tags.name != "" {
+			fieldName = tags.name
 		}
 		fieldSchema := a.goTypeToSchema(f.Type)
+		// A pointer field's absence of Go's zero value is nullability, not a
+		// signal about whether the field is required — those are independent
+		// (see the `required` derivation below). $ref siblings are forbidden
+		// in OpenAPI 3.0, so a pointer-to-struct field can't carry `nullable`.
+		if isPointerType(f.Type) && fieldSchema.Ref == "" {
+			fieldSchema.Nullable = true
+		}
 		props[fieldName] = fieldSchema
-		// Only require non-pointer fields
-		if !isPointerType(f.Type) && fieldSchema.Type != "" && fieldSchema.Ref == "" {
+		// required is a Go-side validation concern, not something JSON typing
+		// implies: a plain non-pointer `int` with no validation tag is still
+		// entirely optional on the wire (it just defaults to zero if absent).
+		// Derive it instead from the tags Go handlers actually validate
+		// against, and let omitempty stand as an explicit "not required".
+		if tags.required && !tags.omitempty {
 			required = append(required, fieldName)
 		}
 	}
@@ -343,6 +371,66 @@ func (a *Analyzer) buildSchemaFromStruct(st *ast.StructType) models.Schema {
 		Required:   required,
 		Embeds:     embeds,
 	}
+}
+
+// fieldTags carries the parsed json/binding/validate tag information for a
+// single struct field: the OpenAPI property name (name), whether the field
+// is excluded from the schema entirely (skip, from json:"-"), whether it
+// carries an explicit not-required signal (omitempty), and whether a
+// binding/validate tag marks it required.
+type fieldTags struct {
+	name      string
+	skip      bool
+	omitempty bool
+	required  bool
+}
+
+// parseFieldTags extracts json/binding/validate semantics from a struct
+// field's tag using reflect.StructTag so quoting/escaping matches Go's own
+// tag parsing exactly, rather than a hand-rolled space-split.
+func parseFieldTags(tag *ast.BasicLit) fieldTags {
+	var ft fieldTags
+	if tag == nil {
+		return ft
+	}
+	st := reflect.StructTag(strings.Trim(tag.Value, "`"))
+
+	if jsonTag, ok := st.Lookup("json"); ok {
+		parts := strings.Split(jsonTag, ",")
+		name := parts[0]
+		// `json:"-"` (exactly, no trailing comma) excludes the field.
+		// `json:"-,"` is encoding/json's escape for a field literally named
+		// "-" that should still be marshaled — parts would be ["-", ""] here,
+		// which correctly falls through to the name-assignment below instead.
+		if name == "-" && len(parts) == 1 {
+			ft.skip = true
+			return ft
+		}
+		ft.name = name
+		for _, opt := range parts[1:] {
+			if opt == "omitempty" {
+				ft.omitempty = true
+			}
+		}
+	}
+	if v, ok := st.Lookup("binding"); ok && tagOptionPresent(v, "required") {
+		ft.required = true
+	}
+	if v, ok := st.Lookup("validate"); ok && tagOptionPresent(v, "required") {
+		ft.required = true
+	}
+	return ft
+}
+
+// tagOptionPresent reports whether opt appears as one of the comma-separated
+// options in a binding/validate tag value (e.g. "required,min=1,max=100").
+func tagOptionPresent(tagValue, opt string) bool {
+	for _, part := range strings.Split(tagValue, ",") {
+		if strings.TrimSpace(part) == opt {
+			return true
+		}
+	}
+	return false
 }
 
 // embeddedTypeName returns the local type name for an embedded field's type
@@ -355,27 +443,6 @@ func embeddedTypeName(expr ast.Expr) string {
 	case *ast.StarExpr:
 		if id, ok := t.X.(*ast.Ident); ok {
 			return id.Name
-		}
-	}
-	return ""
-}
-
-// jsonFieldTagName extracts the json tag name from a struct field's tag, or
-// "" if there is none (or it's explicitly "-").
-func jsonFieldTagName(tag *ast.BasicLit) string {
-	if tag == nil {
-		return ""
-	}
-	t := strings.Trim(tag.Value, "`")
-	for _, part := range strings.Split(t, " ") {
-		if strings.HasPrefix(part, "json:") {
-			jsonTag := strings.Trim(strings.TrimPrefix(part, "json:"), `"`)
-			if idx := strings.Index(jsonTag, ","); idx >= 0 {
-				jsonTag = jsonTag[:idx]
-			}
-			if jsonTag != "" && jsonTag != "-" {
-				return jsonTag
-			}
 		}
 	}
 	return ""

@@ -160,6 +160,135 @@ func CreateProduct(c *gin.Context) {
 	}
 }
 
+// TestAnalyze_Gin_JSONTagSemantics is the "edge-jsontags" fixture from the
+// code review: a struct exercising every json/binding tag edge case in one
+// place. It must model encoding/json's actual marshaling behavior, not Go's
+// pointer-ness or a naive tag-name split.
+func TestAnalyze_Gin_JSONTagSemantics(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+type Account struct {
+	ID           string  ` + "`json:\"id\"`" + `
+	Email        string  ` + "`json:\"email\" binding:\"required\"`" + `
+	Nickname     string  ` + "`json:\"nickname,omitempty\"`" + `
+	PasswordHash string  ` + "`json:\"-\"`" + `
+	APIToken     string
+	internalFlag bool
+	Balance      *float64 ` + "`json:\"balance\"`" + `
+}
+
+func CreateAccount(c *gin.Context) {
+	var a Account
+	c.ShouldBindJSON(&a)
+	c.JSON(201, a)
+}
+
+func main() {
+	r := gin.Default()
+	r.POST("/accounts", CreateAccount)
+	r.Run()
+}
+`,
+	})
+
+	spec := analyze(t, dir, "gin")
+	schema, ok := spec.Models["Account"]
+	if !ok {
+		t.Fatal("expected Account schema in spec.Models")
+	}
+
+	if _, ok := schema.Properties["PasswordHash"]; ok {
+		t.Error(`json:"-" field PasswordHash must not appear in the schema (secret-bearing field leak)`)
+	}
+	if _, ok := schema.Properties["internalFlag"]; ok {
+		t.Error("unexported field internalFlag must not appear in the schema (encoding/json never marshals it)")
+	}
+	// APIToken has no json tag at all. encoding/json still marshals an
+	// exported, untagged field under its Go name — so unlike PasswordHash
+	// (explicit json:"-") it correctly belongs in the schema. A reviewer
+	// wanting API tokens redacted from docs needs to tag the field, the same
+	// way they'd need to for encoding/json itself to stop marshaling it.
+	if _, ok := schema.Properties["APIToken"]; !ok {
+		t.Error("APIToken has no exclusion tag, so encoding/json would marshal it — it should still appear in the schema")
+	}
+	for _, name := range []string{"id", "email", "nickname", "balance"} {
+		if _, ok := schema.Properties[name]; !ok {
+			t.Errorf("expected tagged property %q in schema, got %v", name, schema.Properties)
+		}
+	}
+
+	wantRequired := []string{"email"}
+	if !slicesEqualUnordered(schema.Required, wantRequired) {
+		t.Errorf("Required = %v, want %v (only binding:\"required\" fields, regardless of pointer-ness)", schema.Required, wantRequired)
+	}
+
+	balance := schema.Properties["balance"]
+	if !balance.Nullable {
+		t.Error("Balance is a pointer field, want Nullable=true (pointer-ness means nullable, not required)")
+	}
+
+	create := findEndpoint(t, spec, "POST", "/accounts")
+	if create.RequestTypeName != "Account" {
+		t.Errorf("RequestTypeName = %q, want Account", create.RequestTypeName)
+	}
+}
+
+// TestAnalyze_JSONTag_DashCommaIsALiteralFieldName covers encoding/json's
+// escape for a field that must be marshaled under the literal name "-":
+// json:"-," (note the trailing comma) — distinct from json:"-" (exclude).
+func TestAnalyze_JSONTag_DashCommaIsALiteralFieldName(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+type Weird struct {
+	Dash string ` + "`json:\"-,\"`" + `
+}
+
+func Create(c *gin.Context) {
+	var w Weird
+	c.ShouldBindJSON(&w)
+}
+
+func main() {
+	r := gin.Default()
+	r.POST("/weird", Create)
+}
+`,
+	})
+
+	spec := analyze(t, dir, "gin")
+	schema, ok := spec.Models["Weird"]
+	if !ok {
+		t.Fatal("expected Weird schema in spec.Models")
+	}
+	if _, ok := schema.Properties["-"]; !ok {
+		t.Errorf(`json:"-," should marshal under the literal name "-", got properties %v`, schema.Properties)
+	}
+}
+
+func slicesEqualUnordered(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	seen := make(map[string]bool, len(want))
+	for _, w := range want {
+		seen[w] = true
+	}
+	for _, g := range got {
+		if !seen[g] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestAnalyze_Fiber_GroupAndBodyParser(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
