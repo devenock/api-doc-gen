@@ -92,8 +92,22 @@ docs:
 | `-y, --no-interactive` | No prompts — required for CI |
 | `--dry-run` | Show what would be generated without writing files |
 | `--upload` | Upload Postman collection via Postman API (prompts for API key once) |
+| `--skip-build-check` | Skip the `go vet ./...` pre-flight check (see below) |
 
 Full reference: `api-doc-gen generate --help`
+
+---
+
+## Build check
+
+Before analyzing, `generate` runs `go vet ./...` against the target project as a pre-flight check. It's purely advisory — a project that fails it still gets docs generated from whatever the AST parser can recover, but you get a warning up front that the result may be incomplete, rather than silently missing routes with no explanation:
+
+```
+⚠️  This project does not currently pass `go vet ./...` — generated docs may be incomplete or incorrect.
+   Run with -v for details, or pass --skip-build-check to suppress this check.
+```
+
+Pass `--skip-build-check` to disable it (e.g. running against a branch mid-refactor in CI). It also skips itself automatically wherever the `go` toolchain isn't on `PATH` — including this project's own Docker runtime image, which ships as a slim `alpine` base with just the compiled binary and no Go toolchain.
 
 ---
 

@@ -102,6 +102,7 @@ func init() {
 	generateCmd.Flags().Bool("show-config", false, "print effective config (file + env + flags) and exit")
 	generateCmd.Flags().Bool("serve", false, "after generating (swagger only), serve docs and print the access URL")
 	generateCmd.Flags().Bool("write-annotations", false, "write swag-style comment blocks above handler functions (same-file handlers only)")
+	generateCmd.Flags().Bool("skip-build-check", false, "skip the `go vet ./...` pre-flight check against the target project")
 
 	// Postman upload flags (only honored when --type=postman)
 	generateCmd.Flags().Bool("upload", false, "(postman) force upload to Postman; error out if no API key is available (good for CI)")
@@ -130,6 +131,7 @@ func init() {
 	_ = viper.BindPFlag("show-config", generateCmd.Flags().Lookup("show-config"))
 	_ = viper.BindPFlag("serve", generateCmd.Flags().Lookup("serve"))
 	_ = viper.BindPFlag("write-annotations", generateCmd.Flags().Lookup("write-annotations"))
+	_ = viper.BindPFlag("skip-build-check", generateCmd.Flags().Lookup("skip-build-check"))
 	_ = viper.BindPFlag("upload", generateCmd.Flags().Lookup("upload"))
 	_ = viper.BindPFlag("no-upload", generateCmd.Flags().Lookup("no-upload"))
 	_ = viper.BindPFlag("direct-import", generateCmd.Flags().Lookup("direct-import"))
@@ -184,6 +186,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		PostmanNoUpload:     viper.GetBool("no-upload"),
 		PostmanDirectImport: viper.GetBool("direct-import"),
 		WriteAnnotations:    viper.GetBool("write-annotations"),
+		SkipBuildCheck:      viper.GetBool("skip-build-check"),
 	}
 	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
 	_ = viper.UnmarshalKey("servers", &cfg.Servers)
@@ -212,6 +215,14 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return &exitCodeError{fmt.Errorf("invalid configuration: %w", err), ExitUsageError}
+	}
+
+	// Pre-flight: does the target project actually build? A project with
+	// build errors can still be partially analyzed (the AST parser doesn't
+	// need type-correct code), but the result may be incomplete or
+	// misleading, so warn — never block; see runBuildCheck.
+	if !cfg.SkipBuildCheck {
+		runBuildCheck(cfg, quiet)
 	}
 
 	// --dry-run: analyze and report, do not write files
@@ -584,6 +595,30 @@ func printShowConfig(cfg *config.Config) {
 		} else {
 			fmt.Println("postman.api_key: <not set>")
 		}
+	}
+}
+
+// runBuildCheck runs analyzer.CheckBuild against cfg.ProjectPath and prints
+// a warning if the project doesn't build. It never returns an error: the
+// check is advisory only (see the SkipBuildCheck doc comment) — a project
+// that fails to build can still be worth generating docs from, so the tool
+// warns and continues rather than blocking.
+func runBuildCheck(cfg *config.Config, quiet bool) {
+	result := analyzer.CheckBuild(cfg.ProjectPath)
+	if result.Skipped || result.OK || quiet {
+		return
+	}
+	if result.Err != nil {
+		if cfg.Verbose {
+			fmt.Fprintf(os.Stderr, "⚠️  Build check did not complete: %v\n", result.Err)
+		}
+		return
+	}
+	fmt.Fprintln(os.Stderr, "⚠️  This project does not currently pass `go vet ./...` — generated docs may be incomplete or incorrect.")
+	if cfg.Verbose {
+		fmt.Fprintln(os.Stderr, result.Output)
+	} else {
+		fmt.Fprintln(os.Stderr, "   Run with -v for details, or pass --skip-build-check to suppress this check.")
 	}
 }
 

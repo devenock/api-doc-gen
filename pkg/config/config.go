@@ -25,6 +25,13 @@ type Config struct {
 	// WriteAnnotations writes swag-style comment blocks above handler functions.
 	WriteAnnotations bool
 
+	// SkipBuildCheck disables the `go vet ./...` pre-flight check that runs
+	// against the target project by default. The check only warns (it never
+	// blocks generation) — this flag exists for skipping it entirely, e.g.
+	// in CI against a branch mid-refactor, or environments without a Go
+	// toolchain where the check would otherwise just no-op anyway.
+	SkipBuildCheck bool
+
 	// Postman upload settings (only honored when DocType == "postman").
 	// PostmanAPIKey is resolved at runtime from --postman-api-key, env, or the
 	// credentials file; do not persist it to .apidoc-gen.yaml (it is a secret).
