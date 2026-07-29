@@ -2293,6 +2293,17 @@ func normalizeColonPath(path string) string {
 	return strings.Join(parts, "/")
 }
 
+// pathParamBraceStripRe, pathParamColonRe, and pathParamBraceRe back
+// extractPathParams. Compiled once at package init — extractPathParams runs
+// once per endpoint, so recompiling them on every call (as before) meant
+// three regexp compilations per endpoint for no benefit, mirroring the
+// package-level gorillaTypedVarRe right above.
+var (
+	pathParamBraceStripRe = regexp.MustCompile(`\{[^}]+\}`)
+	pathParamColonRe      = regexp.MustCompile(`:([^/]+)`)
+	pathParamBraceRe      = regexp.MustCompile(`\{([^}]+)\}`)
+)
+
 // extractPathParams extracts path parameters from route path.
 // Supports :param (Gin, Echo, Fiber) and {param} (Chi, Gorilla — callers
 // should normalize Gorilla's {param:pattern} form via normalizeBracePath
@@ -2301,9 +2312,8 @@ func extractPathParams(path string) []models.Parameter {
 	var params []models.Parameter
 	// :param style (e.g. /users/:id). Braced segments are stripped first so a
 	// colon inside {id:pattern} (before normalization) is never mistaken for this.
-	braceStripped := regexp.MustCompile(`\{[^}]+\}`).ReplaceAllString(path, "")
-	colonRe := regexp.MustCompile(`:([^/]+)`)
-	for _, name := range colonRe.FindAllStringSubmatch(braceStripped, -1) {
+	braceStripped := pathParamBraceStripRe.ReplaceAllString(path, "")
+	for _, name := range pathParamColonRe.FindAllStringSubmatch(braceStripped, -1) {
 		if len(name) >= 2 {
 			params = append(params, models.Parameter{
 				Name:     name[1],
@@ -2314,8 +2324,7 @@ func extractPathParams(path string) []models.Parameter {
 		}
 	}
 	// {param} style (e.g. /users/{id})
-	braceRe := regexp.MustCompile(`\{([^}]+)\}`)
-	for _, name := range braceRe.FindAllStringSubmatch(path, -1) {
+	for _, name := range pathParamBraceRe.FindAllStringSubmatch(path, -1) {
 		if len(name) >= 2 {
 			paramName := name[1]
 			if idx := strings.Index(paramName, ":"); idx >= 0 {
