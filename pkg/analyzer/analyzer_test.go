@@ -831,6 +831,53 @@ func main() {
 	}
 }
 
+// TestAnalyze_RecordsParseFailureDiagnostic is a regression test for review
+// §5.3: a .go file that fails to parse used to vanish silently — every route
+// and type it defined disappeared from the output with no indication why.
+// Analyze() must still succeed (skip the bad file, keep going) but record
+// what it skipped, and other files' routes must still be found.
+func TestAnalyze_RecordsParseFailureDiagnostic(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"broken.go": `package main
+
+func broken( {{{ this is not valid go syntax
+`,
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+func Health(c *gin.Context) {
+	c.JSON(200, gin.H{"status": "ok"})
+}
+
+func main() {
+	r := gin.Default()
+	r.GET("/health", Health)
+}
+`,
+	})
+
+	cfg := &config.Config{ProjectPath: dir, Framework: "gin", DocType: "swagger", Title: "T", Version: "1.0.0"}
+	a := NewAnalyzer(cfg)
+	spec, err := a.Analyze()
+	if err != nil {
+		t.Fatalf("Analyze: %v (a broken file must not fail the whole run)", err)
+	}
+	findEndpoint(t, spec, "GET", "/health")
+
+	diags := a.Diagnostics()
+	if len(diags) != 1 {
+		t.Fatalf("Diagnostics() = %v, want exactly one entry for broken.go", diags)
+	}
+	if filepath.Base(diags[0].File) != "broken.go" {
+		t.Errorf("Diagnostics()[0].File = %q, want broken.go", diags[0].File)
+	}
+	if diags[0].Err == nil {
+		t.Error("Diagnostics()[0].Err = nil, want the parse error")
+	}
+}
+
 func TestAnalyze_SkipsSymlinkedGoFiles(t *testing.T) {
 	outsideDir := t.TempDir()
 	secretFile := filepath.Join(outsideDir, "secret.go")

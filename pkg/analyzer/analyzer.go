@@ -52,15 +52,44 @@ func readNonSymlinkFile(path string) ([]byte, error) {
 
 // Analyzer analyzes the codebase to extract API information
 type Analyzer struct {
-	config         *config.Config
-	framework      models.FrameWorkType
-	endpoints      []models.Endpoint
-	models         map[string]models.Schema
-	typeRegistry   map[string]models.Schema // type name -> schema (for request/response resolution)
-	curGroupPrefix map[string]string        // per-file: variable name -> path prefix (Gin/Echo/Fiber Group, Gorilla Subrouter)
-	curAuthGroups  map[string]bool          // per-file: variable name -> true if group uses auth middleware
-	curFilePath    string                   // current file being parsed (for SourceFile on endpoints)
-	consumedCalls  map[*ast.CallExpr]bool   // per-file: gorilla HandleFunc/Handle calls already consumed by a .Methods() chain
+	config           *config.Config
+	framework        models.FrameWorkType
+	endpoints        []models.Endpoint
+	models           map[string]models.Schema
+	typeRegistry     map[string]models.Schema // type name -> schema (for request/response resolution)
+	curGroupPrefix   map[string]string        // per-file: variable name -> path prefix (Gin/Echo/Fiber Group, Gorilla Subrouter)
+	curAuthGroups    map[string]bool          // per-file: variable name -> true if group uses auth middleware
+	curFilePath      string                   // current file being parsed (for SourceFile on endpoints)
+	consumedCalls    map[*ast.CallExpr]bool   // per-file: gorilla HandleFunc/Handle calls already consumed by a .Methods() chain
+	parseDiagnostics []ParseDiagnostic        // .go files that matched the walk but failed to parse — see Diagnostics()
+}
+
+// ParseDiagnostic records a single .go file that was found during the
+// project walk but could not be parsed, and why. A file failing to parse
+// means every route and type it defines is silently absent from the
+// generated docs — Diagnostics() exists so that absence is visible instead
+// of indistinguishable from "this file legitimately has no routes".
+type ParseDiagnostic struct {
+	File string
+	Err  error
+}
+
+// Diagnostics returns every .go file the project walk found but could not
+// parse. Call after Analyze() returns.
+func (a *Analyzer) Diagnostics() []ParseDiagnostic {
+	return a.parseDiagnostics
+}
+
+// recordParseFailure appends a parse diagnostic, skipping duplicates —
+// collectTypesInFile (pass 1) and parseFile (pass 2) both parse every .go
+// file, so a file that fails to parse would otherwise be recorded twice.
+func (a *Analyzer) recordParseFailure(filePath string, err error) {
+	for _, d := range a.parseDiagnostics {
+		if d.File == filePath {
+			return
+		}
+	}
+	a.parseDiagnostics = append(a.parseDiagnostics, ParseDiagnostic{File: filePath, Err: err})
 }
 
 // NewAnalyzer creates a new Analyzer
@@ -224,6 +253,19 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 		}
 	}
 
+	// Surface parse failures instead of leaving a user whose routes are
+	// missing with no way to find out why (review §5.3). The summary always
+	// prints when there were failures — verbose mode additionally lists
+	// which files and why.
+	if len(a.parseDiagnostics) > 0 && !a.config.Quiet {
+		fmt.Fprintf(os.Stderr, "⚠️  %d file(s) could not be parsed (use -v for detail)\n", len(a.parseDiagnostics))
+		if a.config.Verbose {
+			for _, d := range a.parseDiagnostics {
+				fmt.Fprintf(os.Stderr, "   %s: %v\n", d.File, d.Err)
+			}
+		}
+	}
+
 	return spec, nil
 }
 
@@ -331,6 +373,7 @@ func (a *Analyzer) collectTypesInFile(filePath string) error {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filePath, nil, 0)
 	if err != nil {
+		a.recordParseFailure(filePath, err)
 		return nil
 	}
 	for _, decl := range node.Decls {
@@ -715,6 +758,10 @@ func (a *Analyzer) parseFile(filePath string) error {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
 	if err != nil {
+		// Recorded (not silently dropped) even though pass 1 already parsed
+		// this same file and would have recorded the identical failure —
+		// recordParseFailure dedupes by path.
+		a.recordParseFailure(filePath, err)
 		return nil // Skip files that can't be parsed
 	}
 
