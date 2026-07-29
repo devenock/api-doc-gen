@@ -1159,30 +1159,65 @@ func findDelegatedBindingTypeName(file *ast.File, funcName string, depth int) st
 	return findBindingTypeNameDepth(file, delegateFunc, depth+1)
 }
 
+// responseBodyIdentNames returns the names of local identifiers used as the
+// body argument of a response-emitting call in fd's body — e.g. the "resp"
+// in `resp := &UserResponse{...}; c.JSON(200, resp)`, or the "user" in
+// `json.NewEncoder(w).Encode(user)`. Used by findAddressTakenStructVar to
+// exclude an address-taken variable that is actually the response, not the
+// request — precisely, from the same call recognition response inference
+// (review §3) already does, rather than guessing from the variable's type
+// name the way the pre-§3 heuristic had to.
+func (a *Analyzer) responseBodyIdentNames(fd *ast.FuncDecl, recvName string) map[string]bool {
+	names := make(map[string]bool)
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		var bodyExpr ast.Expr
+		if a.framework == models.FrameWorkGorilla || a.framework == models.FrameWorkChi {
+			bodyExpr, _ = matchJSONEncode(call, recvName)
+		} else if rc, ok := a.recognizeResponseCall(call, recvName, nil); ok && rc.hasBody {
+			bodyExpr = rc.bodyExpr
+		}
+		if id, ok := bodyExpr.(*ast.Ident); ok {
+			names[id.Name] = true
+		}
+		return true
+	})
+	return names
+}
+
 // findAddressTakenStructVar is a last-resort structural fallback for request
 // body detection on POST/PUT/PATCH handlers: it looks for a locally-declared
 // variable of a named type whose address is taken somewhere in the function
 // body — the overwhelmingly common reason being a call to a project-specific
 // bind/validate helper this package can't recognize by name at all (a fluent
 // builder, a validation library, a helper named nothing like "bind"). Picks
-// the first such variable in declaration order, skipping obvious response
-// types so a response DTO built later in the handler isn't mistaken for the
-// request body.
-func findAddressTakenStructVar(file *ast.File, funcName string) string {
-	body := findFuncBody(file, funcName)
-	if body == nil {
+// the first such variable in declaration order, excluding any variable
+// already identified as a response body (responseBodyIdentNames) so a
+// response DTO built later in the handler isn't mistaken for the request
+// body.
+func (a *Analyzer) findAddressTakenStructVar(file *ast.File, funcName string) string {
+	fd := findFuncDecl(file, funcName)
+	if fd == nil || fd.Body == nil {
 		return ""
 	}
-	varTypes, order, addressTaken, typeAsserted := collectLocalTypedVars(body)
+	varTypes, order, addressTaken, typeAsserted := collectLocalTypedVars(fd.Body)
+
+	var excluded map[string]bool
+	if recvName := firstParamName(fd); recvName != "" {
+		excluded = a.responseBodyIdentNames(fd, recvName)
+	}
+
 	for _, name := range order {
 		if !addressTaken[name] && !typeAsserted[name] {
 			continue
 		}
-		typ := localTypeName(varTypes[name])
-		if strings.Contains(strings.ToLower(typ), "response") {
+		if excluded[name] {
 			continue
 		}
-		return typ
+		return localTypeName(varTypes[name])
 	}
 	return ""
 }
@@ -2245,7 +2280,7 @@ func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file
 			// address is taken somewhere in the body, even if we don't recognize
 			// the call it's passed to (project-specific bind/validate helpers).
 			if reqTypeName == "" && (ep.Method == "POST" || ep.Method == "PUT" || ep.Method == "PATCH") {
-				reqTypeName = findAddressTakenStructVar(file, handlerName)
+				reqTypeName = a.findAddressTakenStructVar(file, handlerName)
 			}
 			if reqTypeName != "" {
 				reqTypeName = localTypeName(reqTypeName)
@@ -2338,7 +2373,7 @@ func (a *Analyzer) resolveHandlerSourceFiles() {
 				if ep.RequestBody == nil {
 					typName := findBindingTypeName(node, ep.HandlerName)
 					if typName == "" && (ep.Method == "POST" || ep.Method == "PUT" || ep.Method == "PATCH") {
-						typName = findAddressTakenStructVar(node, ep.HandlerName)
+						typName = a.findAddressTakenStructVar(node, ep.HandlerName)
 					}
 					if typName != "" {
 						if schema, ok, isLocal := a.resolveRequestSchema(node, ep.HandlerName, typName); ok {
@@ -2505,7 +2540,7 @@ func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) boo
 	if typName == "" {
 		// extractBodyFromFile is only ever called for POST/PUT/PATCH endpoints
 		// (see resolveRemainingRequestBodies), so the structural fallback is safe here.
-		typName = findAddressTakenStructVar(node, ep.HandlerName)
+		typName = a.findAddressTakenStructVar(node, ep.HandlerName)
 	}
 	if typName == "" {
 		return false

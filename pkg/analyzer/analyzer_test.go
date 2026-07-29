@@ -597,6 +597,59 @@ func main() {
 	}
 }
 
+// TestAnalyze_Gin_AddressTakenFallback_ExcludesActualResponseVar is a
+// regression test for review §5.2: findAddressTakenStructVar's last-resort
+// request-body fallback used to skip candidates by checking whether the
+// variable's Go type name contained the substring "response" — a type named
+// "Result" (declared and address-taken before the real request variable)
+// would slip past that check and get wrongly picked as the request body.
+// It's now excluded precisely, by recognizing it's actually passed to a
+// response call (review §3's call recognition), regardless of its name.
+func TestAnalyze_Gin_AddressTakenFallback_ExcludesActualResponseVar(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+type Result struct {
+	OK bool ` + "`json:\"ok\"`" + `
+}
+
+type Payload struct {
+	Name string ` + "`json:\"name\"`" + `
+}
+
+func fillResult(out *Result) { out.OK = true }
+func customBind(c *gin.Context, v *Payload) error { return nil }
+
+func Handler(c *gin.Context) {
+	var out Result
+	fillResult(&out)
+
+	var p Payload
+	customBind(c, &p)
+
+	c.JSON(200, out)
+}
+
+func main() {
+	r := gin.Default()
+	r.POST("/handle", Handler)
+}
+`,
+	})
+
+	spec := analyze(t, dir, "gin")
+	ep := findEndpoint(t, spec, "POST", "/handle")
+	if ep.RequestBody == nil {
+		t.Fatal("expected a request body to be inferred")
+	}
+	if ep.RequestTypeName != "Payload" {
+		t.Errorf("RequestTypeName = %q, want Payload (Result is the response, declared and address-taken first)", ep.RequestTypeName)
+	}
+}
+
 func TestAnalyze_Fiber_GroupAndBodyParser(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
