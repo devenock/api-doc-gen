@@ -23,9 +23,9 @@ import (
 
 // Exit codes for scripting (0 = success, 1 = usage/validation, 2 = runtime error).
 const (
-	ExitSuccess       = 0
-	ExitUsageError    = 1
-	ExitRuntimeError  = 2
+	ExitSuccess      = 0
+	ExitUsageError   = 1
+	ExitRuntimeError = 2
 )
 
 // exitCodeError allows RunE to specify exit code.
@@ -70,11 +70,11 @@ generates API documentation as Swagger/OpenAPI or a Postman Collection.`,
 	}
 
 	initCmd = &cobra.Command{
-		Use:   "init",
-		Short: "Initialize configuration file",
-		Long:  `Create a configuration file (.apidoc-gen.yaml) in the current directory.`,
-		RunE:  runInit,
-		Example: `  api-doc-gen init`,
+		Use:          "init",
+		Short:        "Initialize configuration file",
+		Long:         `Create a configuration file (.apidoc-gen.yaml) in the current directory.`,
+		RunE:         runInit,
+		Example:      `  api-doc-gen init`,
 		SilenceUsage: true,
 	}
 )
@@ -479,7 +479,6 @@ func runPostmanAPIUpload(cfg *config.Config, collectionPath string, interactive,
 
 	return nil
 }
-
 
 func runInit(cmd *cobra.Command, args []string) error {
 	configPath := ".apidoc-gen.yaml"

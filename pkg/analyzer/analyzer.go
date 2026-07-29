@@ -1784,13 +1784,13 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 	}
 
 	endpoint := models.Endpoint{
-		Path:        path,
-		Method:      method,
-		Summary:     fmt.Sprintf("%s %s", method, path),
-		Tags:        tags,
-		Security:    security,
-		Parameters:  extractPathParams(path),
-		Responses:   make(map[int]models.Response),
+		Path:       path,
+		Method:     method,
+		Summary:    fmt.Sprintf("%s %s", method, path),
+		Tags:       tags,
+		Security:   security,
+		Parameters: extractPathParams(path),
+		Responses:  make(map[int]models.Response),
 	}
 
 	// Extract handler: always use the last argument so middleware chains like
