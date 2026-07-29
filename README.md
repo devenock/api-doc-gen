@@ -38,7 +38,9 @@ api-doc-gen generate --no-interactive --type postman -o ./docs
 **Point at a project in another directory:**
 
 ```bash
-api-doc-gen generate /path/to/your-api --no-interactive --type swagger -o /path/to/your-api/docs
+api-doc-gen generate /path/to/your-api \
+  --no-interactive --type swagger \
+  -o /path/to/your-api/docs
 ```
 
 ---
@@ -103,7 +105,8 @@ Full reference: `api-doc-gen generate --help`
 Before analyzing, `generate` runs `go vet ./...` against the target project as a pre-flight check. It's purely advisory — a project that fails it still gets docs generated from whatever the AST parser can recover, but you get a warning up front that the result may be incomplete, rather than silently missing routes with no explanation:
 
 ```
-⚠️  This project does not currently pass `go vet ./...` — generated docs may be incomplete or incorrect.
+⚠️  This project does not currently pass `go vet ./...` —
+   generated docs may be incomplete or incorrect.
    Run with -v for details, or pass --skip-build-check to suppress this check.
 ```
 
@@ -139,7 +142,10 @@ No Go installation needed:
 
 ```bash
 docker build -t apidoc-gen .
-docker run --rm -v "$(pwd)":/workspace -w /workspace apidoc-gen generate --no-interactive --type swagger -o ./docs
+docker run --rm \
+  -v "$(pwd)":/workspace \
+  -w /workspace \
+  apidoc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
 ---
