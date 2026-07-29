@@ -116,3 +116,43 @@ func TestConvertToPostman_DeterministicFolderOrder(t *testing.T) {
 		t.Errorf("folder order = %v, want alphabetical %v", first, want)
 	}
 }
+
+func TestRequestName(t *testing.T) {
+	tests := []struct {
+		method, path, want string
+	}{
+		{"GET", "/users", "get_users"},
+		{"GET", "/users/:id", "get_user"},
+		{"POST", "/products", "add_product"},
+		{"DELETE", "/products/{id}", "delete_product"},
+		{"PUT", "/categories/:id", "update_category"},
+	}
+	for _, tt := range tests {
+		if got := requestName(tt.method, tt.path); got != tt.want {
+			t.Errorf("requestName(%q, %q) = %q, want %q", tt.method, tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestGenerateExampleFromSchema_BasicTypes(t *testing.T) {
+	g := &PostmanGenerator{config: &config.Config{}}
+	tests := []struct {
+		name   string
+		schema models.Schema
+		want   interface{}
+	}{
+		{"string", models.Schema{Type: "string"}, "string"},
+		{"integer", models.Schema{Type: "integer"}, 0},
+		{"number", models.Schema{Type: "number"}, 0.0},
+		{"boolean", models.Schema{Type: "boolean"}, false},
+		{"explicit example wins", models.Schema{Type: "string", Example: "wins"}, "wins"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := g.generateExampleFromSchema(tt.schema, nil)
+			if got != tt.want {
+				t.Errorf("got %v (%T), want %v (%T)", got, got, tt.want, tt.want)
+			}
+		})
+	}
+}
