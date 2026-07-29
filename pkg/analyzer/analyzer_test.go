@@ -289,6 +289,314 @@ func slicesEqualUnordered(got, want []string) bool {
 	return true
 }
 
+// TestAnalyze_Gin_ResponseInference_EdgeStatusCodes is the "edge-statuscodes"
+// fixture from the code review: a Created+error-body handler and a
+// No-Content handler, exercising the response side end to end.
+func TestAnalyze_Gin_ResponseInference_EdgeStatusCodes(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"handlers/handlers.go": `package handlers
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+type CreateUserRequest struct {
+	Email string ` + "`json:\"email\"`" + `
+}
+
+type UserResponse struct {
+	ID    string ` + "`json:\"id\"`" + `
+	Email string ` + "`json:\"email\"`" + `
+}
+
+type ErrorResponse struct {
+	Message string ` + "`json:\"message\"`" + `
+	Code    string ` + "`json:\"code\"`" + `
+}
+
+func CreateUser(c *gin.Context) {
+	var req CreateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Message: "invalid", Code: "bad_request"})
+		return
+	}
+	c.JSON(http.StatusCreated, UserResponse{ID: "1", Email: req.Email})
+}
+
+func DeleteUser(c *gin.Context) {
+	c.Status(http.StatusNoContent)
+}
+`,
+		"main.go": `package main
+
+import (
+	"example.com/api/handlers"
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	r := gin.Default()
+	r.POST("/users", handlers.CreateUser)
+	r.DELETE("/users/:id", handlers.DeleteUser)
+}
+`,
+	})
+
+	spec := analyze(t, dir, "gin")
+
+	create := findEndpoint(t, spec, "POST", "/users")
+	created, ok := create.Responses[201]
+	if !ok {
+		t.Fatalf("CreateUser: expected a 201 response, got %v", create.Responses)
+	}
+	createdSchema := created.Content["application/json"].Schema
+	if _, ok := createdSchema.Properties["id"]; !ok {
+		t.Errorf("201 response schema = %v, want UserResponse properties (id, email)", createdSchema)
+	}
+	badReq, ok := create.Responses[400]
+	if !ok {
+		t.Fatalf("CreateUser: expected a 400 response, got %v", create.Responses)
+	}
+	badReqSchema := badReq.Content["application/json"].Schema
+	if _, ok := badReqSchema.Properties["message"]; !ok {
+		t.Errorf("400 response schema = %v, want ErrorResponse properties (message, code)", badReqSchema)
+	}
+	if _, ok := spec.Models["UserResponse"]; !ok {
+		t.Error("expected UserResponse registered in spec.Models")
+	}
+	if _, ok := spec.Models["ErrorResponse"]; !ok {
+		t.Error("expected ErrorResponse registered in spec.Models")
+	}
+
+	del := findEndpoint(t, spec, "DELETE", "/users/{id}")
+	noContent, ok := del.Responses[204]
+	if !ok {
+		t.Fatalf("DeleteUser: expected a 204 response, got %v", del.Responses)
+	}
+	if len(noContent.Content) != 0 {
+		t.Errorf("204 response should have no content block, got %v", noContent.Content)
+	}
+	if _, has200 := del.Responses[200]; has200 {
+		t.Error("DeleteUser must not also get a fabricated 200 — it never returns one")
+	}
+}
+
+func TestAnalyze_Echo_ResponseInference(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import (
+	"net/http"
+
+	"github.com/labstack/echo/v4"
+)
+
+type PingResponse struct {
+	Status string ` + "`json:\"status\"`" + `
+}
+
+func Ping(c echo.Context) error {
+	return c.JSON(http.StatusOK, PingResponse{Status: "ok"})
+}
+
+func Delete(c echo.Context) error {
+	return c.NoContent(http.StatusNoContent)
+}
+
+func main() {
+	e := echo.New()
+	e.GET("/ping", Ping)
+	e.DELETE("/items/:id", Delete)
+}
+`,
+	})
+
+	spec := analyze(t, dir, "echo")
+	ping := findEndpoint(t, spec, "GET", "/ping")
+	resp, ok := ping.Responses[200]
+	if !ok || resp.Content["application/json"].Schema.Properties["status"].Type != "string" {
+		t.Errorf("Ping: Responses = %v, want 200 with PingResponse schema", ping.Responses)
+	}
+
+	del := findEndpoint(t, spec, "DELETE", "/items/{id}")
+	if noContent, ok := del.Responses[204]; !ok || len(noContent.Content) != 0 {
+		t.Errorf("Delete: Responses = %v, want bodyless 204", del.Responses)
+	}
+}
+
+func TestAnalyze_Fiber_ResponseInference_DirectAndChained(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gofiber/fiber/v2"
+
+type ItemResponse struct {
+	Name string ` + "`json:\"name\"`" + `
+}
+
+func Get(c *fiber.Ctx) error {
+	return c.JSON(ItemResponse{Name: "widget"})
+}
+
+func Create(c *fiber.Ctx) error {
+	return c.Status(fiber.StatusCreated).JSON(ItemResponse{Name: "new widget"})
+}
+
+func main() {
+	app := fiber.New()
+	app.Get("/items", Get)
+	app.Post("/items", Create)
+}
+`,
+	})
+
+	spec := analyze(t, dir, "fiber")
+	get := findEndpoint(t, spec, "GET", "/items")
+	if resp, ok := get.Responses[200]; !ok || resp.Content["application/json"].Schema.Properties["name"].Type != "string" {
+		t.Errorf("Get: Responses = %v, want 200 with ItemResponse schema (default status)", get.Responses)
+	}
+
+	create := findEndpoint(t, spec, "POST", "/items")
+	if resp, ok := create.Responses[201]; !ok || resp.Content["application/json"].Schema.Properties["name"].Type != "string" {
+		t.Errorf("Create: Responses = %v, want 201 with ItemResponse schema (chained .Status().JSON())", create.Responses)
+	}
+}
+
+// TestAnalyze_Gorilla_ResponseInference_BranchScoped covers the net/http
+// WriteHeader+Encode pattern, and that two branches (success/error) of the
+// same handler resolve to distinct status/schema pairs without conflating
+// them — the review's "correlate by position within the block" requirement.
+func TestAnalyze_Gorilla_ResponseInference_BranchScoped(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/gorilla/mux"
+)
+
+type OKResponse struct {
+	Result string ` + "`json:\"result\"`" + `
+}
+
+type FailResponse struct {
+	Error string ` + "`json:\"error\"`" + `
+}
+
+func Handle(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("fail") != "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(FailResponse{Error: "bad input"})
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(OKResponse{Result: "done"})
+}
+
+func main() {
+	r := mux.NewRouter()
+	r.HandleFunc("/handle", Handle).Methods("POST")
+}
+`,
+	})
+
+	spec := analyze(t, dir, "gorilla")
+	ep := findEndpoint(t, spec, "POST", "/handle")
+
+	ok, hasOK := ep.Responses[200]
+	if !hasOK || ok.Content["application/json"].Schema.Properties["result"].Type != "string" {
+		t.Errorf("Responses[200] = %v, want OKResponse schema", ep.Responses[200])
+	}
+	bad, hasBad := ep.Responses[400]
+	if !hasBad || bad.Content["application/json"].Schema.Properties["error"].Type != "string" {
+		t.Errorf("Responses[400] = %v, want FailResponse schema (from the other branch, not conflated with 200)", ep.Responses[400])
+	}
+}
+
+// TestAnalyze_Gin_ResponseInference_HelperDelegation covers the
+// "respondError(c, http.StatusNotFound, ...)" pattern: the status is a
+// literal at the call site but only a parameter name inside the helper's own
+// body, so resolving it requires substituting the call-site argument in.
+func TestAnalyze_Gin_ResponseInference_HelperDelegation(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+func respondError(c *gin.Context, status int, msg string) {
+	c.JSON(status, gin.H{"error": msg})
+}
+
+func GetThing(c *gin.Context) {
+	respondError(c, http.StatusNotFound, "not found")
+}
+
+func main() {
+	r := gin.Default()
+	r.GET("/things/:id", GetThing)
+}
+`,
+	})
+
+	spec := analyze(t, dir, "gin")
+	ep := findEndpoint(t, spec, "GET", "/things/{id}")
+	resp, ok := ep.Responses[404]
+	if !ok {
+		t.Fatalf("GetThing: Responses = %v, want 404 resolved through respondError", ep.Responses)
+	}
+	if _, ok := resp.Content["application/json"].Schema.Properties["error"]; !ok {
+		t.Errorf("404 response schema = %v, want an \"error\" property inferred from gin.H{\"error\": msg}", resp.Content["application/json"].Schema)
+	}
+}
+
+// TestAnalyze_Gin_ResponseInference_PlaceholderIsLabeled covers the Step 6
+// fallback: a handler with no recognizable response call at all still gets
+// exactly one response entry, clearly marked as inference having failed
+// rather than silently presented as a real 200.
+func TestAnalyze_Gin_ResponseInference_PlaceholderIsLabeled(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+func Mystery(c *gin.Context) {
+	someUnrecognizedSink(c)
+}
+
+func someUnrecognizedSink(c *gin.Context) {}
+
+func main() {
+	r := gin.Default()
+	r.GET("/mystery", Mystery)
+}
+`,
+	})
+
+	spec := analyze(t, dir, "gin")
+	ep := findEndpoint(t, spec, "GET", "/mystery")
+	if len(ep.Responses) != 1 {
+		t.Fatalf("Responses = %v, want exactly one placeholder entry", ep.Responses)
+	}
+	resp, ok := ep.Responses[200]
+	if !ok || resp.Description != "Response shape could not be inferred" {
+		t.Errorf("Responses[200] = %+v, want the labeled placeholder", resp)
+	}
+}
+
 func TestAnalyze_Fiber_GroupAndBodyParser(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -405,6 +713,121 @@ func AuthMiddleware(next http.Handler) http.Handler { return next }
 	stats := findEndpoint(t, spec, "GET", "/api/v1/admin/stats")
 	if len(stats.Security) == 0 {
 		t.Error("Stats is inside the /admin scope with .Use(AuthMiddleware), want Security to be set")
+	}
+}
+
+func TestAnalyze_Chi_ResponseInference(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+)
+
+type Widget struct {
+	Name string ` + "`json:\"name\"`" + `
+}
+
+func GetWidget(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(Widget{Name: "gizmo"})
+}
+
+func main() {
+	r := chi.NewRouter()
+	r.Get("/widgets", GetWidget)
+}
+`,
+	})
+
+	spec := analyze(t, dir, "chi")
+	ep := findEndpoint(t, spec, "GET", "/widgets")
+	resp, ok := ep.Responses[200]
+	if !ok {
+		t.Fatalf("GetWidget: Responses = %v, want 200 (net/http default status when WriteHeader is never called)", ep.Responses)
+	}
+	if resp.Content["application/json"].Schema.Properties["name"].Type != "string" {
+		t.Errorf("200 response schema = %v, want Widget properties", resp.Content["application/json"].Schema)
+	}
+}
+
+// TestAnalyze_Gin_ResponseInference_MapLiteralBody covers the extremely
+// common gin.H{...} inline-object shape: no declared type to resolve, so the
+// literal's own keys become string-typed placeholder properties instead of
+// an empty object.
+func TestAnalyze_Gin_ResponseInference_MapLiteralBody(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+func Health(c *gin.Context) {
+	c.JSON(200, gin.H{"status": "ok", "version": "1.0"})
+}
+
+func main() {
+	r := gin.Default()
+	r.GET("/health", Health)
+}
+`,
+	})
+
+	spec := analyze(t, dir, "gin")
+	ep := findEndpoint(t, spec, "GET", "/health")
+	resp, ok := ep.Responses[200]
+	if !ok {
+		t.Fatalf("Health: Responses = %v, want 200", ep.Responses)
+	}
+	schema := resp.Content["application/json"].Schema
+	for _, key := range []string{"status", "version"} {
+		if prop, ok := schema.Properties[key]; !ok || prop.Type != "string" {
+			t.Errorf("schema.Properties[%q] = %v, want a string placeholder inferred from the gin.H key", key, prop)
+		}
+	}
+}
+
+// TestAnalyze_Gin_ResponseInference_CallExprBody covers c.JSON(status,
+// buildResponse(user)) — the body is itself a call, resolved via the
+// name-based return-type fallback (review §3, Step 3's last bullet; full
+// resolution needs the go/types migration in §4).
+func TestAnalyze_Gin_ResponseInference_CallExprBody(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+type UserResponse struct {
+	ID string ` + "`json:\"id\"`" + `
+}
+
+func buildResponse(id string) UserResponse {
+	return UserResponse{ID: id}
+}
+
+func GetUser(c *gin.Context) {
+	c.JSON(200, buildResponse("1"))
+}
+
+func main() {
+	r := gin.Default()
+	r.GET("/users/:id", GetUser)
+}
+`,
+	})
+
+	spec := analyze(t, dir, "gin")
+	ep := findEndpoint(t, spec, "GET", "/users/{id}")
+	resp, ok := ep.Responses[200]
+	if !ok {
+		t.Fatalf("GetUser: Responses = %v, want 200", ep.Responses)
+	}
+	if _, ok := resp.Content["application/json"].Schema.Properties["id"]; !ok {
+		t.Errorf("schema = %v, want UserResponse's \"id\" property resolved from buildResponse's return type", resp.Content["application/json"].Schema)
 	}
 }
 
