@@ -650,6 +650,98 @@ func main() {
 	}
 }
 
+// TestAnalyze_AuthMiddleware_ConfiguredListOverridesHeuristic is a
+// regression test for review §5.2: an explicit, user-configured
+// auth_middleware list should be matched precisely (case-insensitive exact
+// match), replacing the built-in substring heuristic entirely — fixing both
+// a false positive (a middleware literally named "AuthorMiddleware", which
+// contains "author" but isn't an auth check) and a false negative
+// ("requireSession", which contains neither "auth" nor "jwt").
+func TestAnalyze_AuthMiddleware_ConfiguredListOverridesHeuristic(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+func main() {
+	r := gin.Default()
+
+	authored := r.Group("/authored", AuthorMiddleware())
+	authored.GET("/posts", ListPosts)
+
+	protected := r.Group("/protected", requireSession)
+	protected.GET("/dashboard", Dashboard)
+}
+
+func ListPosts(c *gin.Context) {}
+func Dashboard(c *gin.Context)  {}
+func AuthorMiddleware() gin.HandlerFunc { return nil }
+func requireSession(c *gin.Context)     {}
+`,
+	})
+
+	cfg := &config.Config{
+		ProjectPath: dir, Framework: "gin", DocType: "swagger", Title: "T", Version: "1.0.0",
+		AuthMiddleware: []string{"requireSession"},
+	}
+	spec, err := NewAnalyzer(cfg).Analyze()
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	posts := findEndpoint(t, spec, "GET", "/authored/posts")
+	if len(posts.Security) != 0 {
+		t.Errorf("ListPosts uses AuthorMiddleware (not in the configured list), want no Security, got %v", posts.Security)
+	}
+
+	dashboard := findEndpoint(t, spec, "GET", "/protected/dashboard")
+	if len(dashboard.Security) == 0 {
+		t.Error("Dashboard uses requireSession (in the configured list), want Security to be set")
+	}
+}
+
+// TestAnalyze_VerboseMode_ReportsHeuristicMatches covers review §5.2's
+// "report every heuristic match in verbose output" — the built-in
+// (unconfigured) auth heuristic's matches must be visible via
+// AuthMiddlewareMatches() when Verbose is set, and absent otherwise.
+func TestAnalyze_VerboseMode_ReportsHeuristicMatches(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+func main() {
+	r := gin.Default()
+	admin := r.Group("/admin", JWTAuth())
+	admin.GET("/stats", Stats)
+}
+
+func Stats(c *gin.Context) {}
+func JWTAuth() gin.HandlerFunc { return nil }
+`,
+	})
+
+	cfg := &config.Config{ProjectPath: dir, Framework: "gin", DocType: "swagger", Title: "T", Version: "1.0.0", Verbose: true}
+	a := NewAnalyzer(cfg)
+	if _, err := a.Analyze(); err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if !slicesEqualUnordered(a.AuthMiddlewareMatches(), []string{"JWTAuth"}) {
+		t.Errorf("AuthMiddlewareMatches() = %v, want [JWTAuth]", a.AuthMiddlewareMatches())
+	}
+
+	cfg2 := &config.Config{ProjectPath: dir, Framework: "gin", DocType: "swagger", Title: "T", Version: "1.0.0", Verbose: false}
+	a2 := NewAnalyzer(cfg2)
+	if _, err := a2.Analyze(); err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(a2.AuthMiddlewareMatches()) != 0 {
+		t.Errorf("AuthMiddlewareMatches() = %v, want empty when Verbose is false (not tracked)", a2.AuthMiddlewareMatches())
+	}
+}
+
 func TestAnalyze_Fiber_GroupAndBodyParser(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",

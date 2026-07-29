@@ -62,6 +62,38 @@ type Analyzer struct {
 	curFilePath      string                   // current file being parsed (for SourceFile on endpoints)
 	consumedCalls    map[*ast.CallExpr]bool   // per-file: gorilla HandleFunc/Handle calls already consumed by a .Methods() chain
 	parseDiagnostics []ParseDiagnostic        // .go files that matched the walk but failed to parse — see Diagnostics()
+	authMatches      []string                 // middleware names matched as auth-like — see AuthMiddlewareMatches()
+	bindHintMatches  []string                 // call names matched as JSON-binding by hint (not exact method name) — see BindHintMatches()
+}
+
+// BindHintMatches returns every distinct call name matched as a JSON-binding
+// call by name hint (bindMethodHints — "bind", "decode", "unmarshal",
+// "parse") rather than an exact known framework method, in first-seen
+// order. Populated only when config.Verbose is set. Lets a user see exactly
+// which project-specific wrapper calls (e.g. h.decodeBody) were guessed to
+// be request-body binding.
+func (a *Analyzer) BindHintMatches() []string {
+	return a.bindHintMatches
+}
+
+// recordBindHintMatch appends text to bindHintMatches, deduplicated.
+func (a *Analyzer) recordBindHintMatch(text string) {
+	for _, seen := range a.bindHintMatches {
+		if seen == text {
+			return
+		}
+	}
+	a.bindHintMatches = append(a.bindHintMatches, text)
+}
+
+// AuthMiddlewareMatches returns every distinct middleware identifier name
+// that was matched as auth-like during analysis (via the built-in heuristic
+// or the configured AuthMiddleware list), in first-seen order. Populated
+// only when config.Verbose is set — see (*Analyzer).middlewareLooksLikeAuth.
+// Lets a user see exactly what was guessed instead of trusting a silent
+// substring match.
+func (a *Analyzer) AuthMiddlewareMatches() []string {
+	return a.authMatches
 }
 
 // ParseDiagnostic records a single .go file that was found during the
@@ -263,6 +295,19 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 			for _, d := range a.parseDiagnostics {
 				fmt.Fprintf(os.Stderr, "   %s: %v\n", d.File, d.Err)
 			}
+		}
+	}
+
+	// Heuristic transparency (review §5.2): -v shows exactly what the
+	// name-based auth/bind-call heuristics guessed, so a false positive or
+	// negative is visible instead of a silent, unexplained security-relevant
+	// guess.
+	if a.config.Verbose && !a.config.Quiet {
+		if len(a.authMatches) > 0 {
+			fmt.Fprintf(os.Stderr, "   Matched as auth middleware: %s\n", strings.Join(a.authMatches, ", "))
+		}
+		if len(a.bindHintMatches) > 0 {
+			fmt.Fprintf(os.Stderr, "   Matched as request-body binding by name hint: %s\n", strings.Join(a.bindHintMatches, ", "))
 		}
 	}
 
@@ -903,12 +948,59 @@ func joinPath(prefix, path string) string {
 	return "/" + prefix + "/" + path
 }
 
+// middlewareAuthNames are exact identifier names always treated as
+// auth-like middleware, on top of the "auth"/"jwt" substring heuristic —
+// the built-in default used when config.AuthMiddleware is unset.
+var middlewareAuthNames = map[string]bool{
+	"Auth": true, "JWT": true, "JWTAuth": true, "AuthRequired": true,
+	"MiddlewareAuth": true, "AuthMiddleware": true, "RequireAuth": true,
+}
+
+// middlewareLooksLikeAuth reports whether a middleware identifier name
+// should be treated as protecting its route(s) with authentication, and (in
+// --verbose mode) records the match so a user can see exactly what was
+// guessed rather than trusting a silent heuristic (review §5.2).
+//
+// When config.AuthMiddleware is set, name must exactly match one of those
+// entries (case-insensitive) — precise and user-controlled, no guessing at
+// all. Otherwise falls back to the built-in heuristic (middlewareAuthNames
+// plus a substring match on "auth"/"jwt"), unchanged from before this
+// became configurable, so a project that hasn't touched the new option
+// sees no behavior change.
+func (a *Analyzer) middlewareLooksLikeAuth(name string) bool {
+	if name == "" {
+		return false
+	}
+	var matched bool
+	if len(a.config.AuthMiddleware) > 0 {
+		for _, configured := range a.config.AuthMiddleware {
+			if strings.EqualFold(configured, name) {
+				matched = true
+				break
+			}
+		}
+	} else {
+		lower := strings.ToLower(name)
+		matched = middlewareAuthNames[name] || strings.Contains(lower, "auth") || strings.Contains(lower, "jwt")
+	}
+	if matched && a.config.Verbose {
+		a.recordAuthMatch(name)
+	}
+	return matched
+}
+
+// recordAuthMatch appends name to authMatches, deduplicated.
+func (a *Analyzer) recordAuthMatch(name string) {
+	for _, seen := range a.authMatches {
+		if seen == name {
+			return
+		}
+	}
+	a.authMatches = append(a.authMatches, name)
+}
+
 // buildGinAuthGroups returns variable names for route groups that use auth-like middleware (.Use(Auth()), .Use(JWT()), etc.).
 func (a *Analyzer) buildGinAuthGroups(file *ast.File) map[string]bool {
-	authNames := map[string]bool{
-		"Auth": true, "JWT": true, "JWTAuth": true, "AuthRequired": true,
-		"MiddlewareAuth": true, "AuthMiddleware": true, "RequireAuth": true,
-	}
 	// looksLikeAuth checks a middleware argument expression by name, however
 	// it's referenced: Auth (bare ident), Auth() (called), or c.AuthMW (a
 	// method/field value passed without invocation — common when middleware
@@ -928,11 +1020,7 @@ func (a *Analyzer) buildGinAuthGroups(file *ast.File) map[string]bool {
 				name = f.Sel.Name
 			}
 		}
-		if name == "" {
-			return false
-		}
-		lower := strings.ToLower(name)
-		return authNames[name] || strings.Contains(lower, "auth") || strings.Contains(lower, "jwt")
+		return a.middlewareLooksLikeAuth(name)
 	}
 
 	authGroups := make(map[string]bool)
@@ -1029,14 +1117,14 @@ var nonBodyBindMethods = map[string]bool{
 //	h.bindAndValidate(c, &req)          (project-specific wrapper — matched by name hint)
 //	req.Bind(c) / req.Validate()        (self-binding request struct — struct is the receiver)
 //	bind.JSON[LoginRequest](c, &req)    (explicit generic type argument)
-func findBindingTypeName(file *ast.File, funcName string) string {
-	return findBindingTypeNameDepth(file, funcName, 0)
+func (a *Analyzer) findBindingTypeName(file *ast.File, funcName string) string {
+	return a.findBindingTypeNameDepth(file, funcName, 0)
 }
 
 // findBindingTypeNameDepth is findBindingTypeName's implementation, plus a
 // bounded fallback (findDelegatedBindingTypeName) for thin wrapper handlers.
 // depth caps delegation-chain recursion so a cycle can't loop forever.
-func findBindingTypeNameDepth(file *ast.File, funcName string, depth int) string {
+func (a *Analyzer) findBindingTypeNameDepth(file *ast.File, funcName string, depth int) string {
 	bindMethods := map[string]bool{
 		"ShouldBindJSON": true, "BindJSON": true,
 		"ShouldBind": true, "Bind": true, "BodyParser": true,
@@ -1070,8 +1158,13 @@ func findBindingTypeNameDepth(file *ast.File, funcName string, depth int) string
 		if hintText == "" {
 			hintText = calleeHintText(genericBaseExpr(call.Fun))
 		}
-		if !bindMethods[exactName] && !hasBindHint(hintText) {
-			return true
+		if !bindMethods[exactName] {
+			if !hasBindHint(hintText) {
+				return true
+			}
+			if a.config.Verbose {
+				a.recordBindHintMatch(hintText)
+			}
 		}
 
 		// Explicit generic type argument takes priority when present:
@@ -1106,7 +1199,7 @@ func findBindingTypeNameDepth(file *ast.File, funcName string, depth int) string
 	if depth >= 2 {
 		return "" // cap delegation-chain recursion
 	}
-	return findDelegatedBindingTypeName(file, funcName, depth)
+	return a.findDelegatedBindingTypeName(file, funcName, depth)
 }
 
 // findDelegatedBindingTypeName handles thin wrapper handlers whose entire
@@ -1119,7 +1212,7 @@ func findBindingTypeNameDepth(file *ast.File, funcName string, depth int) string
 // wrapper. Only follows a call whose receiver identifier matches the
 // wrapper's own receiver, so it can't wander into an unrelated type's
 // same-named method.
-func findDelegatedBindingTypeName(file *ast.File, funcName string, depth int) string {
+func (a *Analyzer) findDelegatedBindingTypeName(file *ast.File, funcName string, depth int) string {
 	var fd *ast.FuncDecl
 	for _, decl := range file.Decls {
 		if f, ok := decl.(*ast.FuncDecl); ok && f.Name.Name == funcName && f.Body != nil {
@@ -1156,7 +1249,7 @@ func findDelegatedBindingTypeName(file *ast.File, funcName string, depth int) st
 	if delegateFunc == "" || delegateFunc == funcName {
 		return ""
 	}
-	return findBindingTypeNameDepth(file, delegateFunc, depth+1)
+	return a.findBindingTypeNameDepth(file, delegateFunc, depth+1)
 }
 
 // responseBodyIdentNames returns the names of local identifiers used as the
@@ -2274,7 +2367,7 @@ func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file
 			// Standard Gin/Echo/Fiber handlers have func(c *gin.Context) — no typed body
 			// param — so fall back to scanning the body for binding calls.
 			if reqTypeName == "" {
-				reqTypeName = findBindingTypeName(file, handlerName)
+				reqTypeName = a.findBindingTypeName(file, handlerName)
 			}
 			// Last resort for POST/PUT/PATCH: a locally-declared struct var whose
 			// address is taken somewhere in the body, even if we don't recognize
@@ -2371,7 +2464,7 @@ func (a *Analyzer) resolveHandlerSourceFiles() {
 
 				// Scan the body for JSON-binding calls to get the request body type.
 				if ep.RequestBody == nil {
-					typName := findBindingTypeName(node, ep.HandlerName)
+					typName := a.findBindingTypeName(node, ep.HandlerName)
 					if typName == "" && (ep.Method == "POST" || ep.Method == "PUT" || ep.Method == "PATCH") {
 						typName = a.findAddressTakenStructVar(node, ep.HandlerName)
 					}
@@ -2536,7 +2629,7 @@ func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) boo
 	if err != nil {
 		return false
 	}
-	typName := findBindingTypeName(node, ep.HandlerName)
+	typName := a.findBindingTypeName(node, ep.HandlerName)
 	if typName == "" {
 		// extractBodyFromFile is only ever called for POST/PUT/PATCH endpoints
 		// (see resolveRemainingRequestBodies), so the structural fallback is safe here.
@@ -3013,7 +3106,7 @@ var chiValidMethods = map[string]bool{
 
 // isChiAuthMiddlewareCall reports whether a r.Use(...) call's first argument
 // looks like an auth middleware, using the same name heuristic as buildGinAuthGroups.
-func isChiAuthMiddlewareCall(call *ast.CallExpr) bool {
+func (a *Analyzer) isChiAuthMiddlewareCall(call *ast.CallExpr) bool {
 	if len(call.Args) == 0 {
 		return false
 	}
@@ -3026,11 +3119,7 @@ func isChiAuthMiddlewareCall(call *ast.CallExpr) bool {
 			name = c.Name
 		}
 	}
-	if name == "" {
-		return false
-	}
-	lower := strings.ToLower(name)
-	return strings.Contains(lower, "auth") || strings.Contains(lower, "jwt")
+	return a.middlewareLooksLikeAuth(name)
 }
 
 // walkChiStmts recursively extracts routes from a chi.Router setup, tracking
@@ -3049,7 +3138,7 @@ func (a *Analyzer) walkChiStmts(stmts []ast.Stmt, file *ast.File, prefix string,
 			continue
 		}
 		sel := call.Fun.(*ast.SelectorExpr)
-		if sel.Sel.Name == "Use" && isChiAuthMiddlewareCall(call) {
+		if sel.Sel.Name == "Use" && a.isChiAuthMiddlewareCall(call) {
 			scopeAuth = true
 		}
 	}

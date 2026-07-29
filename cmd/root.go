@@ -190,6 +190,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	}
 	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
 	_ = viper.UnmarshalKey("servers", &cfg.Servers)
+	_ = viper.UnmarshalKey("auth_middleware", &cfg.AuthMiddleware)
 
 	// --show-config: print effective config and exit (before interactive so no prompt)
 	if viper.GetBool("show-config") {
@@ -546,6 +547,15 @@ description: "Auto-generated API documentation"
 servers:
   - url: "http://localhost:8080"
     description: "Development server"
+
+# Auth middleware names (optional). When set, only these exact names
+# (case-insensitive) mark a route group as authenticated — overrides the
+# built-in "contains 'auth' or 'jwt'" heuristic entirely. Useful when that
+# heuristic gets your middleware wrong, e.g. a false positive like
+# "AuthorMiddleware", or a false negative like "requireSession".
+# auth_middleware:
+#   - requireSession
+#   - JWTAuth
 
 # Verbose output
 verbose: false

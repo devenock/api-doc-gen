@@ -32,6 +32,15 @@ type Config struct {
 	// toolchain where the check would otherwise just no-op anyway.
 	SkipBuildCheck bool
 
+	// AuthMiddleware, when set (via .apidoc-gen.yaml's auth_middleware key),
+	// is the exact list of middleware identifier names (case-insensitive)
+	// that mark a route group as authenticated, overriding the analyzer's
+	// built-in heuristic (a common-name set plus a substring match on
+	// "auth"/"jwt") entirely. For projects whose middleware names the
+	// heuristic gets wrong in either direction — a false positive like
+	// "AuthorMiddleware", or a false negative like "requireSession".
+	AuthMiddleware []string
+
 	// Postman upload settings (only honored when DocType == "postman").
 	// PostmanAPIKey is resolved at runtime from --postman-api-key, env, or the
 	// credentials file; do not persist it to .apidoc-gen.yaml (it is a secret).

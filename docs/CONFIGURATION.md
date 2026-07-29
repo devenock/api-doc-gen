@@ -27,6 +27,7 @@ Configuration is merged from lowest to highest precedence: **config file** → *
 | `--show-config` | _(n/a)_ | _(n/a)_ | `false` |
 | `--serve` _(swagger)_ | _(n/a)_ | _(n/a)_ | `false` — after generating, serves `./docs` at `http://localhost:8765` and opens it in your browser |
 | `--write-annotations` | _(n/a)_ | _(n/a)_ | `false` — writes swag-style `// @...` comments above same-file handler functions |
+| `--skip-build-check` | _(n/a)_ | _(n/a)_ | `false` — skips the `go vet ./...` pre-flight check against the target project |
 | `--upload` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` |
 | `--no-upload` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` |
 | `--direct-import` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` — no functional effect outside the interactive wizard today (see note below) |
@@ -35,6 +36,18 @@ Configuration is merged from lowest to highest precedence: **config file** → *
 | `[path]` _(positional)_ | _(n/a)_ | _(n/a)_ | `.` |
 
 Default `exclude` dirs: `vendor`, `node_modules`, `.git`, `test`, `tests`. Matching is by exact directory name (basename), not substring.
+
+## Auth middleware detection
+
+Config-file only (no flag/env equivalent). By default, a route group is marked authenticated (`security: [BearerAuth]` in the generated spec) when its middleware's name contains `auth` or `jwt` (case-insensitive), plus a small set of common exact names. Set `auth_middleware` in `.apidoc-gen.yaml` to override that heuristic entirely with an exact (case-insensitive) list of your own middleware names:
+
+```yaml
+auth_middleware:
+  - requireSession
+  - JWTAuth
+```
+
+Run with `-v` to see exactly what was matched, either way.
 
 ## Postman API key resolution
 
