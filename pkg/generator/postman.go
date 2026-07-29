@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/devenock/api-doc-gen/pkg/config"
@@ -156,13 +157,21 @@ func (g *PostmanGenerator) convertToPostman(spec *models.APISpec) *PostmanCollec
 	endpointsByTag := g.groupEndpointsByTag(spec.Endpoints)
 
 	if len(endpointsByTag) > 1 {
-		// Create folders for each tag
-		for tag, endpoints := range endpointsByTag {
+		// Create folders for each tag, in a stable (sorted) order — ranging a
+		// Go map directly would randomize folder order on every run, which
+		// breaks reproducible output and makes generated collection.json
+		// diffs noisy in CI/version control for no reason.
+		tags := make([]string, 0, len(endpointsByTag))
+		for tag := range endpointsByTag {
+			tags = append(tags, tag)
+		}
+		sort.Strings(tags)
+		for _, tag := range tags {
 			folder := PostmanItem{
 				Name: tag,
 				Item: []PostmanItem{},
 			}
-			for _, endpoint := range endpoints {
+			for _, endpoint := range endpointsByTag[tag] {
 				folder.Item = append(folder.Item, g.convertEndpointToItem(endpoint, spec))
 			}
 			collection.Item = append(collection.Item, folder)

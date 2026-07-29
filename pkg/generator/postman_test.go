@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -78,5 +79,40 @@ func runWithTimeout(t *testing.T, fn func() interface{}) interface{} {
 	case <-time.After(5 * time.Second):
 		t.Fatal("did not terminate on a cyclic schema (missing recursion guard)")
 		return nil
+	}
+}
+
+// TestConvertToPostman_DeterministicFolderOrder is a regression test: folders
+// were previously built by ranging a Go map directly, so collection.json's
+// item order (and therefore its diff against the previous run) was
+// randomized on every invocation, defeating the tool's own CI-friendliness.
+func TestConvertToPostman_DeterministicFolderOrder(t *testing.T) {
+	g := &PostmanGenerator{config: &config.Config{}}
+	spec := &models.APISpec{
+		Endpoints: []models.Endpoint{
+			{Method: "GET", Path: "/zebras", Tags: []string{"zebras"}, Responses: map[int]models.Response{}},
+			{Method: "GET", Path: "/apples", Tags: []string{"apples"}, Responses: map[int]models.Response{}},
+			{Method: "GET", Path: "/mangoes", Tags: []string{"mangoes"}, Responses: map[int]models.Response{}},
+		},
+	}
+
+	var first []string
+	for i := 0; i < 20; i++ {
+		collection := g.convertToPostman(spec)
+		var names []string
+		for _, item := range collection.Item {
+			names = append(names, item.Name)
+		}
+		if i == 0 {
+			first = names
+			continue
+		}
+		if !reflect.DeepEqual(names, first) {
+			t.Fatalf("run %d: folder order = %v, want the stable order from run 0: %v", i, names, first)
+		}
+	}
+	want := []string{"apples", "mangoes", "zebras"}
+	if !reflect.DeepEqual(first, want) {
+		t.Errorf("folder order = %v, want alphabetical %v", first, want)
 	}
 }
