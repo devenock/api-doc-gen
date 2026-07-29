@@ -899,7 +899,7 @@ func findBindingTypeNameDepth(file *ast.File, funcName string, depth int) string
 		if hintText == "" {
 			hintText = calleeHintText(genericBaseExpr(call.Fun))
 		}
-		if !(bindMethods[exactName] || hasBindHint(hintText)) {
+		if !bindMethods[exactName] && !hasBindHint(hintText) {
 			return true
 		}
 
@@ -1595,7 +1595,7 @@ func findFileWithFunction(projectPath string, exclude []string, pkgName, funcNam
 
 	// Pass 1: match by package declaration or directory name.
 	var found string
-	filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -1636,7 +1636,7 @@ func findFileWithFunction(projectPath string, exclude []string, pkgName, funcNam
 	}
 
 	// Pass 2: pkgName may be a variable/instance — search all files by function name using a fast text pre-filter.
-	filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil || found != "" {
 			return nil
 		}
