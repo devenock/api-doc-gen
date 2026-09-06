@@ -1,15 +1,18 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/devenock/api-doc-gen/internal/annotations"
@@ -320,13 +323,13 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	// Swagger: start a local server and open the browser automatically.
 	// In --quiet mode (CI/scripts) skip the server and browser open.
 	if cfg.DocType == "swagger" && !quiet {
-		return runServeDocs(cfg.Output, quiet)
+		return runServeDocs(cmd.Context(), cfg.Output, quiet)
 	}
 
 	// Postman: import into desktop (or prompt/upload via cloud API).
 	if cfg.DocType == "postman" {
 		useInteractiveUpload := viper.GetBool("interactive") && !viper.GetBool("no-interactive")
-		if err := runPostmanUpload(cfg, useInteractiveUpload, quiet); err != nil {
+		if err := runPostmanUpload(cmd.Context(), cfg, useInteractiveUpload, quiet); err != nil {
 			return err
 		}
 	}
@@ -335,8 +338,8 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 }
 
 // runServeDocs serves the output directory on a local port, opens the browser
-// automatically, and blocks until interrupted with Ctrl+C.
-func runServeDocs(outputDir string, quiet bool) error {
+// automatically, and blocks until ctx is canceled (Ctrl+C).
+func runServeDocs(ctx context.Context, outputDir string, quiet bool) error {
 	absDir, err := filepath.Abs(outputDir)
 	if err != nil {
 		return &exitCodeError{fmt.Errorf("failed to resolve output path: %w", err), ExitRuntimeError}
@@ -346,7 +349,6 @@ func runServeDocs(outputDir string, quiet bool) error {
 	}
 
 	port := "8765"
-	addr := ":" + port
 	browserURL := "http://localhost:" + port + "/index.html"
 
 	if !quiet {
@@ -362,15 +364,24 @@ func runServeDocs(outputDir string, quiet bool) error {
 		openBrowser(browserURL)
 	}()
 
-	handler := http.FileServer(http.Dir(absDir))
-	err = http.ListenAndServe(addr, handler)
-	if err != nil && (err == http.ErrServerClosed || strings.Contains(err.Error(), "closed")) {
+	srv := &http.Server{Addr: ":" + port, Handler: http.FileServer(http.Dir(absDir))}
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.ListenAndServe() }()
+
+	select {
+	case <-ctx.Done():
+		// Execute() installed the signal handler that canceled ctx; give the
+		// server a moment to close its listener/connections cleanly.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+		return nil
+	case err := <-serveErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return &exitCodeError{fmt.Errorf("serve failed: %w", err), ExitRuntimeError}
+		}
 		return nil
 	}
-	if err != nil {
-		return &exitCodeError{fmt.Errorf("serve failed: %w", err), ExitRuntimeError}
-	}
-	return nil
 }
 
 // openBrowser opens url in the system default browser.
@@ -392,7 +403,7 @@ func openBrowser(url string) {
 // runPostmanUpload generates the Postman collection file, tells the user
 // where it is, and opens Postman so it is ready to receive the import.
 // For automated upload via the Postman cloud API, pass --upload.
-func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
+func runPostmanUpload(ctx context.Context, cfg *config.Config, interactive, quiet bool) error {
 	collectionPath := filepath.Join(cfg.Output, "collection.json")
 	if _, err := os.Stat(collectionPath); err != nil {
 		return nil
@@ -400,7 +411,7 @@ func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
 
 	// --upload: push to Postman cloud (requires API key).
 	if cfg.PostmanUpload {
-		return runPostmanAPIUpload(cfg, collectionPath, interactive, quiet)
+		return runPostmanAPIUpload(ctx, cfg, collectionPath, interactive, quiet)
 	}
 
 	// Default: show where the file is and how to import it.
@@ -427,7 +438,7 @@ func runPostmanUpload(cfg *config.Config, interactive, quiet bool) error {
 
 // runPostmanAPIUpload uploads the collection to Postman cloud and opens the
 // desktop app to the resulting collection. Only called when --upload is set.
-func runPostmanAPIUpload(cfg *config.Config, collectionPath string, interactive, quiet bool) error {
+func runPostmanAPIUpload(ctx context.Context, cfg *config.Config, collectionPath string, interactive, quiet bool) error {
 	apiKey, source := cfg.PostmanAPIKey, "flag:--postman-api-key"
 	if apiKey == "" {
 		apiKey, source = postman.LoadAPIKey()
@@ -482,15 +493,15 @@ func runPostmanAPIUpload(cfg *config.Config, collectionPath string, interactive,
 
 	var resp *postman.CollectionResponse
 	if cachedUID != "" {
-		resp, err = client.UpdateCollection(cachedUID, collectionJSON)
+		resp, err = client.UpdateCollection(ctx, cachedUID, collectionJSON)
 		if err != nil {
 			if !quiet {
 				fmt.Fprintf(os.Stderr, "   update failed (%v); creating new collection\n", err)
 			}
-			resp, err = client.CreateCollection(collectionJSON, cfg.PostmanWorkspaceUID)
+			resp, err = client.CreateCollection(ctx, collectionJSON, cfg.PostmanWorkspaceUID)
 		}
 	} else {
-		resp, err = client.CreateCollection(collectionJSON, cfg.PostmanWorkspaceUID)
+		resp, err = client.CreateCollection(ctx, collectionJSON, cfg.PostmanWorkspaceUID)
 	}
 	if err != nil {
 		return &exitCodeError{fmt.Errorf("postman upload failed: %w", err), ExitRuntimeError}
@@ -674,7 +685,10 @@ func runDryRun(cfg *config.Config, quiet bool) error {
 }
 
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		code := ExitUsageError
 		var exitErr *exitCodeError

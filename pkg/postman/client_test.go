@@ -1,6 +1,7 @@
 package postman
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -24,7 +25,7 @@ func TestClient_CreateCollection(t *testing.T) {
 
 	c := NewClient("secret-key")
 	c.BaseURL = srv.URL
-	resp, err := c.CreateCollection([]byte(`{"info":{"name":"Test"}}`), "")
+	resp, err := c.CreateCollection(context.Background(), []byte(`{"info":{"name":"Test"}}`), "")
 	if err != nil {
 		t.Fatalf("CreateCollection: %v", err)
 	}
@@ -55,7 +56,7 @@ func TestClient_CreateCollection_WithWorkspace(t *testing.T) {
 
 	c := NewClient("key")
 	c.BaseURL = srv.URL
-	if _, err := c.CreateCollection([]byte(`{}`), "ws-1"); err != nil {
+	if _, err := c.CreateCollection(context.Background(), []byte(`{}`), "ws-1"); err != nil {
 		t.Fatalf("CreateCollection: %v", err)
 	}
 	if gotQuery != "workspace=ws-1" {
@@ -78,7 +79,7 @@ func TestClient_UpdateCollection_InjectsPostmanID(t *testing.T) {
 
 	c := NewClient("secret-key")
 	c.BaseURL = srv.URL
-	if _, err := c.UpdateCollection("uid-existing", []byte(`{"info":{"name":"Test"}}`)); err != nil {
+	if _, err := c.UpdateCollection(context.Background(), "uid-existing", []byte(`{"info":{"name":"Test"}}`)); err != nil {
 		t.Fatalf("UpdateCollection: %v", err)
 	}
 	if gotMethod != http.MethodPut || gotPath != "/collections/uid-existing" {
@@ -102,7 +103,7 @@ func TestClient_RejectsUnauthorized(t *testing.T) {
 
 	c := NewClient("bad-key")
 	c.BaseURL = srv.URL
-	if _, err := c.Me(); err == nil {
+	if _, err := c.Me(context.Background()); err == nil {
 		t.Fatal("expected an error for a 401 response")
 	}
 }
@@ -115,7 +116,7 @@ func TestClient_NotFoundOnUpdate(t *testing.T) {
 
 	c := NewClient("key")
 	c.BaseURL = srv.URL
-	if _, err := c.UpdateCollection("gone", []byte(`{}`)); err == nil {
+	if _, err := c.UpdateCollection(context.Background(), "gone", []byte(`{}`)); err == nil {
 		t.Fatal("expected an error for a 404 response")
 	}
 }
@@ -133,7 +134,7 @@ func TestClient_Me(t *testing.T) {
 
 	c := NewClient("key")
 	c.BaseURL = srv.URL
-	me, err := c.Me()
+	me, err := c.Me(context.Background())
 	if err != nil {
 		t.Fatalf("Me: %v", err)
 	}

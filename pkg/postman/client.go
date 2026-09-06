@@ -6,6 +6,7 @@ package postman
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,8 +47,8 @@ type MeResponse struct {
 }
 
 // Me calls GET /me. It is used to validate that an API key is well-formed and authorized.
-func (c *Client) Me() (*MeResponse, error) {
-	req, err := http.NewRequest(http.MethodGet, c.BaseURL+"/me", nil)
+func (c *Client) Me(ctx context.Context) (*MeResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/me", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +85,7 @@ type CollectionResponse struct {
 // collectionJSON must be the body of the collection (with info, item, etc.); the
 // envelope {"collection": ...} is added automatically. workspaceUID is optional —
 // when empty, Postman uses the user's default workspace.
-func (c *Client) CreateCollection(collectionJSON []byte, workspaceUID string) (*CollectionResponse, error) {
+func (c *Client) CreateCollection(ctx context.Context, collectionJSON []byte, workspaceUID string) (*CollectionResponse, error) {
 	body, err := wrapCollection(collectionJSON)
 	if err != nil {
 		return nil, err
@@ -93,7 +94,7 @@ func (c *Client) CreateCollection(collectionJSON []byte, workspaceUID string) (*
 	if workspaceUID != "" {
 		url += "?workspace=" + workspaceUID
 	}
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +105,7 @@ func (c *Client) CreateCollection(collectionJSON []byte, workspaceUID string) (*
 
 // UpdateCollection PUTs to /collections/{uid}. The collection's info._postman_id
 // is set/overwritten with uid before sending so Postman doesn't reject it.
-func (c *Client) UpdateCollection(uid string, collectionJSON []byte) (*CollectionResponse, error) {
+func (c *Client) UpdateCollection(ctx context.Context, uid string, collectionJSON []byte) (*CollectionResponse, error) {
 	patched, err := injectPostmanID(collectionJSON, uid)
 	if err != nil {
 		return nil, err
@@ -113,7 +114,7 @@ func (c *Client) UpdateCollection(uid string, collectionJSON []byte) (*Collectio
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest(http.MethodPut, c.BaseURL+"/collections/"+uid, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.BaseURL+"/collections/"+uid, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
