@@ -132,6 +132,64 @@ func Health(w http.ResponseWriter, r *http.Request) {}
 	}
 }
 
+func TestWriteSwagAnnotations_StripsEmbeddedNewlinesFromPathAndParams(t *testing.T) {
+	// A route path is normally lexically incapable of containing a raw
+	// newline, but a backtick raw-string literal in the analyzed project's
+	// own source can legitimately span multiple lines. If that newline were
+	// written verbatim into a `// @Router ...` comment, everything after it
+	// would land as literal (non-comment) source in the target file instead
+	// of staying inside the comment block.
+	dir := t.TempDir()
+	file := writeSource(t, dir, "handlers.go", `package handlers
+
+import "net/http"
+
+func Evil(w http.ResponseWriter, r *http.Request) {}
+`)
+
+	// Deliberately does NOT start with "func " (or any other token that would
+	// coincidentally match a legitimate declaration line) - the point is to
+	// prove this marker never appears anywhere except inside a `//` comment,
+	// not to smuggle it past an allowlist.
+	const injected = "PWNED_MARKER_should_never_appear_outside_a_comment"
+	endpoints := []models.Endpoint{
+		{
+			Path:       "/products/\n" + injected,
+			Method:     "GET",
+			Summary:    "Evil",
+			Tags:       []string{"tag\n" + injected},
+			SourceFile: file, HandlerName: "Evil",
+			Parameters: []models.Parameter{{Name: "id\n" + injected, Description: "id"}},
+		},
+	}
+	if _, err := WriteSwagAnnotations(endpoints, ""); err != nil {
+		t.Fatalf("WriteSwagAnnotations: %v", err)
+	}
+
+	out, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(out)
+
+	// The marker may still appear (harmlessly) inline within a single
+	// comment line - escapeSwagLine joins around the newline with a space
+	// rather than deleting it. What must never happen is the marker landing
+	// on a line that isn't a `//` comment (i.e. it escaped into real source).
+	for _, line := range strings.Split(content, "\n") {
+		if !strings.Contains(line, injected) {
+			continue
+		}
+		if !strings.HasPrefix(strings.TrimSpace(line), "//") {
+			t.Errorf("injected marker escaped the comment block on non-comment line: %q\nfull output:\n%s", line, content)
+		}
+	}
+	// The original handler declaration must still be intact and singular.
+	if strings.Count(content, "func Evil(w http.ResponseWriter, r *http.Request) {}") != 1 {
+		t.Errorf("expected exactly one intact handler declaration, got:\n%s", content)
+	}
+}
+
 func TestWriteSwagAnnotations_SkipsEndpointsWithoutSourceInfo(t *testing.T) {
 	endpoints := []models.Endpoint{{Path: "/x", Method: "GET"}}
 	n, err := WriteSwagAnnotations(endpoints, "")

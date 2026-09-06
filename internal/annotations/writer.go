@@ -83,13 +83,17 @@ func buildSwagBlock(ep models.Endpoint, all []models.Endpoint, basePath string) 
 		lines = append(lines, "// @Description "+escapeSwagLine(ep.Description))
 	}
 	if len(ep.Tags) > 0 {
-		lines = append(lines, "// @Tags "+strings.Join(ep.Tags, ","))
+		escapedTags := make([]string, len(ep.Tags))
+		for i, t := range ep.Tags {
+			escapedTags[i] = escapeSwagLine(t)
+		}
+		lines = append(lines, "// @Tags "+strings.Join(escapedTags, ","))
 	}
 	lines = append(lines, "// @Accept json")
 	lines = append(lines, "// @Produce json")
 
 	for _, p := range ep.Parameters {
-		lines = append(lines, fmt.Sprintf("// @Param %s path string true %q", p.Name, p.Description))
+		lines = append(lines, fmt.Sprintf("// @Param %s path string true %q", escapeSwagLine(p.Name), p.Description))
 	}
 	if ep.RequestBody != nil {
 		typeName := ep.RequestTypeName
@@ -108,15 +112,25 @@ func buildSwagBlock(ep models.Endpoint, all []models.Endpoint, basePath string) 
 		lines = append(lines, "// @Security BearerAuth")
 	}
 	for _, e := range all {
-		path := e.Path
+		path := escapeSwagLine(e.Path)
 		if basePath != "" {
-			path = strings.TrimSuffix(basePath, "/") + "/" + strings.TrimPrefix(path, "/")
+			path = strings.TrimSuffix(escapeSwagLine(basePath), "/") + "/" + strings.TrimPrefix(path, "/")
 		}
 		lines = append(lines, fmt.Sprintf("// @Router %s [%s]", path, strings.ToLower(e.Method)))
 	}
 	return lines
 }
 
+// escapeSwagLine strips embedded newlines before a value is interpolated
+// into a `// @...` comment line. Every such value here ultimately traces
+// back to a string literal in the analyzed project's own source (route
+// paths, handler doc comments) — normally that can't contain a raw newline,
+// but a backtick raw-string literal legitimately can. Without this, a
+// deliberately crafted route path containing one could break out of the `//`
+// comment when --write-annotations writes it back, turning the rest of the
+// crafted string into literal (non-comment) lines injected into the
+// project's own .go file — every field embedded here must go through this,
+// not just the ones that happen to look free-form (Summary/Description).
 func escapeSwagLine(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	return strings.TrimSpace(s)
