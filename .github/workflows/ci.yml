@@ -56,11 +56,23 @@ jobs:
     name: gosec, govulncheck
     runs-on: ubuntu-latest
     steps:
-      # Neither tool needs a separate setup-go step here: gosec's action runs
-      # in its own Docker image with a bundled toolchain, and govulncheck-
-      # action does its own checkout + setup-go internally (go-version-file
-      # below points it at this repo's go.mod).
       - uses: actions/checkout@v4
+
+      # gosec via `go install` on the runner's own toolchain, not the
+      # securego/gosec Docker action: that image bundles its own fixed Go
+      # version and sets GOTOOLCHAIN=local internally, so the moment go.mod's
+      # `go` directive passes whatever Go release that image happens to
+      # bundle, it silently fails to load every package (0 files, 0 issues,
+      # no useful signal) - discovered when bumping to 1.26.8 broke it
+      # against gosec's then-current image (bundled 1.26.5). Installing from
+      # source with actions/setup-go sidesteps that ceiling entirely, the
+      # same way govulncheck-action already does below.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
 
       # Excludes below are project-wide, not per-line #nosec, because each is
       # a structural property of what this tool does, not a one-off:
@@ -79,9 +91,8 @@ jobs:
       #     .apidoc-gen.yaml config file are meant to be shared/committed;
       #     0755/0644 is correct for them. Anything actually secret (the
       #     Postman credentials file) is already 0600/0700 and not flagged.
-      - uses: securego/gosec@v2.29.0
-        with:
-          args: -exclude=G204,G301,G304,G306 ./...
+      - name: Run gosec
+        run: gosec -exclude=G204,G301,G304,G306 ./...
 
       - uses: golang/govulncheck-action@v1.1.0
         with:
