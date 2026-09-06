@@ -13,7 +13,9 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/devenock/api-doc-gen/cm
 
 # Runtime stage
 FROM alpine:3.19
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates \
+    && addgroup -S apidocgen && adduser -S apidocgen -G apidocgen
 COPY --from=builder /api-doc-gen /usr/local/bin/api-doc-gen
 WORKDIR /workspace
+USER apidocgen
 ENTRYPOINT ["/usr/local/bin/api-doc-gen"]

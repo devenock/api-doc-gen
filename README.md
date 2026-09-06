@@ -148,6 +148,10 @@ docker run --rm \
   api-doc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
+The container runs as a non-root user. If the generated files come out owned by
+a UID your host user can't write to, add `--user "$(id -u):$(id -g)"` to the
+`docker run` command above.
+
 ---
 
 ## Troubleshooting
