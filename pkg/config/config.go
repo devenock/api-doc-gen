@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,18 @@ type Config struct {
 
 	// WriteAnnotations writes swag-style comment blocks above handler functions.
 	WriteAnnotations bool
+
+	// OutputFromFlag is true when Output was set via an explicit --output/-o
+	// flag on this invocation, as opposed to a config file, env var, or the
+	// default. Output resolves relative to the current working directory (not
+	// ProjectPath — see the README's cross-directory example, which passes an
+	// absolute -o for exactly this reason), and Validate only trusts an
+	// Output that escapes the working directory tree when a human typed it on
+	// the command line for this run. A malicious .apidoc-gen.yaml committed
+	// to a repo (auth_middleware and friends are meant to be shared/trusted,
+	// but output is a filesystem write target) must not be able to silently
+	// redirect where generate writes files.
+	OutputFromFlag bool
 
 	// SkipBuildCheck disables the `go vet ./...` pre-flight check that runs
 	// against the target project by default. The check only warns (it never
@@ -126,6 +139,12 @@ func (c *Config) Validate() error {
 		c.Output = "./docs"
 	}
 
+	if !c.OutputFromFlag {
+		if err := checkOutputWithinWorkingDir(c.Output); err != nil {
+			return err
+		}
+	}
+
 	if c.Title == "" {
 		c.Title = detectProjectName(c.ProjectPath)
 	}
@@ -139,6 +158,32 @@ func (c *Config) Validate() error {
 		// — a bare "git" never matches a real directory and silently excludes
 		// nothing.
 		c.Exclude = []string{"vendor", "node_modules", ".git", "test", "tests"}
+	}
+	return nil
+}
+
+// checkOutputWithinWorkingDir rejects an Output path that resolves outside
+// the current working directory's tree. Only called when Output did not come
+// from an explicit --output/-o flag (see OutputFromFlag) — i.e. it came from
+// a config file, env var, or the "./docs" default, none of which a user
+// necessarily typed or reviewed for this specific run.
+func checkOutputWithinWorkingDir(output string) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve working directory: %w", err)
+	}
+	absOutput, err := filepath.Abs(output)
+	if err != nil {
+		return fmt.Errorf("resolve output path %q: %w", output, err)
+	}
+	rel, err := filepath.Rel(cwd, absOutput)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf(
+			"output directory %q resolves outside the current directory (%s) — "+
+				"this came from a config file, env var, or the default, not something typed on the command line. "+
+				"Pass --output explicitly to confirm this is intentional",
+			output, cwd,
+		)
 	}
 	return nil
 }

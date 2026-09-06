@@ -107,6 +107,39 @@ func TestValidate_SymlinkedGoModIsIgnored(t *testing.T) {
 	}
 }
 
+func TestValidate_RejectsOutputEscapingWorkingDirWhenNotFromFlag(t *testing.T) {
+	// A malicious .apidoc-gen.yaml (or env var) redirecting Output outside the
+	// working directory must be refused unless the user typed --output
+	// themselves for this run.
+	outside := filepath.Join(t.TempDir(), "elsewhere")
+	cfg := &Config{ProjectPath: t.TempDir(), DocType: "swagger", Output: outside}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for Output escaping the working directory, got nil")
+	}
+}
+
+func TestValidate_AllowsOutputEscapingWorkingDirWhenFromFlag(t *testing.T) {
+	// The same path is fine when the user explicitly passed --output/-o for
+	// this invocation - that's the README's documented cross-directory
+	// pattern (-o /path/to/other-project/docs).
+	outside := filepath.Join(t.TempDir(), "elsewhere")
+	cfg := &Config{ProjectPath: t.TempDir(), DocType: "swagger", Output: outside, OutputFromFlag: true}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error for explicit --output: %v", err)
+	}
+}
+
+func TestValidate_AllowsOutputUnderWorkingDir(t *testing.T) {
+	// The common cases - default "./docs" and any relative path under cwd -
+	// must never be blocked regardless of source.
+	for _, out := range []string{"", "./docs", "docs", "./nested/docs"} {
+		cfg := &Config{ProjectPath: t.TempDir(), DocType: "swagger", Output: out}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("Output=%q: unexpected error: %v", out, err)
+		}
+	}
+}
+
 func TestShouldExclude(t *testing.T) {
 	cfg := &Config{Exclude: []string{"vendor", ".git"}}
 	if !cfg.ShouldExclude("vendor") {

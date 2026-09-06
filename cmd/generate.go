@@ -113,6 +113,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		PostmanDirectImport: viper.GetBool("direct-import"),
 		WriteAnnotations:    viper.GetBool("write-annotations"),
 		SkipBuildCheck:      viper.GetBool("skip-build-check"),
+		OutputFromFlag:      cmd.Flags().Changed("output"),
 	}
 	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
 	_ = viper.UnmarshalKey("servers", &cfg.Servers)
