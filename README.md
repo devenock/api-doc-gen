@@ -12,6 +12,28 @@ Supports **Gin, Echo, Fiber, Gorilla Mux, Chi** (auto-detected).
 
 ---
 
+## Why
+
+The standard way to generate OpenAPI docs for a Go API — [`swaggo/swag`](https://github.com/swaggo/swag) — works by parsing comment annotations you write above every handler:
+
+```go
+// @Summary      Show an account
+// @Router       /accounts/{id} [get]
+// @Param        id   path  int  true  "Account ID"
+// @Success      200  {object}  model.Account
+func (c *Controller) ShowAccount(ctx *gin.Context) {
+```
+
+That's a real, well-established tool, but the annotations are a second source of truth you maintain by hand: add an endpoint and forget the comment block, and the docs silently fall behind the code with no error to catch it.
+
+**api-doc-gen removes that step entirely.** It reads your code as-is — route registrations, handler signatures, request/response structs, binding calls — via Go's own AST parser, the same way `go vet` or `gofmt` do, and builds the OpenAPI/Postman spec from what's actually there. No comments to write, no existing code to touch.
+
+One consequence of that: because there's nothing to keep in sync, docs stay accurate as you build incrementally. Register one handler, generate, ship; add the next one whenever it's ready, generate again — each run reflects exactly what's in the code at that moment, with zero extra steps. (To be precise: every run is a full, fresh scan of the project, not a cached diff of what changed — "incremental" describes the workflow this enables, not an incremental-build engine under the hood.)
+
+"No annotations" only helps if the scanner is actually reliable, so the analyzer is built to degrade honestly rather than guess silently: it resolves route groups, auth middleware, embedded struct fields, query/path parameters, and response bodies across real-world patterns in Gin, Echo, Fiber, Gorilla Mux, and Chi; falls back to generic `net/http`-style detection for anything else; and surfaces ambiguity instead of hiding it — a `.go` file that fails to parse, a framework it can't confidently pick between, or zero endpoints found are all reported explicitly (`-v` for detail) rather than producing a spec that looks complete but silently isn't.
+
+---
+
 ## Install
 
 Requires Go 1.26.8 or later.
