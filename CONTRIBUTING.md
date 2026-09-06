@@ -26,7 +26,7 @@ By participating, you agree to uphold our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Project layout
 
-- `cmd/` – CLI commands (Cobra), flags, and the generate/init run logic.
+- `cmd/` – CLI commands (Cobra): `root.go` (root command, config loading), `generate.go`, `init.go`, `postman.go` (one file per subcommand/concern).
 - `pkg/analyzer/` – Code analysis (framework detection, route/schema parsing).
 - `pkg/generator/` – Output generators (Swagger/OpenAPI, Postman).
 - `pkg/models/` – Shared data structures.
@@ -51,6 +51,14 @@ By participating, you agree to uphold our [Code of Conduct](CODE_OF_CONDUCT.md).
 - Write clear, idiomatic Go. Follow standard formatting (`gofmt` / `goimports`).
 - New public APIs should have a short doc comment.
 - Prefer small, reviewable PRs. For large features, consider opening an issue first to discuss.
+
+## Releases (maintainers)
+
+Pushing a tag matching `v*` (e.g. `v1.2.0`) triggers `.github/workflows/release.yml`,
+which runs GoReleaser (`.goreleaser.yaml`) to build Linux/macOS/Windows binaries,
+publish them to GitHub Releases, and embed the version so `api-doc-gen --version`
+reports it. Validate the config locally with `goreleaser check`, or dry-run a full
+build without publishing via `goreleaser release --snapshot --clean`.
 
 ## Questions
 

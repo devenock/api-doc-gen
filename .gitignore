@@ -1,5 +1,6 @@
 # Build output
 bin/
+dist/
 apidoc-gen
 api-doc-gen
 *.exe

@@ -16,6 +16,9 @@ go install github.com/devenock/api-doc-gen@latest
 
 The binary lands in `$(go env GOPATH)/bin` (usually `~/go/bin`). Make sure that directory is on your `PATH`.
 
+Prebuilt binaries for Linux, macOS, and Windows (amd64/arm64) are also published on the
+[Releases page](https://github.com/devenock/api-doc-gen/releases) for each tagged version.
+
 ---
 
 ## Generate docs for your project
