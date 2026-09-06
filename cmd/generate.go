@@ -214,7 +214,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 
 	// --write-annotations: write swag comments above handler functions.
 	if viper.GetBool("write-annotations") || cfg.WriteAnnotations {
-		n, err := annotations.WriteSwagAnnotations(apiSpec.Endpoints, cfg.BasePath)
+		n, err := annotations.WriteSwagAnnotations(cfg.ProjectPath, apiSpec.Endpoints, cfg.BasePath)
 		if err != nil && !quiet {
 			fmt.Fprintf(os.Stderr, "Warning: write-annotations: %v\n", err)
 		} else if !quiet && n > 0 {

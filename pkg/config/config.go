@@ -79,17 +79,33 @@ type ServerConfig struct {
 	Description string `yaml:"description"`
 }
 
+// readProjectFile reads a single well-known file (here, just go.mod) directly
+// under projectPath, refusing to follow it if it's a symlink — a crafted
+// project could otherwise point it at an arbitrary file elsewhere on disk.
+// Uses os.Root (Go 1.24+) rather than a plain Lstat-then-ReadFile so the
+// symlink check and the read are confined to projectPath's tree as a single
+// operation instead of two separate steps a race could fall between (see the
+// matching helper and its longer rationale in pkg/analyzer).
+func readProjectFile(projectPath, name string) ([]byte, error) {
+	root, err := os.OpenRoot(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	info, err := root.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, os.ErrNotExist
+	}
+	return root.ReadFile(name)
+}
+
 // detectProjectName reads go.mod and returns a human-readable project name
 // derived from the module path's last segment. Falls back to "API Documentation".
 func detectProjectName(projectPath string) string {
-	modPath := filepath.Join(projectPath, "go.mod")
-	// Don't follow a symlinked go.mod — a crafted project could point it at
-	// an arbitrary file elsewhere on disk (see the matching check in
-	// pkg/analyzer for the same reasoning applied to the directory walk).
-	if info, err := os.Lstat(modPath); err != nil || info.Mode()&os.ModeSymlink != 0 {
-		return "API Documentation"
-	}
-	data, err := os.ReadFile(modPath)
+	data, err := readProjectFile(projectPath, "go.mod")
 	if err != nil {
 		return "API Documentation"
 	}

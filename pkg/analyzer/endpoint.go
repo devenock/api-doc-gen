@@ -5,7 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
+	"io/fs"
 	"path/filepath"
 	"strings"
 
@@ -142,12 +142,12 @@ func (a *Analyzer) resolveHandlerSourceFiles() {
 		if ep.HandlerPackage == "" {
 			continue
 		}
-		filePath := findFileWithFunction(a.config.ProjectPath, a.config.Exclude, ep.HandlerPackage, ep.HandlerName)
+		filePath := a.findFileWithFunction(ep.HandlerPackage, ep.HandlerName)
 		if filePath != "" {
 			ep.SourceFile = filePath
 			// Parse with comments so extractHandlerComments can read doc blocks.
 			fset := token.NewFileSet()
-			node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+			node, err := a.rootParseFile(fset, filePath, parser.ParseComments)
 			if err == nil {
 				// Extract the doc comment — overrides the humanized-name fallback.
 				a.extractHandlerComments(node, ep.HandlerName, ep)
@@ -198,7 +198,7 @@ func (a *Analyzer) resolveRemainingResponses() {
 
 		if ep.SourceFile != "" {
 			fset := token.NewFileSet()
-			if node, err := parser.ParseFile(fset, ep.SourceFile, nil, 0); err == nil {
+			if node, err := a.rootParseFile(fset, ep.SourceFile, 0); err == nil {
 				for status, resp := range a.extractResponses(node, ep.HandlerName) {
 					ep.Responses[status] = resp
 				}
@@ -208,14 +208,11 @@ func (a *Analyzer) resolveRemainingResponses() {
 			}
 		}
 
-		_ = filepath.Walk(a.config.ProjectPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil || len(ep.Responses) != 0 {
+		_ = a.walkProjectDir(func(path string, d fs.DirEntry) error {
+			if len(ep.Responses) != 0 {
 				return nil
 			}
-			if isSymlink(info) {
-				return nil
-			}
-			if info.IsDir() {
+			if d.IsDir() {
 				for _, ex := range a.config.Exclude {
 					if filepath.Base(path) == ex {
 						return filepath.SkipDir
@@ -226,12 +223,12 @@ func (a *Analyzer) resolveRemainingResponses() {
 			if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") || path == ep.SourceFile {
 				return nil
 			}
-			raw, readErr := os.ReadFile(path)
+			raw, readErr := a.rootReadFile(path)
 			if readErr != nil || !strings.Contains(string(raw), " "+ep.HandlerName+"(") {
 				return nil
 			}
 			fset := token.NewFileSet()
-			node, err := parser.ParseFile(fset, path, nil, 0)
+			node, err := a.rootParseFile(fset, path, 0)
 			if err != nil {
 				return nil
 			}
@@ -269,14 +266,11 @@ func (a *Analyzer) resolveRemainingRequestBodies() {
 
 		// 2. Walk the project looking for a file that defines the handler.
 		//    Use a fast string pre-filter to avoid parsing every .go file.
-		_ = filepath.Walk(a.config.ProjectPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil || ep.RequestBody != nil {
+		_ = a.walkProjectDir(func(path string, d fs.DirEntry) error {
+			if ep.RequestBody != nil {
 				return nil
 			}
-			if isSymlink(info) {
-				return nil
-			}
-			if info.IsDir() {
+			if d.IsDir() {
 				for _, ex := range a.config.Exclude {
 					if filepath.Base(path) == ex {
 						return filepath.SkipDir
@@ -287,7 +281,7 @@ func (a *Analyzer) resolveRemainingRequestBodies() {
 			if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") || path == ep.SourceFile {
 				return nil
 			}
-			raw, readErr := os.ReadFile(path)
+			raw, readErr := a.rootReadFile(path)
 			if readErr != nil {
 				return nil
 			}
@@ -315,7 +309,7 @@ func (a *Analyzer) resolveRemainingRequestBodies() {
 // Returns true if a schema was successfully attached.
 func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) bool {
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, filePath, nil, 0)
+	node, err := a.rootParseFile(fset, filePath, 0)
 	if err != nil {
 		return false
 	}
@@ -349,9 +343,9 @@ func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) boo
 // When the package-name match finds nothing (pkgName may be a variable/instance name, not a package), it falls back to
 // searching the whole project for any file that defines funcName — handling patterns like "userHandler.CreateUser"
 // where "userHandler" is a struct instance, not a package.
-func findFileWithFunction(projectPath string, exclude []string, pkgName, funcName string) string {
+func (a *Analyzer) findFileWithFunction(pkgName, funcName string) string {
 	skipDir := func(path string) bool {
-		for _, ex := range exclude {
+		for _, ex := range a.config.Exclude {
 			if filepath.Base(path) == ex {
 				return true
 			}
@@ -361,14 +355,8 @@ func findFileWithFunction(projectPath string, exclude []string, pkgName, funcNam
 
 	// Pass 1: match by package declaration or directory name.
 	var found string
-	_ = filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if isSymlink(info) {
-			return nil
-		}
-		if info.IsDir() {
+	_ = a.walkProjectDir(func(path string, d fs.DirEntry) error {
+		if d.IsDir() {
 			if skipDir(path) {
 				return filepath.SkipDir
 			}
@@ -378,7 +366,7 @@ func findFileWithFunction(projectPath string, exclude []string, pkgName, funcNam
 			return nil
 		}
 		fset := token.NewFileSet()
-		node, err := parser.ParseFile(fset, path, nil, 0)
+		node, err := a.rootParseFile(fset, path, 0)
 		if err != nil {
 			return nil
 		}
@@ -402,14 +390,11 @@ func findFileWithFunction(projectPath string, exclude []string, pkgName, funcNam
 	}
 
 	// Pass 2: pkgName may be a variable/instance — search all files by function name using a fast text pre-filter.
-	_ = filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil || found != "" {
+	_ = a.walkProjectDir(func(path string, d fs.DirEntry) error {
+		if found != "" {
 			return nil
 		}
-		if isSymlink(info) {
-			return nil
-		}
-		if info.IsDir() {
+		if d.IsDir() {
 			if skipDir(path) {
 				return filepath.SkipDir
 			}
@@ -418,12 +403,12 @@ func findFileWithFunction(projectPath string, exclude []string, pkgName, funcNam
 		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		raw, readErr := os.ReadFile(path)
+		raw, readErr := a.rootReadFile(path)
 		if readErr != nil || !strings.Contains(string(raw), " "+funcName+"(") {
 			return nil
 		}
 		fset := token.NewFileSet()
-		node, err := parser.ParseFile(fset, path, nil, 0)
+		node, err := a.rootParseFile(fset, path, 0)
 		if err != nil {
 			return nil
 		}

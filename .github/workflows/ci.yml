@@ -64,9 +64,13 @@ jobs:
 
       # Excludes below are project-wide, not per-line #nosec, because each is
       # a structural property of what this tool does, not a one-off:
-      #   G304/G703 (file/path from a variable) - the analyzer's whole job is
-      #     reading and, for --write-annotations, writing files discovered by
-      #     walking the target project directory.
+      #   G304 (file inclusion via variable) - the analyzer's whole job is
+      #     reading files discovered by walking the target project directory.
+      #     Every such read goes through Analyzer.root (os.Root, Go 1.24+),
+      #     which confines it to the project tree and closes the TOCTOU gap
+      #     G122 used to flag here (see pkg/analyzer/analyzer.go); this
+      #     exclude is about gosec not recognizing that pattern, not an
+      #     unaddressed risk.
       #   G204 (subprocess launched with a variable) - opening a browser/the
       #     Postman desktop app; every call site uses a fixed binary name
       #     (open/xdg-open/cmd, or one resolved via exec.LookPath) with the
@@ -75,14 +79,9 @@ jobs:
       #     .apidoc-gen.yaml config file are meant to be shared/committed;
       #     0755/0644 is correct for them. Anything actually secret (the
       #     Postman credentials file) is already 0600/0700 and not flagged.
-      #   G122 (TOCTOU on file reads inside filepath.Walk) - a real, known
-      #     residual gap (isSymlink already covers the common case: a
-      #     pre-existing symlink at walk time) that warrants a proper fix via
-      #     Go 1.24's os.Root, tracked as follow-up work rather than done
-      #     under this exclude.
       - uses: securego/gosec@v2.29.0
         with:
-          args: -exclude=G122,G204,G301,G304,G306,G703 ./...
+          args: -exclude=G204,G301,G304,G306 ./...
 
       - uses: golang/govulncheck-action@v1.1.0
         with:

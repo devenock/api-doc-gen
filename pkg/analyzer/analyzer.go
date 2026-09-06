@@ -19,6 +19,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,35 +27,6 @@ import (
 	"github.com/devenock/api-doc-gen/pkg/config"
 	"github.com/devenock/api-doc-gen/pkg/models"
 )
-
-// isSymlink reports whether info describes a symbolic link. filepath.Walk
-// never recurses into a symlinked directory (Lstat reports it as a symlink,
-// not a directory), but it does NOT protect against a symlinked *file* —
-// os.ReadFile/parser.ParseFile follow symlinks at the OS level regardless of
-// how Walk reached the path. Without this check, a crafted repository
-// containing a `.go`-named symlink pointing outside the project tree (e.g.
-// at another local Go module, or any other file that happens to parse as
-// Go) would have that target's content read and folded into the generated
-// docs — and, with --write-annotations, written back to. Every
-// filepath.Walk callback in this package must skip symlinks.
-func isSymlink(info os.FileInfo) bool {
-	return info.Mode()&os.ModeSymlink != 0
-}
-
-// readNonSymlinkFile reads path only if it is a regular file, not a
-// symlink — the same defense-in-depth reasoning as isSymlink, applied to
-// the handful of single-file reads (go.mod, .env) that sit outside the
-// filepath.Walk callbacks and so aren't covered by that check.
-func readNonSymlinkFile(path string) ([]byte, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if isSymlink(info) {
-		return nil, os.ErrNotExist
-	}
-	return os.ReadFile(path)
-}
 
 // Analyzer analyzes the codebase to extract API information
 type Analyzer struct {
@@ -70,6 +42,96 @@ type Analyzer struct {
 	parseDiagnostics []ParseDiagnostic        // .go files that matched the walk but failed to parse — see Diagnostics()
 	authMatches      []string                 // middleware names matched as auth-like — see AuthMiddlewareMatches()
 	bindHintMatches  []string                 // call names matched as JSON-binding by hint (not exact method name) — see BindHintMatches()
+
+	// root scopes every file read/parse in this package to config.ProjectPath's
+	// tree, opened once in Analyze() and closed when it returns. Plain
+	// filepath.Walk + os.ReadFile/parser.ParseFile checks whether an entry is
+	// a symlink (via Lstat) separately from actually opening it — a crafted
+	// repository could swap a regular file for a symlink pointing outside the
+	// project tree in the window between the two, and the subsequent
+	// os.ReadFile/parser.ParseFile-by-path would follow it regardless of what
+	// the walk saw. os.Root (Go 1.24+) resolves and opens in one confined
+	// operation instead: root.Open of anything that resolves outside the
+	// root fails outright ("path escapes from parent"), closing that race
+	// rather than just narrowing it. See walkProjectDir/rootReadFile/
+	// rootParseFile below, which every file access in this package goes
+	// through instead of calling os/go-parser directly.
+	root *os.Root
+}
+
+// walkProjectDir walks a.root (== a.config.ProjectPath) and invokes fn for
+// every entry, converting fs.WalkDir's root-relative path back into the same
+// full-path form (config.ProjectPath-joined) every caller already expects,
+// so existing exclude-list/extension/SourceFile-equality comparisons keep
+// working unchanged. Skips symlinks unconditionally — fs.WalkDir reports a
+// symlinked directory's type without descending into it (matching
+// filepath.Walk's behavior), so this only needs to check d.Type(), not
+// separately guard against recursing into one.
+func (a *Analyzer) walkProjectDir(fn func(fullPath string, d fs.DirEntry) error) error {
+	return fs.WalkDir(a.root.FS(), ".", func(relPath string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		return fn(filepath.Join(a.config.ProjectPath, relPath), d)
+	})
+}
+
+// rootReadFile reads fullPath (which must be config.ProjectPath-joined, as
+// every path this package produces is) through a.root — see the Analyzer.root
+// doc comment for why this, rather than os.ReadFile, is required. Refuses a
+// symlink at rel itself, matching walkProjectDir's unconditional symlink
+// skip: os.Root follows symlinks that stay within the root (only blocking
+// ones that escape it), so without this an in-root symlink swapped in after
+// the walk already passed it as a regular file would still be followed.
+func (a *Analyzer) rootReadFile(fullPath string) ([]byte, error) {
+	rel, err := filepath.Rel(a.config.ProjectPath, fullPath)
+	if err != nil {
+		return nil, err
+	}
+	info, err := a.root.Lstat(rel)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, os.ErrNotExist
+	}
+	return a.root.ReadFile(rel)
+}
+
+// rootParseFile parses fullPath through rootReadFile instead of letting
+// parser.ParseFile open the path directly — same reasoning as rootReadFile.
+// fullPath is still passed to parser.ParseFile as the filename (for position
+// info in the returned AST and any parse-error messages).
+func (a *Analyzer) rootParseFile(fset *token.FileSet, fullPath string, mode parser.Mode) (*ast.File, error) {
+	data, err := a.rootReadFile(fullPath)
+	if err != nil {
+		return nil, err
+	}
+	return parser.ParseFile(fset, fullPath, data, mode)
+}
+
+// readProjectFile reads a single well-known file (go.mod, .env) directly
+// under projectPath, refusing a symlink exactly as rootReadFile does — used
+// by the package-level DetectFrameworks/detectServerURL, which run before
+// (or without) an Analyzer/its root, so they open a short-lived root of
+// their own scoped to just this one read.
+func readProjectFile(projectPath, name string) ([]byte, error) {
+	root, err := os.OpenRoot(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	info, err := root.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, os.ErrNotExist
+	}
+	return root.ReadFile(name)
 }
 
 // BindHintMatches returns every distinct call name matched as a JSON-binding
@@ -149,6 +211,13 @@ func (a *Analyzer) Framework() string {
 
 // Analyze scans the codebase and extracts API information
 func (a *Analyzer) Analyze() (*models.APISpec, error) {
+	root, err := os.OpenRoot(a.config.ProjectPath)
+	if err != nil {
+		return nil, fmt.Errorf("open project directory: %w", err)
+	}
+	a.root = root
+	defer a.root.Close()
+
 	// Detect framework if not specified
 	if a.config.Framework == "" {
 		if err := a.detectFramework(); err != nil {
@@ -163,14 +232,8 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 	}
 
 	// Pass 1: collect type definitions from all .go files for request/response schema resolution
-	err := filepath.Walk(a.config.ProjectPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if isSymlink(info) {
-			return nil
-		}
-		if info.IsDir() {
+	err = a.walkProjectDir(func(path string, d fs.DirEntry) error {
+		if d.IsDir() {
 			for _, exclude := range a.config.Exclude {
 				if filepath.Base(path) == exclude {
 					return filepath.SkipDir
@@ -194,14 +257,8 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 	a.resolveEmbeddedFields()
 
 	// Pass 2: extract routes and resolve handler request/response from type registry
-	err = filepath.Walk(a.config.ProjectPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if isSymlink(info) {
-			return nil
-		}
-		if info.IsDir() {
+	err = a.walkProjectDir(func(path string, d fs.DirEntry) error {
+		if d.IsDir() {
 			for _, exclude := range a.config.Exclude {
 				if filepath.Base(path) == exclude {
 					return filepath.SkipDir
@@ -324,7 +381,7 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 // project's .env file for a PORT / APP_PORT / SERVER_PORT entry.
 // Falls back to http://localhost:8080 when nothing is found.
 func detectServerURL(projectPath string) string {
-	data, err := readNonSymlinkFile(filepath.Join(projectPath, ".env"))
+	data, err := readProjectFile(projectPath, ".env")
 	if err != nil {
 		return "http://localhost:8080"
 	}
@@ -367,8 +424,7 @@ var frameworkMarkers = []struct {
 // by some other dependency, and never imported by the project's own code,
 // must not count as "this project uses it".
 func DetectFrameworks(projectPath string) []string {
-	goModPath := filepath.Join(projectPath, "go.mod")
-	content, err := readNonSymlinkFile(goModPath)
+	content, err := readProjectFile(projectPath, "go.mod")
 	if err != nil {
 		return nil
 	}
@@ -422,7 +478,7 @@ func (a *Analyzer) detectFramework() error {
 // parseFile parses a Go file and extracts route information
 func (a *Analyzer) parseFile(filePath string) error {
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+	node, err := a.rootParseFile(fset, filePath, parser.ParseComments)
 	if err != nil {
 		// Recorded (not silently dropped) even though pass 1 already parsed
 		// this same file and would have recorded the identical failure —

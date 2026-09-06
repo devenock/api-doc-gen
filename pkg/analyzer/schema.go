@@ -2,7 +2,6 @@ package analyzer
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"reflect"
 	"strings"
@@ -19,7 +18,7 @@ import (
 // collectTypesInFile parses a Go file and adds struct type definitions to the type registry.
 func (a *Analyzer) collectTypesInFile(filePath string) error {
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, filePath, nil, 0)
+	node, err := a.rootParseFile(fset, filePath, 0)
 	if err != nil {
 		a.recordParseFailure(filePath, err)
 		return nil

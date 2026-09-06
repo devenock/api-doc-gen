@@ -37,7 +37,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {}
 		},
 	}
 
-	n, err := WriteSwagAnnotations(endpoints, "/api/v1")
+	n, err := WriteSwagAnnotations(dir, endpoints, "/api/v1")
 	if err != nil {
 		t.Fatalf("WriteSwagAnnotations: %v", err)
 	}
@@ -80,7 +80,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) {}
 	endpoints := []models.Endpoint{
 		{Path: "/users/{id}", Method: "GET", Summary: "GetUser", SourceFile: file, HandlerName: "GetUser"},
 	}
-	if _, err := WriteSwagAnnotations(endpoints, ""); err != nil {
+	if _, err := WriteSwagAnnotations(dir, endpoints, ""); err != nil {
 		t.Fatalf("WriteSwagAnnotations: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func Health(w http.ResponseWriter, r *http.Request) {}
 		{Path: "/health", Method: "GET", Summary: "Health", SourceFile: file, HandlerName: "Health"},
 		{Path: "/healthz", Method: "GET", Summary: "Health", SourceFile: file, HandlerName: "Health"},
 	}
-	n, err := WriteSwagAnnotations(endpoints, "")
+	n, err := WriteSwagAnnotations(dir, endpoints, "")
 	if err != nil {
 		t.Fatalf("WriteSwagAnnotations: %v", err)
 	}
@@ -162,7 +162,7 @@ func Evil(w http.ResponseWriter, r *http.Request) {}
 			Parameters: []models.Parameter{{Name: "id\n" + injected, Description: "id"}},
 		},
 	}
-	if _, err := WriteSwagAnnotations(endpoints, ""); err != nil {
+	if _, err := WriteSwagAnnotations(dir, endpoints, ""); err != nil {
 		t.Fatalf("WriteSwagAnnotations: %v", err)
 	}
 
@@ -192,7 +192,7 @@ func Evil(w http.ResponseWriter, r *http.Request) {}
 
 func TestWriteSwagAnnotations_SkipsEndpointsWithoutSourceInfo(t *testing.T) {
 	endpoints := []models.Endpoint{{Path: "/x", Method: "GET"}}
-	n, err := WriteSwagAnnotations(endpoints, "")
+	n, err := WriteSwagAnnotations(t.TempDir(), endpoints, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

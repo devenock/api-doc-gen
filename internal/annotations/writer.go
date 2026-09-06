@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/devenock/api-doc-gen/pkg/models"
@@ -13,7 +14,20 @@ import (
 
 // WriteSwagAnnotations writes swag-style comment blocks above handler functions for each endpoint that has SourceFile and HandlerName set.
 // basePath is prepended to route paths in @Router (e.g. /api/v1). It can be empty.
-func WriteSwagAnnotations(endpoints []models.Endpoint, basePath string) (written int, err error) {
+// projectPath scopes every read/write to its tree via os.Root (Go 1.24+):
+// SourceFile was discovered during an earlier, separate analysis pass, and
+// this write step runs later still, in its own call — without root
+// confinement, a symlink swapped in for that path anytime in between (a
+// wider window than a single directory walk) would have its target read
+// and, worse, written to, regardless of where it points. See the equivalent
+// guard (with the fuller rationale) in pkg/analyzer.
+func WriteSwagAnnotations(projectPath string, endpoints []models.Endpoint, basePath string) (written int, err error) {
+	root, err := os.OpenRoot(projectPath)
+	if err != nil {
+		return 0, fmt.Errorf("open project directory: %w", err)
+	}
+	defer root.Close()
+
 	// Group by (SourceFile, HandlerName); collect all (path, method) per handler
 	type key struct{ file, handler string }
 	groups := make(map[key][]models.Endpoint)
@@ -26,7 +40,7 @@ func WriteSwagAnnotations(endpoints []models.Endpoint, basePath string) (written
 	}
 
 	for k, eps := range groups {
-		n, e := writeSwagToFile(k.file, k.handler, eps, basePath)
+		n, e := writeSwagToFile(root, projectPath, k.file, k.handler, eps, basePath)
 		if e != nil {
 			return written, e
 		}
@@ -35,14 +49,34 @@ func WriteSwagAnnotations(endpoints []models.Endpoint, basePath string) (written
 	return written, nil
 }
 
-func writeSwagToFile(filePath, handlerName string, endpoints []models.Endpoint, basePath string) (int, error) {
+func writeSwagToFile(root *os.Root, projectPath, filePath, handlerName string, endpoints []models.Endpoint, basePath string) (int, error) {
 	if len(endpoints) == 0 {
 		return 0, nil
 	}
 	ep := endpoints[0] // use first for summary, description, tags, params, body, response
 
+	rel, err := filepath.Rel(projectPath, filePath)
+	if err != nil {
+		return 0, fmt.Errorf("resolve %s relative to project: %w", filePath, err)
+	}
+	// Refuse a symlink exactly as the original analysis walk would have -
+	// os.Root follows symlinks that stay within the root (only escaping ones
+	// are blocked), so this still needs its own explicit check.
+	info, err := root.Lstat(rel)
+	if err != nil {
+		return 0, fmt.Errorf("stat %s: %w", filePath, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return 0, fmt.Errorf("refusing to follow symlink %s", filePath)
+	}
+
+	content, err := root.ReadFile(rel)
+	if err != nil {
+		return 0, fmt.Errorf("read %s: %w", filePath, err)
+	}
+
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+	node, err := parser.ParseFile(fset, filePath, content, parser.ParseComments)
 	if err != nil {
 		return 0, fmt.Errorf("parse %s: %w", filePath, err)
 	}
@@ -60,17 +94,12 @@ func writeSwagToFile(filePath, handlerName string, endpoints []models.Endpoint, 
 		return 0, nil
 	}
 
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return 0, fmt.Errorf("read %s: %w", filePath, err)
-	}
-
 	block := buildSwagBlock(ep, endpoints, basePath)
 	newContent := insertOrReplaceSwagBlock(content, funcLine, block)
 	if string(newContent) == string(content) {
 		return 0, nil
 	}
-	if err := os.WriteFile(filePath, newContent, 0644); err != nil {
+	if err := root.WriteFile(rel, newContent, 0644); err != nil {
 		return 0, fmt.Errorf("write %s: %w", filePath, err)
 	}
 	return 1, nil
