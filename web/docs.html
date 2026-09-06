@@ -193,9 +193,10 @@
     .section { margin-bottom: 2.75rem; }
 
     .section-rule {
-      border: none;
-      border-top: 1px solid var(--border);
-      margin-bottom: 2.75rem;
+      /* One section is shown at a time (see pagination JS below), so these
+         no longer sit between visible content - hidden rather than removed
+         to keep the section markup/spacing untouched. */
+      display: none;
     }
 
     h2 {
@@ -301,6 +302,36 @@
       color: var(--muted);
     }
 
+    /* ── Pager ───────────────────────────────────────────────── */
+    .pager {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+    .pager-link {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      max-width: 48%;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .pager-link:hover { border-color: var(--accent); background: var(--surface); text-decoration: none; }
+    .pager-next { margin-left: auto; text-align: right; align-items: flex-end; }
+    .pager-dir {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .pager-title { font-size: 0.875rem; color: var(--text); }
+
     /* ── Responsive ──────────────────────────────────────────── */
     @media (max-width: 860px) {
       .sidebar { display: none; }
@@ -343,6 +374,7 @@
         </div>
         <div class="nav-section">
           <span class="nav-label">Reference</span>
+          <a class="nav-link" href="#security">Security</a>
           <a class="nav-link" href="#troubleshooting">Troubleshooting</a>
         </div>
       </nav>
@@ -367,7 +399,7 @@
       <!-- Install -->
       <div class="section" id="install">
         <h2>Install</h2>
-        <p>Requires Go 1.24+. The binary is installed to <code>$(go env GOPATH)/bin</code> — usually <code>~/go/bin</code>. Make sure that directory is on your <code>PATH</code>.</p>
+        <p>Requires Go 1.26.8+. The binary is installed to <code>$(go env GOPATH)/bin</code> — usually <code>~/go/bin</code>. Make sure that directory is on your <code>PATH</code>.</p>
         <div class="code-block">
           <pre><code><span class="c"># Add to ~/.zshrc or ~/.bashrc if needed</span>
 export PATH="$PATH:$(go env GOPATH)/bin"</code></pre>
@@ -377,6 +409,10 @@ export PATH="$PATH:$(go env GOPATH)/bin"</code></pre>
         <div class="code-block">
           <pre><code>api-doc-gen --version</code></pre>
           <button class="copy-btn">Copy</button>
+        </div>
+        <div class="callout">
+          No Go toolchain? Prebuilt binaries for Linux, macOS, and Windows (amd64/arm64) are published on the
+          <a href="https://github.com/devenock/api-doc-gen/releases" target="_blank" rel="noopener">Releases page</a> for every tagged version.
         </div>
       </div>
 
@@ -432,7 +468,7 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
             </tbody>
           </table>
         </div>
-        <p><strong>Swagger</strong> — open <code>docs/index.html</code> directly in your browser, or run <code>api-doc-gen serve ./docs</code> to serve it locally and have it open automatically.</p>
+        <p><strong>Swagger</strong> — after generating, a local preview server starts automatically (bound to <code>127.0.0.1</code> only — never exposed to your network) and opens <code>index.html</code> in your browser. Pass <code>-q</code>/<code>--quiet</code> in CI or scripts to skip this. The Swagger UI assets are vendored into the binary and written alongside your docs, so the page works fully offline — no CDN calls, nothing to break if you view it later without a network connection.</p>
         <p><strong>Postman</strong> — open Postman, click <strong>Import</strong> in the sidebar, and drag <code>collection.json</code> onto the dialog. Endpoints are organized into folders by tag, with example request bodies and bearer auth pre-wired.</p>
       </div>
 
@@ -455,6 +491,9 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
               <tr><td><code>--title</code></td><td>API title (default: auto-detected from your <code>go.mod</code> module name)</td></tr>
               <tr><td><code>--version</code></td><td>API version string (default: <code>1.0.0</code>)</td></tr>
               <tr><td><code>--base-path</code></td><td>Prefix prepended to every path</td></tr>
+              <tr><td><code>--write-annotations</code></td><td>Write swag-style <code>// @...</code> comments above same-file handler functions</td></tr>
+              <tr><td><code>--skip-build-check</code></td><td>Skip the <code>go vet ./...</code> pre-flight check against the target project</td></tr>
+              <tr><td><code>-q, --quiet</code></td><td>Suppress progress output and skip the auto-opened browser preview</td></tr>
               <tr><td><code>-v, --verbose</code></td><td>Show detected framework, endpoint count, etc.</td></tr>
             </tbody>
           </table>
@@ -522,15 +561,15 @@ api-doc-gen generate -y --type postman --no-upload</code></pre>
         <h2>Docker</h2>
         <p>Run without installing Go locally. Mount your project as the workspace:</p>
         <div class="code-block">
-          <pre><code>docker build -t apidoc-gen .
+          <pre><code>docker build -t api-doc-gen .
 
 docker run --rm \
   -v "$(pwd)":/workspace \
   -w /workspace \
-  apidoc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
+  api-doc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
-        <p>Replace <code>$(pwd)</code> with the path to your API project if you're not running from its root.</p>
+        <p>Replace <code>$(pwd)</code> with the path to your API project if you're not running from its root. The container runs as a non-root user — if generated files come out owned by a UID your host user can't write to, add <code>--user "$(id -u):$(id -g)"</code> to the <code>docker run</code> command.</p>
       </div>
 
       <hr class="section-rule">
@@ -548,6 +587,21 @@ docker run --rm \
           <button class="copy-btn">Copy</button>
         </div>
         <p>Exit codes: <code>0</code> success · <code>1</code> validation error · <code>2</code> runtime error.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Security -->
+      <div class="section" id="security">
+        <h2>Security</h2>
+        <p>api-doc-gen only reads your project's source to extract routes and types via static AST parsing — it never executes your code. A few specific hardening notes, since this runs against real codebases:</p>
+        <ul>
+          <li><strong>Confined file access</strong> — every file read is scoped to your project directory via Go's <code>os.Root</code>, so a symlink (accidental or crafted) pointing outside the project tree is never followed, even if it's swapped in mid-scan.</li>
+          <li><strong>Output stays put</strong> — the output directory is validated to stay within your working directory unless you pass <code>--output</code>/<code>-o</code> explicitly yourself, so a <code>.apidoc-gen.yaml</code> from a repo you don't control can't silently redirect where files get written.</li>
+          <li><strong>Local-only preview</strong> — the Swagger UI preview server binds to <code>127.0.0.1</code>, never your network, and generated docs are fully offline (no CDN dependency).</li>
+          <li><strong>Secrets stay out of it</strong> — the Postman API key is never written to <code>.apidoc-gen.yaml</code>; it's stored at <code>~/.config/apidoc-gen/credentials.json</code> with <code>0600</code> permissions.</li>
+        </ul>
+        <p>Found a security issue? See <a href="https://github.com/devenock/api-doc-gen/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a> for how to report it.</p>
       </div>
 
       <hr class="section-rule">
@@ -575,6 +629,18 @@ source ~/.zshrc   <span class="c"># or ~/.bashrc</span></code></pre>
 
         <p>Full guide: <a href="../docs/TROUBLESHOOTING.md" target="_blank" rel="noopener">TROUBLESHOOTING.md</a></p>
       </div>
+
+      <!-- Pager -->
+      <nav class="pager" aria-label="Page navigation">
+        <a class="pager-link pager-prev" id="pagerPrev" href="#">
+          <span class="pager-dir">&larr; Previous</span>
+          <span class="pager-title"></span>
+        </a>
+        <a class="pager-link pager-next" id="pagerNext" href="#">
+          <span class="pager-dir">Next &rarr;</span>
+          <span class="pager-title"></span>
+        </a>
+      </nav>
 
     </main>
   </div>
@@ -620,18 +686,65 @@ source ~/.zshrc   <span class="c"># or ~/.bashrc</span></code></pre>
       return document.querySelector('.hero-install code').innerText;
     });
 
-    // ── Active nav via IntersectionObserver ────────────────────
-    const links    = document.querySelectorAll('.nav-link');
-    const sections = document.querySelectorAll('.section[id]');
+    // ── Pagination ───────────────────────────────────────────────
+    // One section visible at a time, navigated via the sidebar or the
+    // Previous/Next pager — page order/labels come straight from the
+    // sidebar links, so adding a section there is all that's needed.
+    const pages = Array.from(document.querySelectorAll('.nav-link')).map(a => ({
+      id: a.getAttribute('href').slice(1),
+      label: a.textContent.trim(),
+      link: a,
+    }));
+    const hero      = document.querySelector('.hero');
+    const pagerPrev = document.getElementById('pagerPrev');
+    const pagerNext = document.getElementById('pagerNext');
 
-    const io = new IntersectionObserver(entries => {
-      entries.forEach(e => {
-        if (!e.isIntersecting) return;
-        links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + e.target.id));
+    function showPage(id) {
+      let index = pages.findIndex(p => p.id === id);
+      if (index === -1) index = 0;
+
+      pages.forEach((p, i) => {
+        const section = document.getElementById(p.id);
+        if (section) section.style.display = i === index ? '' : 'none';
+        p.link.classList.toggle('active', i === index);
       });
-    }, { rootMargin: '-15% 0px -75% 0px' });
+      if (hero) hero.style.display = index === 0 ? '' : 'none';
 
-    sections.forEach(s => io.observe(s));
+      const prev = pages[index - 1];
+      const next = pages[index + 1];
+      pagerPrev.style.visibility = prev ? 'visible' : 'hidden';
+      pagerNext.style.visibility = next ? 'visible' : 'hidden';
+      if (prev) {
+        pagerPrev.href = '#' + prev.id;
+        pagerPrev.querySelector('.pager-title').textContent = prev.label;
+      }
+      if (next) {
+        pagerNext.href = '#' + next.id;
+        pagerNext.querySelector('.pager-title').textContent = next.label;
+      }
+
+      window.scrollTo(0, 0);
+    }
+
+    function navigateTo(id) {
+      history.pushState(null, '', '#' + id);
+      showPage(id);
+    }
+
+    pages.forEach(p => {
+      p.link.addEventListener('click', e => {
+        e.preventDefault();
+        navigateTo(p.id);
+      });
+    });
+    pagerPrev.addEventListener('click', e => { e.preventDefault(); navigateTo(pagerPrev.href.split('#')[1]); });
+    pagerNext.addEventListener('click', e => { e.preventDefault(); navigateTo(pagerNext.href.split('#')[1]); });
+
+    window.addEventListener('popstate', () => {
+      showPage(location.hash.slice(1) || pages[0].id);
+    });
+
+    showPage(location.hash.slice(1) || pages[0].id);
   </script>
 
 </body>
