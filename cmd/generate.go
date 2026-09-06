@@ -266,7 +266,16 @@ func runServeDocs(ctx context.Context, outputDir string, quiet bool) error {
 		openBrowser(browserURL)
 	}()
 
-	srv := &http.Server{Addr: ":" + port, Handler: http.FileServer(http.Dir(absDir))}
+	// Loopback-only: this serves the whole output directory over plain HTTP
+	// with no auth, so binding to all interfaces would expose it to the LAN
+	// (or the public internet, if run on a host without a firewall) whenever
+	// generate --serve runs. ReadHeaderTimeout guards against a slow-headers
+	// (Slowloris-style) resource-exhaustion connection.
+	srv := &http.Server{
+		Addr:              "127.0.0.1:" + port,
+		Handler:           http.FileServer(http.Dir(absDir)),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.ListenAndServe() }()
 
