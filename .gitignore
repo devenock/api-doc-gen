@@ -28,14 +28,8 @@ docs/*.json
 docs/*.yaml
 docs/*.html
 
-# examples/ecommerce-gin, blog-chi, and crm-gorilla are small, purpose-built
-# fixture APIs tracked in the repo (see examples/README.md). Generated output
-# from running api-doc-gen against them is not.
-examples/*/docs/
-# angamarket_backend is a separate, real project (its own git remote) kept
-# here only for ad hoc local testing against a large real-world codebase -
-# never meant to be published as part of this repo.
-examples/angamarket_backend/
+# Local test fixtures - not part of the published project.
+examples/
 
 # IDE and OS
 .idea/

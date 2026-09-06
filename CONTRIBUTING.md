@@ -36,7 +36,6 @@ By participating, you agree to uphold our [Code of Conduct](CODE_OF_CONDUCT.md).
 - `internal/annotations/` – `--write-annotations`: writes swag comment blocks to handler source.
 - `docs/` – User docs (CONFIGURATION, TROUBLESHOOTING).
 - `web/` – Landing/docs pages (`index.html`, `docs.html`) — not part of the CLI itself.
-- `examples/` – Sample Go APIs (Gin, Chi, Gorilla Mux) for testing the generator end to end.
 
 ## Submitting changes
 

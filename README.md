@@ -52,10 +52,6 @@ api-doc-gen generate /path/to/your-api \
   -o /path/to/your-api/docs
 ```
 
-Want to try it against a real API first? [`examples/`](examples/) has three complete
-Gin/Chi/Gorilla Mux REST APIs you can generate docs for right away — see
-[`examples/README.md`](examples/README.md).
-
 ---
 
 ## Output
