@@ -2,10 +2,14 @@
 FROM golang:1.24-alpine AS builder
 WORKDIR /app
 
+# Pass the release version in explicitly: .git is excluded from the build
+# context (see .dockerignore), so `git describe` isn't available in here.
+ARG VERSION=dev
+
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /api-doc-gen .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/devenock/api-doc-gen/cmd.version=${VERSION}" -o /api-doc-gen .
 
 # Runtime stage
 FROM alpine:3.19

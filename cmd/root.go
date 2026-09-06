@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -37,6 +38,27 @@ type exitCodeError struct {
 func (e *exitCodeError) Error() string { return e.err.Error() }
 func (e *exitCodeError) Unwrap() error { return e.err }
 
+// version is set at release-build time via:
+//
+//	go build -ldflags "-X github.com/devenock/api-doc-gen/cmd.version=vX.Y.Z"
+//
+// (the Makefile and Dockerfile do this from `git describe`). Left as "dev"
+// for plain `go build`/`go run`.
+var version = "dev"
+
+// resolvedVersion returns the ldflags-injected version, or — when that
+// wasn't set (e.g. the binary came from `go install .../api-doc-gen@vX.Y.Z`)
+// — the module version Go recorded in the binary at install time.
+func resolvedVersion() string {
+	if version != "dev" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return version
+}
+
 var (
 	cfgFile string
 	rootCmd = &cobra.Command{
@@ -44,7 +66,7 @@ var (
 		Short: "Automatic API documentation generator",
 		Long: `api-doc-gen is a CLI tool that scans your codebase and automatically
 generates API documentation as Swagger/OpenAPI or a Postman Collection.`,
-		Version: "1.0.0",
+		Version: resolvedVersion(),
 		Example: `  api-doc-gen init
   api-doc-gen generate
   api-doc-gen generate --type swagger --output ./docs
