@@ -83,7 +83,7 @@ func SaveAPIKey(key string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", fmt.Errorf("create credentials dir: %w", err)
 	}
-	data, err := json.MarshalIndent(Credentials{APIKey: key}, "", "  ")
+	data, err := json.MarshalIndent(Credentials{APIKey: key}, "", "  ") // #nosec G117 -- this is CredentialsPath's entire purpose; written 0600 below
 	if err != nil {
 		return "", err
 	}

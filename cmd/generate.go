@@ -308,7 +308,7 @@ func openBrowser(url string) {
 	default:
 		return
 	}
-	cmd.Start() //nolint:errcheck
+	cmd.Start() /* #nosec G104 -- best-effort, open failure isn't worth surfacing */ //nolint:errcheck
 }
 
 // runBuildCheck runs analyzer.CheckBuild against cfg.ProjectPath and prints

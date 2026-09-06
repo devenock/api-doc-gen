@@ -43,7 +43,7 @@ func runPostmanUpload(ctx context.Context, cfg *config.Config, interactive, quie
 
 	// Open Postman so it is ready for the import (skip in CI/quiet mode).
 	if postman.IsDesktopInstalled() && !quiet {
-		postman.OpenDesktop("") //nolint:errcheck
+		postman.OpenDesktop("") /* #nosec G104 -- best-effort, open failure isn't worth surfacing */ //nolint:errcheck
 	}
 
 	return nil
@@ -52,7 +52,7 @@ func runPostmanUpload(ctx context.Context, cfg *config.Config, interactive, quie
 // runPostmanAPIUpload uploads the collection to Postman cloud and opens the
 // desktop app to the resulting collection. Only called when --upload is set.
 func runPostmanAPIUpload(ctx context.Context, cfg *config.Config, collectionPath string, interactive, quiet bool) error {
-	apiKey, source := cfg.PostmanAPIKey, "flag:--postman-api-key"
+	apiKey, source := cfg.PostmanAPIKey, "flag:--postman-api-key" // #nosec G101 -- "flag:--postman-api-key" is a source label, not a credential
 	if apiKey == "" {
 		apiKey, source = postman.LoadAPIKey()
 	}
@@ -132,7 +132,7 @@ func runPostmanAPIUpload(ctx context.Context, cfg *config.Config, collectionPath
 	if postman.IsDesktopInstalled() && !quiet {
 		fmt.Println("   Opening Postman...")
 		time.Sleep(2 * time.Second)
-		postman.OpenDesktop(resp.Collection.UID) //nolint:errcheck
+		postman.OpenDesktop(resp.Collection.UID) /* #nosec G104 -- best-effort, open failure isn't worth surfacing */ //nolint:errcheck
 	}
 
 	return nil
