@@ -1,4 +1,4 @@
-# Contributing to apidoc-gen
+# Contributing to api-doc-gen
 
 Thank you for considering contributing. This document explains how to get set up and submit changes.
 
@@ -18,11 +18,11 @@ By participating, you agree to uphold our [Code of Conduct](CODE_OF_CONDUCT.md).
 2. **Prerequisites:** Go 1.24 or later.
 3. **Build and test:**
    ```bash
-   cd apidoc-gen
+   cd api-doc-gen
    make build
    make test
    ```
-4. **Run locally:** `./bin/apidoc-gen generate --help` or `make run` (runs generate in the project directory). Build outputs are written to `./bin/`.
+4. **Run locally:** `./bin/api-doc-gen generate --help` or `make run` (runs generate in the project directory). Build outputs are written to `./bin/`.
 
 ## Project layout
 

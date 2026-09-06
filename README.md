@@ -141,11 +141,11 @@ api-doc-gen generate -y --type postman --upload
 No Go installation needed:
 
 ```bash
-docker build -t apidoc-gen .
+docker build -t api-doc-gen .
 docker run --rm \
   -v "$(pwd)":/workspace \
   -w /workspace \
-  apidoc-gen generate --no-interactive --type swagger -o ./docs
+  api-doc-gen generate --no-interactive --type swagger -o ./docs
 ```
 
 ---

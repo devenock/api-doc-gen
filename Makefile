@@ -1,5 +1,5 @@
 # API Documentation Generator - Makefile
-BINARY_NAME := apidoc-gen
+BINARY_NAME := api-doc-gen
 BIN_DIR     := bin
 MAIN_PATH   := .
 

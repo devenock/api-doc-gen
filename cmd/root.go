@@ -40,9 +40,9 @@ func (e *exitCodeError) Unwrap() error { return e.err }
 var (
 	cfgFile string
 	rootCmd = &cobra.Command{
-		Use:   "apidoc-gen",
+		Use:   "api-doc-gen",
 		Short: "Automatic API documentation generator",
-		Long: `apidoc-gen is a CLI tool that scans your codebase and automatically
+		Long: `api-doc-gen is a CLI tool that scans your codebase and automatically
 generates API documentation as Swagger/OpenAPI or a Postman Collection.`,
 		Version: "1.0.0",
 		Example: `  api-doc-gen init
