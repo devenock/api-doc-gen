@@ -1,6 +1,6 @@
 module github.com/devenock/api-doc-gen
 
-go 1.24.3
+go 1.26.8
 
 require (
 	github.com/getkin/kin-openapi v0.135.0

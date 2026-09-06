@@ -8,7 +8,7 @@ Supports **Gin, Echo, Fiber, Gorilla Mux, Chi** (auto-detected).
 
 ## Install
 
-Requires Go 1.24.3 or later.
+Requires Go 1.26.8 or later.
 
 ```bash
 go install github.com/devenock/api-doc-gen@latest
