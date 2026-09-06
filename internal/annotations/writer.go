@@ -1,3 +1,7 @@
+// Package annotations implements --write-annotations: writing swag-style
+// `// @...` comment blocks above same-file handler functions, so a project
+// that adopts api-doc-gen can migrate to swaggo/swag-compatible annotations
+// without writing them by hand.
 package annotations
 
 import (

@@ -1,5 +1,11 @@
 # api-doc-gen
 
+[![CI](https://github.com/devenock/api-doc-gen/actions/workflows/ci.yml/badge.svg)](https://github.com/devenock/api-doc-gen/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/devenock/api-doc-gen.svg)](https://pkg.go.dev/github.com/devenock/api-doc-gen)
+[![Go Report Card](https://goreportcard.com/badge/github.com/devenock/api-doc-gen)](https://goreportcard.com/report/github.com/devenock/api-doc-gen)
+[![Latest release](https://img.shields.io/github/v/release/devenock/api-doc-gen)](https://github.com/devenock/api-doc-gen/releases)
+[![License](https://img.shields.io/github/license/devenock/api-doc-gen)](LICENSE)
+
 CLI that scans your Go API and generates **Swagger/OpenAPI** or a **Postman Collection** — no annotations required.
 
 Supports **Gin, Echo, Fiber, Gorilla Mux, Chi** (auto-detected).

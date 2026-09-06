@@ -1,3 +1,6 @@
+// Package prompt implements the interactive wizard (doc type, framework,
+// title, output dir, and the Postman import flow) that cmd/generate.go runs
+// when neither --no-interactive nor --type was given.
 package prompt
 
 import (

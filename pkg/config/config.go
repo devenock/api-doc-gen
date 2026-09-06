@@ -1,3 +1,6 @@
+// Package config defines the Config struct that carries a generate run's
+// settings end to end (flags, config file, and env vars are all merged into
+// it by cmd/generate.go before Validate is called) and validates it.
 package config
 
 import (

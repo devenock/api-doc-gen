@@ -1,3 +1,6 @@
+// Package generator turns an analyzed models.APISpec into on-disk
+// documentation — Swagger/OpenAPI (swagger.go) or a Postman Collection
+// (postman.go), selected via NewGenerator.
 package generator
 
 import (

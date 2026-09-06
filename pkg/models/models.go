@@ -1,3 +1,7 @@
+// Package models holds the framework-agnostic, intermediate representation
+// pkg/analyzer produces and pkg/generator consumes: an APISpec (endpoints,
+// schemas, servers) that neither package needs to know the other's details
+// to work with.
 package models
 
 // APISpec represents the complete API specification
