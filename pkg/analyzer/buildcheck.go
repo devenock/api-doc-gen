@@ -3,6 +3,7 @@ package analyzer
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -57,6 +58,16 @@ func CheckBuild(projectPath string) BuildCheckResult {
 
 	cmd := exec.CommandContext(ctx, goPath, "vet", "./...")
 	cmd.Dir = projectPath
+	// This is meant to be a pure static check of the target project. Without
+	// this, a target go.mod declaring a `toolchain` directive newer than the
+	// caller's local Go would trigger Go's own GOTOOLCHAIN=auto behavior:
+	// silently downloading and re-execing that toolchain. That download is
+	// checksum-verified (not arbitrary code from nowhere), but it's still an
+	// unexpected network fetch and trust-surface expansion that a project
+	// merely being scanned for docs shouldn't be able to trigger. Force the
+	// caller's own local toolchain instead; if it's too old for the target,
+	// this check fails closed (Err below) rather than auto-upgrading.
+	cmd.Env = append(os.Environ(), "GOTOOLCHAIN=local")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
