@@ -1,9 +1,11 @@
 package generator
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
 	"html"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,39 @@ import (
 	"github.com/devenock/api-doc-gen/pkg/models"
 	"gopkg.in/yaml.v3"
 )
+
+// swaggerUIAssets embeds a vendored, integrity-verified copy of
+// swagger-ui-dist (see swaggerui_assets/SOURCE.md) so the generated docs work
+// fully offline with no runtime dependency on a third-party CDN — unlike
+// loading these from jsdelivr at view-time, nothing here can be silently
+// swapped out from under an already-generated doc set.
+//
+//go:embed swaggerui_assets/swagger-ui.css swaggerui_assets/swagger-ui-bundle.js swaggerui_assets/swagger-ui-standalone-preset.js
+var swaggerUIAssets embed.FS
+
+const swaggerUIAssetsDir = "swaggerui_assets"
+
+// swaggerUIAssetFiles are copied verbatim into the output directory
+// alongside index.html, which references them by these same filenames.
+var swaggerUIAssetFiles = []string{
+	"swagger-ui.css",
+	"swagger-ui-bundle.js",
+	"swagger-ui-standalone-preset.js",
+}
+
+// writeSwaggerUIAssets copies the embedded swagger-ui-dist files into dir.
+func writeSwaggerUIAssets(dir string) error {
+	for _, name := range swaggerUIAssetFiles {
+		data, err := fs.ReadFile(swaggerUIAssets, swaggerUIAssetsDir+"/"+name)
+		if err != nil {
+			return fmt.Errorf("read embedded %s: %w", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0644); err != nil {
+			return fmt.Errorf("write %s: %w", name, err)
+		}
+	}
+	return nil
+}
 
 // SwaggerGenerator generates Swagger/OpenAPI documentation
 type SwaggerGenerator struct {
@@ -49,6 +84,9 @@ func (g *SwaggerGenerator) Generate(spec *models.APISpec) error {
 	htmlPath := filepath.Join(g.config.Output, "index.html")
 	if err := g.generateSwaggerUI(htmlPath); err != nil {
 		return fmt.Errorf("failed to generate Swagger UI: %w", err)
+	}
+	if err := writeSwaggerUIAssets(g.config.Output); err != nil {
+		return fmt.Errorf("failed to write Swagger UI assets: %w", err)
 	}
 
 	if !g.config.Quiet {
@@ -297,15 +335,15 @@ func (g *SwaggerGenerator) generateSwaggerUI(path string) error {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>` + html.EscapeString(g.config.Title) + `</title>
-    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+    <link rel="stylesheet" type="text/css" href="./swagger-ui.css">
     <style>
         body { margin: 0; padding: 0; }
     </style>
 </head>
 <body>
     <div id="swagger-ui"></div>
-    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+    <script src="./swagger-ui-bundle.js"></script>
+    <script src="./swagger-ui-standalone-preset.js"></script>
     <script>
         window.onload = function() {
             window.ui = SwaggerUIBundle({
