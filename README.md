@@ -89,6 +89,29 @@ api-doc-gen generate /path/to/your-api \
 
 ---
 
+## Coverage
+
+What the analyzer actually detects and emits, checked against the code rather than aspirational:
+
+- [x] Paths, operations, path and query parameters
+- [x] Request bodies — JSON binding calls (`ShouldBindJSON`, `BodyParser`, `Decode`, and common project-specific wrapper names matched by hint)
+- [x] Response bodies — JSON responses across Gin/Echo/Fiber/Gorilla Mux/Chi/net/http response patterns
+- [x] Bearer auth detection — marks a route `security: [BearerAuth]` when its middleware looks like auth (or matches your configured `auth_middleware` list)
+- [x] Struct tags — `json` (name, `omitempty`, `-` to exclude), `binding:"required"` / `validate:"required"`
+- [x] Embedded struct fields promoted into the parent schema
+- [x] Tags for Swagger UI grouping, derived from the path
+- [x] OpenAPI 3.0.3 and Postman Collection v2.1 output
+- [ ] Header parameters — not extracted
+- [ ] Non-JSON content types — request/response bodies are always modeled as `application/json`; no multipart/form-data, XML, or plain text
+- [ ] Auth schemes other than Bearer — no API Key, Basic Auth, or OAuth2 security scheme detection
+- [ ] Enums, example values, response headers — the schema model has fields for all three (so output stays forward-compatible), but nothing in the analyzer populates them yet
+- [ ] Types from outside the scanned project — `time.Time` is special-cased; any other external type (`uuid.UUID`, a shared internal module, etc.) resolves to an empty `object` with no fields
+- [ ] File uploads (`multipart/form-data`) — not detected
+
+Found a pattern that isn't covered? [Open an issue](https://github.com/devenock/api-doc-gen/issues) — new patterns belong in the analyzer, not worked around.
+
+---
+
 ## Applying it to your Go project
 
 Your project does not need any changes — the tool reads your existing route definitions.
@@ -169,7 +192,16 @@ api-doc-gen generate -y --type postman --upload
 
 ## Docker
 
-No Go installation needed:
+No Go installation needed. Pull the published image:
+
+```bash
+docker run --rm \
+  -v "$(pwd)":/workspace \
+  -w /workspace \
+  ghcr.io/devenock/api-doc-gen:latest generate --no-interactive --type swagger -o ./docs
+```
+
+Or build it yourself from source:
 
 ```bash
 docker build -t api-doc-gen .
