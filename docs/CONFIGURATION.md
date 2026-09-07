@@ -28,6 +28,7 @@ Configuration is merged from lowest to highest precedence: **config file** → *
 | `--serve` _(swagger)_ | _(n/a)_ | _(n/a)_ | `false` — after generating, serves `./docs` at `http://localhost:8765` and opens it in your browser |
 | `--write-annotations` | _(n/a)_ | _(n/a)_ | `false` — writes swag-style `// @...` comments above same-file handler functions |
 | `--skip-build-check` | _(n/a)_ | _(n/a)_ | `false` — skips the `go vet ./...` pre-flight check against the target project |
+| `--required-by-default` | _(n/a)_ | _(n/a)_ | `false` — marks every struct field required unless it has `json:",omitempty"`, instead of only fields with an explicit `binding`/`validate:"required"` tag |
 | `--upload` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` |
 | `--no-upload` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` |
 | `--direct-import` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` — no functional effect outside the interactive wizard today (see note below) |

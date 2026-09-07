@@ -48,6 +48,15 @@ type Config struct {
 	// toolchain where the check would otherwise just no-op anyway.
 	SkipBuildCheck bool
 
+	// RequiredByDefault flips the default a struct field's presence in the
+	// generated schema's `required` list: normally a field is required only
+	// when it carries an explicit `binding:"required"`/`validate:"required"`
+	// tag (a plain non-pointer Go field being non-required by default is not
+	// a real signal — it just means the zero value is used if absent on the
+	// wire). With this set, every field is required unless it has
+	// `json:",omitempty"` or an explicit validation tag says otherwise.
+	RequiredByDefault bool
+
 	// AuthMiddleware, when set (via .apidoc-gen.yaml's auth_middleware key),
 	// is the exact list of middleware identifier names (case-insensitive)
 	// that mark a route group as authenticated, overriding the analyzer's

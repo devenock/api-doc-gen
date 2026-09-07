@@ -149,6 +149,7 @@ docs:
 | `--dry-run` | Show what would be generated without writing files |
 | `--upload` | Upload Postman collection via Postman API (prompts for API key once) |
 | `--skip-build-check` | Skip the `go vet ./...` pre-flight check (see below) |
+| `--required-by-default` | Mark every struct field required unless it has `json:",omitempty"` (default: only `binding`/`validate:"required"` tags count) |
 
 Full reference: `api-doc-gen generate --help`
 

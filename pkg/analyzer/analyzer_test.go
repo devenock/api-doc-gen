@@ -237,6 +237,60 @@ func main() {
 	}
 }
 
+// TestAnalyze_RequiredByDefault covers the config.RequiredByDefault flag
+// (--required-by-default): every field should be required unless it has
+// omitempty, regardless of whether it also carries an explicit
+// binding/validate:"required" tag.
+func TestAnalyze_RequiredByDefault(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+type Account struct {
+	ID       string ` + "`json:\"id\"`" + `
+	Email    string ` + "`json:\"email\" binding:\"required\"`" + `
+	Nickname string ` + "`json:\"nickname,omitempty\"`" + `
+}
+
+func CreateAccount(c *gin.Context) {
+	var a Account
+	c.ShouldBindJSON(&a)
+	c.JSON(201, a)
+}
+
+func main() {
+	r := gin.Default()
+	r.POST("/accounts", CreateAccount)
+	r.Run()
+}
+`,
+	})
+
+	cfg := &config.Config{
+		ProjectPath:       dir,
+		Framework:         "gin",
+		DocType:           "swagger",
+		Title:             "Test API",
+		Version:           "1.0.0",
+		RequiredByDefault: true,
+	}
+	spec, err := NewAnalyzer(cfg).Analyze()
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	schema, ok := spec.Models["Account"]
+	if !ok {
+		t.Fatal("expected Account schema in spec.Models")
+	}
+	wantRequired := []string{"id", "email"}
+	if !slicesEqualUnordered(schema.Required, wantRequired) {
+		t.Errorf("Required = %v, want %v (every field but the omitempty one)", schema.Required, wantRequired)
+	}
+}
+
 // TestAnalyze_JSONTag_DashCommaIsALiteralFieldName covers encoding/json's
 // escape for a field that must be marshaled under the literal name "-":
 // json:"-," (note the trailing comma) — distinct from json:"-" (exclude).

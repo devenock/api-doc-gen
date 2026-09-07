@@ -107,8 +107,10 @@ func (a *Analyzer) buildSchemaFromStruct(st *ast.StructType) models.Schema {
 		// implies: a plain non-pointer `int` with no validation tag is still
 		// entirely optional on the wire (it just defaults to zero if absent).
 		// Derive it instead from the tags Go handlers actually validate
-		// against, and let omitempty stand as an explicit "not required".
-		if tags.required && !tags.omitempty {
+		// against, and let omitempty stand as an explicit "not required" —
+		// unless RequiredByDefault is set, in which case every field is
+		// required unless omitempty says otherwise.
+		if (tags.required || a.config.RequiredByDefault) && !tags.omitempty {
 			required = append(required, fieldName)
 		}
 	}

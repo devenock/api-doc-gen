@@ -50,6 +50,7 @@ func init() {
 	generateCmd.Flags().Bool("serve", false, "after generating (swagger only), serve docs and print the access URL")
 	generateCmd.Flags().Bool("write-annotations", false, "write swag-style comment blocks above handler functions (same-file handlers only)")
 	generateCmd.Flags().Bool("skip-build-check", false, "skip the `go vet ./...` pre-flight check against the target project")
+	generateCmd.Flags().Bool("required-by-default", false, "mark every struct field required unless it has json:\",omitempty\" (default: only binding/validate:\"required\" tags count)")
 
 	// Postman upload flags (only honored when --type=postman)
 	generateCmd.Flags().Bool("upload", false, "(postman) force upload to Postman; error out if no API key is available (good for CI)")
@@ -77,6 +78,7 @@ func init() {
 	_ = viper.BindPFlag("serve", generateCmd.Flags().Lookup("serve"))
 	_ = viper.BindPFlag("write-annotations", generateCmd.Flags().Lookup("write-annotations"))
 	_ = viper.BindPFlag("skip-build-check", generateCmd.Flags().Lookup("skip-build-check"))
+	_ = viper.BindPFlag("required-by-default", generateCmd.Flags().Lookup("required-by-default"))
 	_ = viper.BindPFlag("upload", generateCmd.Flags().Lookup("upload"))
 	_ = viper.BindPFlag("no-upload", generateCmd.Flags().Lookup("no-upload"))
 	_ = viper.BindPFlag("direct-import", generateCmd.Flags().Lookup("direct-import"))
@@ -113,6 +115,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		PostmanDirectImport: viper.GetBool("direct-import"),
 		WriteAnnotations:    viper.GetBool("write-annotations"),
 		SkipBuildCheck:      viper.GetBool("skip-build-check"),
+		RequiredByDefault:   viper.GetBool("required-by-default"),
 		OutputFromFlag:      cmd.Flags().Changed("output"),
 	}
 	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
