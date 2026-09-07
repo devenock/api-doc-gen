@@ -25,19 +25,16 @@ Configuration is merged from lowest to highest precedence: **config file** → *
 | `--quiet`, `-q` | `APIDOC_QUIET` | `quiet` | `false` |
 | `--dry-run` | _(n/a)_ | _(n/a)_ | `false` |
 | `--show-config` | _(n/a)_ | _(n/a)_ | `false` |
-| `--serve` _(swagger)_ | _(n/a)_ | _(n/a)_ | `false` — after generating, serves `./docs` at `http://localhost:8765` and opens it in your browser |
+| `--serve` _(swagger)_ | _(n/a)_ | _(n/a)_ | `true` — after generating, serves `./docs` at `http://localhost:8765` and opens it in your browser; pass `--serve=false` to skip |
 | `--write-annotations` | _(n/a)_ | _(n/a)_ | `false` — writes swag-style `// @...` comments above same-file handler functions |
 | `--skip-build-check` | _(n/a)_ | _(n/a)_ | `false` — skips the `go vet ./...` pre-flight check against the target project |
 | `--required-by-default` | _(n/a)_ | _(n/a)_ | `false` — marks every struct field required unless it has `json:",omitempty"`, instead of only fields with an explicit `binding`/`validate:"required"` tag |
 | `--tags` | _(n/a)_ | _(n/a)_ | _(none — keeps everything)_ — filter endpoints by tag; a plain name includes only endpoints with that tag, a `!name` excludes them. Mixable, comma-separated |
-| `--upload` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` |
-| `--no-upload` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` |
-| `--direct-import` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` — no functional effect outside the interactive wizard today (see note below) |
-| `--postman-api-key` | `APIDOC_POSTMAN_API_KEY` · `POSTMAN_API_KEY` | _(not in config — secret)_ | _(none)_ |
-| `--postman-workspace` | _(n/a)_ | _(n/a)_ | _(default workspace)_ |
 | `[path]` _(positional)_ | _(n/a)_ | _(n/a)_ | `.` |
 
 Default `exclude` dirs: `vendor`, `node_modules`, `.git`, `test`, `tests`. Matching is by exact directory name (basename), not substring.
+
+Passing `--exclude` (or setting `exclude` in the config file) **replaces** this default list rather than adding to it — if you still want the defaults skipped, list them alongside your own, e.g. `--exclude vendor,node_modules,.git,test,tests,fixtures`.
 
 ## Auth middleware detection
 
@@ -50,32 +47,6 @@ auth_middleware:
 ```
 
 Run with `-v` to see exactly what was matched, either way.
-
-## Postman API key resolution
-
-The Postman API key is never stored in `.apidoc-gen.yaml`. Resolution order:
-
-1. `--postman-api-key <key>`
-2. `APIDOC_POSTMAN_API_KEY`
-3. `POSTMAN_API_KEY`
-4. `~/.config/apidoc-gen/credentials.json` (written on first interactive prompt; mode `0600`)
-5. Interactive prompt (only when `--no-interactive` is not set)
-
-## Upload behaviour matrix
-
-| Mode | Key available? | `--upload` | `--no-upload` | Result |
-|------|---------------|------------|---------------|--------|
-| Interactive | yes | — | no | Auto-upload, print Postman URL |
-| Interactive | no | no | no | Prompt for key, save, upload |
-| Interactive | — | — | yes | Skip upload |
-| `--no-interactive` | yes | — | no | Auto-upload |
-| `--no-interactive` | no | no | no | Skip silently, print local-file path |
-| `--no-interactive` | no | yes | no | **Error** (exit code 1) |
-| any | — | — | yes | Skip upload |
-
-The collection UID is cached in `.apidoc-gen-cache.json` (project root, gitignored by default). Delete it to force a new collection on the next upload.
-
-**`--direct-import` / the wizard's "Import directly into Postman" option** currently produce the same outcome as doing nothing: if Postman desktop is installed, it opens; either way you still drag `collection.json` into the sidebar (or File > Import) yourself. There is no automatic local-file import yet — only `--upload` (cloud API) results in Postman opening pre-loaded with the collection.
 
 ## Inspect effective config
 

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/devenock/api-doc-gen/pkg/config"
 )
@@ -94,17 +95,6 @@ func TestPrintShowConfig(t *testing.T) {
 			t.Errorf("printShowConfig output missing %q; got:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "postman.") {
-		t.Errorf("expected no postman.* fields for a non-postman DocType; got:\n%s", out)
-	}
-}
-
-func TestPrintShowConfig_PostmanFields(t *testing.T) {
-	cfg := &config.Config{DocType: "postman", PostmanWorkspaceUID: "ws-1"}
-	out := captureStdout(t, func() { printShowConfig(cfg) })
-	if !strings.Contains(out, `postman.workspace: "ws-1"`) {
-		t.Errorf("expected postman.workspace in output; got:\n%s", out)
-	}
 }
 
 func TestRunDryRun_ReportsEndpointsWithoutWriting(t *testing.T) {
@@ -133,6 +123,34 @@ func TestRunDryRun_ReportsEndpointsWithoutWriting(t *testing.T) {
 	}
 }
 
+func TestRunGenerate_NoTypeNonInteractiveStdin_FailsFastWithClearError(t *testing.T) {
+	dir := ginFixtureProject(t)
+
+	// A closed pipe mimics stdin redirected from /dev/null or a script - not
+	// a terminal, and reading it returns EOF immediately. Without the
+	// isInteractiveTerminal guard, this used to reach promptui, which itself
+	// doesn't hang here, but does write raw terminal escape sequences into
+	// stdout/stderr before failing with a cryptic "^D" error instead of this
+	// clear, actionable one.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Close()
+	oldStdin := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = oldStdin; _ = r.Close() }()
+
+	rootCmd.SetArgs([]string{"generate", dir, "-o", t.TempDir()})
+	err = rootCmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected an error when stdin is not a terminal and no --type/--no-interactive was given")
+	}
+	if !strings.Contains(err.Error(), "not an interactive terminal") {
+		t.Errorf("error = %v, want a message about stdin not being an interactive terminal", err)
+	}
+}
+
 func TestRunGenerate_SwaggerNoInteractive(t *testing.T) {
 	dir := ginFixtureProject(t)
 	outDir := t.TempDir()
@@ -153,5 +171,35 @@ func TestRunGenerate_SwaggerNoInteractive(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(outDir, name)); err != nil {
 			t.Errorf("expected %s to be generated: %v", name, err)
 		}
+	}
+}
+
+// TestRunGenerate_ServeFalseReturnsWithoutBlocking guards against the --serve
+// flag going back to being a no-op: swagger generation used to always call
+// runServeDocs (which blocks until Ctrl+C) whenever --quiet wasn't set,
+// completely ignoring --serve's value. This asserts --serve=false actually
+// skips it - if it doesn't, this test hangs instead of failing cleanly.
+func TestRunGenerate_ServeFalseReturnsWithoutBlocking(t *testing.T) {
+	dir := ginFixtureProject(t)
+	outDir := t.TempDir()
+
+	rootCmd.SetArgs([]string{
+		"generate", dir,
+		"--no-interactive",
+		"--type", "swagger",
+		"-o", outDir,
+		"--skip-build-check",
+		"--serve=false",
+	})
+	done := make(chan error, 1)
+	go func() { done <- rootCmd.ExecuteContext(context.Background()) }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("generate: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("generate did not return within 5s - --serve=false is not skipping runServeDocs")
 	}
 }

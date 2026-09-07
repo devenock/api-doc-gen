@@ -96,14 +96,15 @@ jobs:
       #     G122 used to flag here (see pkg/analyzer/analyzer.go); this
       #     exclude is about gosec not recognizing that pattern, not an
       #     unaddressed risk.
-      #   G204 (subprocess launched with a variable) - opening a browser/the
-      #     Postman desktop app; every call site uses a fixed binary name
-      #     (open/xdg-open/cmd, or one resolved via exec.LookPath) with the
-      #     variable part only ever in argv, never the command itself.
+      #   G204 (subprocess launched with a variable) - opening a browser to
+      #     preview generated docs; every call site uses a fixed binary name
+      #     (open/xdg-open/cmd) with the variable part only ever in argv,
+      #     never the command itself.
       #   G301/G306 (dir/file permissions) - generated docs and the
       #     .apidoc-gen.yaml config file are meant to be shared/committed;
-      #     0755/0644 is correct for them. Anything actually secret (the
-      #     Postman credentials file) is already 0600/0700 and not flagged.
+      #     0755/0644 is correct for them. api-doc-gen holds no credentials
+      #     of its own (it never talks to any external API), so there's
+      #     nothing here that should be narrower.
       - name: Run gosec
         run: gosec -exclude=G204,G301,G304,G306 ./...
 

@@ -83,7 +83,7 @@ api-doc-gen generate /path/to/your-api \
 | `swagger` | `openapi.json`, `openapi.yaml`, `index.html` (Swagger UI) |
 | `postman` | `collection.json` (Postman Collection v2.1) |
 
-**Swagger** — the Swagger UI opens in your browser automatically after generation. To reopen it later, open `./docs/index.html` directly in your browser.
+**Swagger** — the Swagger UI opens in your browser automatically after generation (pass `-q` or `--serve=false` to skip this). To reopen it later, open `./docs/index.html` directly in your browser.
 
 **Postman** — open Postman, click **Import** in the sidebar, then drag `collection.json` onto the dialog.
 
@@ -148,7 +148,7 @@ docs:
 | `-f, --framework` | Force framework: `gin` `echo` `fiber` `gorilla` `chi` |
 | `-y, --no-interactive` | No prompts — required for CI |
 | `--dry-run` | Show what would be generated without writing files |
-| `--upload` | Upload Postman collection via Postman API (prompts for API key once) |
+| `--serve` | Serve the Swagger UI and open it in your browser after generating (default `true`; pass `--serve=false` to skip) |
 | `--skip-build-check` | Skip the `go vet ./...` pre-flight check (see below) |
 | `--required-by-default` | Mark every struct field required unless it has `json:",omitempty"` (default: only `binding`/`validate:"required"` tags count) |
 | `--tags` | Filter endpoints by tag: `users` includes only that tag, `!internal` excludes it (comma-separated, mixable) |
@@ -168,28 +168,6 @@ Before analyzing, `generate` runs `go vet ./...` against the target project as a
 ```
 
 Pass `--skip-build-check` to disable it (e.g. running against a branch mid-refactor in CI). It also skips itself automatically wherever the `go` toolchain isn't on `PATH` — including this project's own Docker runtime image, which ships as a slim `alpine` base with just the compiled binary and no Go toolchain.
-
----
-
-## Postman upload (optional)
-
-If you want the collection to appear in Postman automatically without manual import:
-
-1. Generate a free API key at <https://postman.co/settings/me/api-keys>
-2. Run with `--upload`:
-
-```bash
-api-doc-gen generate --no-interactive --type postman --upload
-```
-
-You will be prompted for the key once. It is saved to `~/.config/apidoc-gen/credentials.json` and reused on future runs. Repeat runs update the same collection — no duplicates.
-
-For CI, export the key as an env variable:
-
-```bash
-export APIDOC_POSTMAN_API_KEY=your_key
-api-doc-gen generate -y --type postman --upload
-```
 
 ---
 

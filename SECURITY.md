@@ -22,7 +22,6 @@ We'll acknowledge reports as promptly as we can and keep you updated as a fix is
 
 - Path traversal or symlink-following while walking a target project (see `pkg/analyzer`'s symlink-safety checks)
 - Injection into generated output that gets rendered or executed elsewhere (e.g. the generated Swagger UI HTML)
-- Handling of the Postman API key and cached credentials (`~/.config/apidoc-gen/credentials.json`)
 - The optional `go vet ./...` pre-flight build check, which does invoke the Go toolchain against the target project's code
 
 Issues in a *target project being analyzed* (i.e., bugs in someone else's Go code) are out of scope unless api-doc-gen's handling of that code creates a vulnerability in api-doc-gen itself or in its output.

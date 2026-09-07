@@ -620,7 +620,7 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
               <tr><td><code>-o, --output</code></td><td>Output directory (default: <code>./docs</code>)</td></tr>
               <tr><td><code>-f, --framework</code></td><td>Force framework: <code>gin</code> · <code>echo</code> · <code>fiber</code> · <code>gorilla</code> · <code>chi</code></td></tr>
               <tr><td><code>-y, --no-interactive</code></td><td>Disable all prompts — required in CI</td></tr>
-              <tr><td><code>--exclude</code></td><td>Additional directory names to skip (repeatable), added to the defaults: <code>vendor</code>, <code>node_modules</code>, <code>.git</code>, <code>test</code>, <code>tests</code></td></tr>
+              <tr><td><code>--exclude</code></td><td>Directory names to skip (repeatable). <strong>Replaces</strong> the default list entirely rather than adding to it — if you use this flag, re-list <code>vendor</code>, <code>node_modules</code>, <code>.git</code>, <code>test</code>, <code>tests</code> alongside your own if you still want them skipped</td></tr>
               <tr><td><code>--tags</code></td><td>Filter endpoints by tag: plain name to include, <code>!name</code> to exclude (comma-separated, mixable)</td></tr>
               <tr><td><code>--required-by-default</code></td><td>Mark every struct field required unless it has <code>json:",omitempty"</code> (default: only <code>binding</code>/<code>validate:"required"</code> tags count)</td></tr>
               <tr><td><code>--title</code></td><td>API title (default: auto-detected from your <code>go.mod</code> module name)</td></tr>
@@ -629,22 +629,9 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
               <tr><td><code>--description</code></td><td>API description shown in the generated spec</td></tr>
               <tr><td><code>--dry-run</code></td><td>Show what would be generated, write nothing</td></tr>
               <tr><td><code>--show-config</code></td><td>Print effective config and exit</td></tr>
+              <tr><td><code>--serve</code></td><td>Serve the Swagger UI and open it in your browser after generating (swagger only, default <code>true</code>); pass <code>--serve=false</code> to skip</td></tr>
               <tr><td><code>--write-annotations</code></td><td>Write swag-style <code>// @...</code> comments above same-file handler functions</td></tr>
               <tr><td><code>--skip-build-check</code></td><td>Skip the <code>go vet ./...</code> pre-flight check against the target project (see <a href="#build-check">Build check</a>)</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 id="flags-postman">Postman</h3>
-        <div class="tbl-wrap">
-          <table>
-            <thead><tr><th>Flag</th><th>Description</th></tr></thead>
-            <tbody>
-              <tr><td><code>--upload</code></td><td>Upload the collection via the Postman API (see <a href="#postman">Postman</a>)</td></tr>
-              <tr><td><code>--no-upload</code></td><td>Generate the file only, skip upload entirely</td></tr>
-              <tr><td><code>--postman-api-key</code></td><td>Postman API key (see resolution order in <a href="#config-postman-key">Config file</a>)</td></tr>
-              <tr><td><code>--postman-workspace</code></td><td>Target workspace (default: your default workspace)</td></tr>
-              <tr><td><code>--direct-import</code></td><td>No functional effect outside the interactive wizard today — see the note in <a href="#config-upload-matrix">Config file</a></td></tr>
             </tbody>
           </table>
         </div>
@@ -709,11 +696,7 @@ version: 1.0.0</code></pre>
               <tr><td><code>--skip-build-check</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
               <tr><td><code>--required-by-default</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
               <tr><td><code>--tags</code></td><td>—</td><td>—</td><td>none — keeps everything</td></tr>
-              <tr><td><code>--upload</code> <em>(postman)</em></td><td>—</td><td>—</td><td><code>false</code></td></tr>
-              <tr><td><code>--no-upload</code> <em>(postman)</em></td><td>—</td><td>—</td><td><code>false</code></td></tr>
-              <tr><td><code>--direct-import</code> <em>(postman)</em></td><td>—</td><td>—</td><td><code>false</code></td></tr>
-              <tr><td><code>--postman-api-key</code></td><td><code>APIDOC_POSTMAN_API_KEY</code> · <code>POSTMAN_API_KEY</code></td><td>not in config — secret</td><td>—</td></tr>
-              <tr><td><code>--postman-workspace</code></td><td>—</td><td>—</td><td>default workspace</td></tr>
+              <tr><td><code>--serve</code> <em>(swagger)</em></td><td>—</td><td>—</td><td><code>true</code></td></tr>
               <tr><td><code>[path]</code> <em>(positional)</em></td><td>—</td><td>—</td><td><code>.</code></td></tr>
             </tbody>
           </table>
@@ -729,34 +712,6 @@ version: 1.0.0</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
         <p>Run with <code>-v</code> to see exactly what was matched, either way.</p>
-
-        <h3 id="config-postman-key">Postman API key resolution</h3>
-        <p>The Postman API key is never stored in <code>.apidoc-gen.yaml</code>. Resolution order:</p>
-        <ol>
-          <li><code>--postman-api-key &lt;key&gt;</code></li>
-          <li><code>APIDOC_POSTMAN_API_KEY</code></li>
-          <li><code>POSTMAN_API_KEY</code></li>
-          <li><code>~/.config/apidoc-gen/credentials.json</code> (written on first interactive prompt; mode <code>0600</code>)</li>
-          <li>Interactive prompt (only when <code>--no-interactive</code> is not set)</li>
-        </ol>
-
-        <h3 id="config-upload-matrix">Upload behaviour matrix</h3>
-        <div class="tbl-wrap">
-          <table>
-            <thead><tr><th>Mode</th><th>Key available?</th><th><code>--upload</code></th><th><code>--no-upload</code></th><th>Result</th></tr></thead>
-            <tbody>
-              <tr><td>Interactive</td><td>yes</td><td>—</td><td>no</td><td>Auto-upload, print Postman URL</td></tr>
-              <tr><td>Interactive</td><td>no</td><td>no</td><td>no</td><td>Prompt for key, save, upload</td></tr>
-              <tr><td>Interactive</td><td>—</td><td>—</td><td>yes</td><td>Skip upload</td></tr>
-              <tr><td><code>--no-interactive</code></td><td>yes</td><td>—</td><td>no</td><td>Auto-upload</td></tr>
-              <tr><td><code>--no-interactive</code></td><td>no</td><td>no</td><td>no</td><td>Skip silently, print local-file path</td></tr>
-              <tr><td><code>--no-interactive</code></td><td>no</td><td>yes</td><td>no</td><td><strong>Error</strong> (exit code 1)</td></tr>
-              <tr><td>any</td><td>—</td><td>—</td><td>yes</td><td>Skip upload</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p>The collection UID is cached in <code>.apidoc-gen-cache.json</code> (project root, gitignored by default). Delete it to force a new collection on the next upload.</p>
-        <p><code>--direct-import</code> / the wizard's "Import directly into Postman" option currently produce the same outcome as doing nothing: if Postman desktop is installed, it opens; either way you still drag <code>collection.json</code> into the sidebar (or File &gt; Import) yourself. There is no automatic local-file import yet — only <code>--upload</code> (cloud API) results in Postman opening pre-loaded with the collection.</p>
 
         <h3 id="config-inspect">Inspect effective config</h3>
         <div class="code-block">
@@ -787,24 +742,17 @@ version: 1.0.0</code></pre>
       <!-- Postman -->
       <div class="section" id="postman">
         <h2>Postman</h2>
-
-        <h3 id="postman-manual">Manual import (default)</h3>
-        <p>Generate <code>collection.json</code>, then in Postman click <strong>Import</strong> in the sidebar and drag the file onto the dialog.</p>
-
-        <h3 id="postman-upload">Auto-upload</h3>
-        <p>Pass <code>--upload</code> to have the CLI upload the collection directly to your Postman workspace via the Postman API. You'll be prompted for an API key the first time; generate one at <a href="https://postman.co/settings/me/api-keys" target="_blank" rel="noopener">postman.co/settings/me/api-keys</a>. The key is saved to <code>~/.config/apidoc-gen/credentials.json</code> and reused on future runs. Repeat runs update the same collection — no duplicates.</p>
+        <p><code>--type postman</code> generates <code>collection.json</code> with your endpoints organized into folders by tag, example request bodies pre-filled, and Bearer auth wired up. api-doc-gen does not upload it anywhere or talk to the Postman API — that would need an API key, and holding Postman credentials just to skip a five-second drag-and-drop isn't worth the complexity. Import it yourself:</p>
+        <ol>
+          <li>Open Postman</li>
+          <li>Click <strong>Import</strong> (top-left of the sidebar)</li>
+          <li>Choose <strong>Upload Files</strong> and select <code>collection.json</code></li>
+        </ol>
+        <p>Or drag the file directly into the Postman sidebar.</p>
         <div class="code-block">
-          <pre><code><span class="c"># First run — prompts for key once, then uploads</span>
-api-doc-gen generate --no-interactive --type postman --upload -o ./docs
-
-<span class="c"># CI — read key from env, fail loudly if missing</span>
-APIDOC_POSTMAN_API_KEY=your_key api-doc-gen generate -y --type postman --upload
-
-<span class="c"># Generate file only, skip upload entirely</span>
-api-doc-gen generate -y --type postman --no-upload</code></pre>
+          <pre><code>api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
-        <p>The collection UID is cached in <code>.apidoc-gen-cache.json</code> (gitignored) so subsequent uploads always update the same collection. See the <a href="#config-upload-matrix">upload behaviour matrix</a> for exactly what happens in each mode.</p>
       </div>
 
       <hr class="section-rule">
@@ -860,7 +808,7 @@ docker run --rm \
           <li><strong>Confined file access</strong> — every file read is scoped to your project directory via Go's <code>os.Root</code>, so a symlink (accidental or crafted) pointing outside the project tree is never followed, even if it's swapped in mid-scan.</li>
           <li><strong>Output stays put</strong> — the output directory is validated to stay within your working directory unless you pass <code>--output</code>/<code>-o</code> explicitly yourself, so a <code>.apidoc-gen.yaml</code> from a repo you don't control can't silently redirect where files get written.</li>
           <li><strong>Local-only preview</strong> — the Swagger UI preview server binds to <code>127.0.0.1</code>, never your network, and generated docs are fully offline (no CDN dependency).</li>
-          <li><strong>Secrets stay out of it</strong> — the Postman API key is never written to <code>.apidoc-gen.yaml</code>; it's stored at <code>~/.config/apidoc-gen/credentials.json</code> with <code>0600</code> permissions.</li>
+          <li><strong>No credentials, ever</strong> — api-doc-gen never talks to any external API (Postman included); it only reads your project and writes files locally, so there's no credential-handling surface at all.</li>
         </ul>
         <p>Found a security issue? See <a href="https://github.com/devenock/api-doc-gen/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a> for how to report it.</p>
       </div>

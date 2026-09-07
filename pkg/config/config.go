@@ -73,24 +73,6 @@ type Config struct {
 	// carrying that tag outright, regardless of include matches. Mirrors
 	// swag's --tags flag/convention. Unset (the default) keeps everything.
 	Tags []string
-
-	// Postman upload settings (only honored when DocType == "postman").
-	// PostmanAPIKey is resolved at runtime from --postman-api-key, env, or the
-	// credentials file; do not persist it to .apidoc-gen.yaml (it is a secret).
-	PostmanAPIKey       string
-	PostmanWorkspaceUID string
-	PostmanUpload       bool // --upload: force upload, error if no API key available
-	PostmanNoUpload     bool // --no-upload: skip the upload step entirely
-	// PostmanDirectImport records that the user chose "import directly" (no
-	// API key) in the interactive wizard, or passed --direct-import. It is
-	// currently NOT read anywhere in the upload flow — runPostmanUpload
-	// (cmd/root.go) only branches on PostmanUpload — so today it has no
-	// effect beyond skipping the cloud-upload API-key prompt inside the
-	// wizard itself; the actual outcome (open Postman desktop if installed,
-	// print manual-import instructions) is identical to the default path.
-	// True one-step local-file import (e.g. via a temporary localhost server
-	// + a postman:// import-by-URL request) is not implemented.
-	PostmanDirectImport bool
 }
 
 // ServerConfig represent a server configuration

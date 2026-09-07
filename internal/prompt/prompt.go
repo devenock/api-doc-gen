@@ -1,114 +1,14 @@
 // Package prompt implements the interactive wizard (doc type, framework,
-// title, output dir, and the Postman import flow) that cmd/generate.go runs
-// when neither --no-interactive nor --type was given.
+// title, output dir) that cmd/generate.go runs when neither --no-interactive
+// nor --type was given.
 package prompt
 
 import (
-	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/devenock/api-doc-gen/pkg/config"
-	"github.com/devenock/api-doc-gen/pkg/postman"
 	"github.com/manifoldco/promptui"
 )
-
-// PromptPostmanAPIKey asks the user for a Postman API key with masked input.
-// It only validates that the key is non-empty and looks plausibly long enough;
-// real validation happens via a postman.Client.Me() call by the caller.
-func PromptPostmanAPIKey() (string, error) {
-	fmt.Println()
-	fmt.Println("📮 Postman login")
-	fmt.Println("   Generate an API key at: https://postman.co/settings/me/api-keys")
-	fmt.Println("   (it is saved locally with 0600 permissions; not sent anywhere except api.getpostman.com)")
-	p := promptui.Prompt{
-		Label: "Paste your Postman API key",
-		Mask:  '*',
-		Validate: func(s string) error {
-			if len(strings.TrimSpace(s)) < 10 {
-				return errors.New("that does not look like a Postman API key (too short)")
-			}
-			return nil
-		},
-	}
-	key, err := p.Run()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(key), nil
-}
-
-// setupPostmanInWizard handles Postman desktop detection and lets the user
-// choose how their collection should be delivered. It updates cfg in place so
-// runPostmanUpload knows which path to take after generation.
-func setupPostmanInWizard(cfg *config.Config) {
-	fmt.Println()
-
-	if !postman.IsDesktopInstalled() {
-		fmt.Println("   📦 Postman desktop not found on this machine.")
-		fmt.Println("   A collection.json will be saved — import it when ready:")
-		fmt.Println("      • Desktop: https://www.postman.com/downloads/")
-		fmt.Println("      • Web:     https://web.postman.co → Import → Upload File")
-		fmt.Println()
-		return
-	}
-
-	fmt.Println("   📮 Postman detected on your machine.")
-
-	const (
-		optDirect = "Import directly into Postman (no account or API key needed)"
-		optCloud  = "Sync to Postman cloud (requires API key — enables team sharing & repeat updates)"
-		optFile   = "Save to file only — I'll import manually"
-	)
-
-	modePrompt := promptui.Select{
-		Label: "How would you like to import your collection?",
-		Items: []string{optDirect, optCloud, optFile},
-	}
-	_, choice, err := modePrompt.Run()
-	if err != nil {
-		// Ctrl-C or error — default to file only.
-		fmt.Println("   ↳ Saving collection to file.")
-		fmt.Println()
-		return
-	}
-
-	switch choice {
-	case optDirect:
-		cfg.PostmanDirectImport = true
-		fmt.Println("   ✅ Postman will open after generation — drag collection.json into the sidebar (or File > Import) to load it. No API key needed.")
-
-	case optCloud:
-		key, source := postman.LoadAPIKey()
-		if key != "" {
-			cfg.PostmanUpload = true
-			fmt.Printf("   ✅ Already logged in (%s) — collection will be uploaded and Postman will open.\n", source)
-			break
-		}
-		apiKey, err := PromptPostmanAPIKey()
-		if err != nil {
-			// User skipped key entry — fall back to direct import.
-			cfg.PostmanDirectImport = true
-			fmt.Println("   ↳ No key entered. Falling back to direct import into Postman desktop.")
-			break
-		}
-		path, err := postman.SaveAPIKey(apiKey)
-		if err != nil {
-			cfg.PostmanDirectImport = true
-			fmt.Printf("   ↳ Could not save API key (%v). Falling back to direct import.\n", err)
-			break
-		}
-		cfg.PostmanUpload = true
-		fmt.Printf("   🔐 API key saved to %s\n", path)
-		fmt.Println("   Your collection will be uploaded and Postman will open automatically.")
-
-	case optFile:
-		cfg.PostmanNoUpload = true
-		fmt.Println("   ↳ collection.json will be saved for manual import.")
-	}
-
-	fmt.Println()
-}
 
 // GetUserPreferences prompts the user for their preferences
 func GetUserPreferences(cfg *config.Config) error {
@@ -131,7 +31,6 @@ func GetUserPreferences(cfg *config.Config) error {
 			cfg.DocType = "swagger"
 		case "Postman Collection":
 			cfg.DocType = "postman"
-			setupPostmanInWizard(cfg)
 		}
 	}
 

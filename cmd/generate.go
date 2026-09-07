@@ -16,7 +16,6 @@ import (
 	"github.com/devenock/api-doc-gen/pkg/analyzer"
 	"github.com/devenock/api-doc-gen/pkg/config"
 	"github.com/devenock/api-doc-gen/pkg/generator"
-	"github.com/devenock/api-doc-gen/pkg/postman"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -48,17 +47,10 @@ func init() {
 	generateCmd.Flags().String("description", "", "API description")
 	generateCmd.Flags().Bool("dry-run", false, "analyze and show what would be generated without writing files")
 	generateCmd.Flags().Bool("show-config", false, "print effective config (file + env + flags) and exit")
-	generateCmd.Flags().Bool("serve", false, "after generating (swagger only), serve docs and print the access URL")
+	generateCmd.Flags().Bool("serve", true, "after generating (swagger only), serve docs locally and open them in your browser; pass --serve=false to skip")
 	generateCmd.Flags().Bool("write-annotations", false, "write swag-style comment blocks above handler functions (same-file handlers only)")
-	generateCmd.Flags().Bool("skip-build-check", false, "skip the `go vet ./...` pre-flight check against the target project")
+	generateCmd.Flags().Bool("skip-build-check", false, "skip the 'go vet ./...' pre-flight check against the target project")
 	generateCmd.Flags().Bool("required-by-default", false, "mark every struct field required unless it has json:\",omitempty\" (default: only binding/validate:\"required\" tags count)")
-
-	// Postman upload flags (only honored when --type=postman)
-	generateCmd.Flags().Bool("upload", false, "(postman) force upload to Postman; error out if no API key is available (good for CI)")
-	generateCmd.Flags().Bool("no-upload", false, "(postman) skip the auto-upload step even if a Postman API key is available")
-	generateCmd.Flags().Bool("direct-import", false, "(postman) import directly into the Postman desktop app — no API key or account needed")
-	generateCmd.Flags().String("postman-api-key", "", "(postman) API key for the upload step; takes precedence over env and credentials file")
-	generateCmd.Flags().String("postman-workspace", "", "(postman) workspace UID to upload to (default: your default workspace)")
 
 	// Bind flags to viper. Errors are discarded: they can only occur if the
 	// flag name doesn't exist on the FlagSet, which would mean a typo above —
@@ -81,11 +73,6 @@ func init() {
 	_ = viper.BindPFlag("write-annotations", generateCmd.Flags().Lookup("write-annotations"))
 	_ = viper.BindPFlag("skip-build-check", generateCmd.Flags().Lookup("skip-build-check"))
 	_ = viper.BindPFlag("required-by-default", generateCmd.Flags().Lookup("required-by-default"))
-	_ = viper.BindPFlag("upload", generateCmd.Flags().Lookup("upload"))
-	_ = viper.BindPFlag("no-upload", generateCmd.Flags().Lookup("no-upload"))
-	_ = viper.BindPFlag("direct-import", generateCmd.Flags().Lookup("direct-import"))
-	_ = viper.BindPFlag("postman-api-key", generateCmd.Flags().Lookup("postman-api-key"))
-	_ = viper.BindPFlag("postman-workspace", generateCmd.Flags().Lookup("postman-workspace"))
 
 	rootCmd.AddCommand(generateCmd)
 }
@@ -98,28 +85,23 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := &config.Config{
-		ProjectPath:         projectPath,
-		Output:              viper.GetString("output"),
-		DocType:             viper.GetString("type"),
-		Framework:           viper.GetString("framework"),
-		Exclude:             viper.GetStringSlice("exclude"),
-		Tags:                viper.GetStringSlice("tags"),
-		BasePath:            viper.GetString("base-path"),
-		Title:               viper.GetString("title"),
-		Version:             viper.GetString("version"),
-		Description:         viper.GetString("description"),
-		Servers:             []config.ServerConfig{},
-		Verbose:             viper.GetBool("verbose"),
-		Quiet:               viper.GetBool("quiet"),
-		PostmanAPIKey:       viper.GetString("postman-api-key"),
-		PostmanWorkspaceUID: viper.GetString("postman-workspace"),
-		PostmanUpload:       viper.GetBool("upload"),
-		PostmanNoUpload:     viper.GetBool("no-upload"),
-		PostmanDirectImport: viper.GetBool("direct-import"),
-		WriteAnnotations:    viper.GetBool("write-annotations"),
-		SkipBuildCheck:      viper.GetBool("skip-build-check"),
-		RequiredByDefault:   viper.GetBool("required-by-default"),
-		OutputFromFlag:      cmd.Flags().Changed("output"),
+		ProjectPath:       projectPath,
+		Output:            viper.GetString("output"),
+		DocType:           viper.GetString("type"),
+		Framework:         viper.GetString("framework"),
+		Exclude:           viper.GetStringSlice("exclude"),
+		Tags:              viper.GetStringSlice("tags"),
+		BasePath:          viper.GetString("base-path"),
+		Title:             viper.GetString("title"),
+		Version:           viper.GetString("version"),
+		Description:       viper.GetString("description"),
+		Servers:           []config.ServerConfig{},
+		Verbose:           viper.GetBool("verbose"),
+		Quiet:             viper.GetBool("quiet"),
+		WriteAnnotations:  viper.GetBool("write-annotations"),
+		SkipBuildCheck:    viper.GetBool("skip-build-check"),
+		RequiredByDefault: viper.GetBool("required-by-default"),
+		OutputFromFlag:    cmd.Flags().Changed("output"),
 	}
 	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
 	_ = viper.UnmarshalKey("servers", &cfg.Servers)
@@ -134,6 +116,12 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	// Interactive mode: skip if --no-interactive/-y or if --type is already set
 	quiet := viper.GetBool("quiet")
 	useInteractive := viper.GetBool("interactive") && !viper.GetBool("no-interactive") && cfg.DocType == ""
+	if useInteractive && !isInteractiveTerminal(os.Stdin) {
+		return &exitCodeError{
+			errors.New("no --type given and stdin is not an interactive terminal — pass --type (swagger|postman) and --no-interactive, e.g. in CI/scripts (see -h)"),
+			ExitUsageError,
+		}
+	}
 	if useInteractive {
 		if cfgFile == "" && viper.ConfigFileUsed() == "" {
 			// Config file not found; suggest init (only in interactive)
@@ -229,17 +217,18 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Swagger: start a local server and open the browser automatically.
-	// In --quiet mode (CI/scripts) skip the server and browser open.
+	// In --quiet mode (CI/scripts) or with --serve=false, skip the server
+	// and browser open.
 	if cfg.DocType == "swagger" && !quiet {
-		return runServeDocs(cmd.Context(), cfg.Output, quiet)
+		if viper.GetBool("serve") {
+			return runServeDocs(cmd.Context(), cfg.Output, quiet)
+		}
+		fmt.Printf("   Open %s in your browser to view it.\n", filepath.Join(cfg.Output, "index.html"))
 	}
 
-	// Postman: import into desktop (or prompt/upload via cloud API).
+	// Postman: tell the user where the file is and how to import it.
 	if cfg.DocType == "postman" {
-		useInteractiveUpload := viper.GetBool("interactive") && !viper.GetBool("no-interactive")
-		if err := runPostmanUpload(cmd.Context(), cfg, useInteractiveUpload, quiet); err != nil {
-			return err
-		}
+		printPostmanInstructions(cfg.Output, quiet)
 	}
 
 	return nil
@@ -376,18 +365,5 @@ func printShowConfig(cfg *config.Config) {
 	fmt.Printf("servers: %d\n", len(cfg.Servers))
 	for i, s := range cfg.Servers {
 		fmt.Printf("  [%d] url=%q description=%q\n", i, s.URL, s.Description)
-	}
-	if cfg.DocType == "postman" {
-		fmt.Printf("postman.upload: %v\n", cfg.PostmanUpload)
-		fmt.Printf("postman.no_upload: %v\n", cfg.PostmanNoUpload)
-		fmt.Printf("postman.workspace: %q\n", cfg.PostmanWorkspaceUID)
-		_, source := postman.LoadAPIKey()
-		if cfg.PostmanAPIKey != "" {
-			fmt.Println("postman.api_key: <set via --postman-api-key>")
-		} else if source != "" {
-			fmt.Printf("postman.api_key: <set via %s>\n", source)
-		} else {
-			fmt.Println("postman.api_key: <not set>")
-		}
 	}
 }
