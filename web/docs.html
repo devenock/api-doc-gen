@@ -17,6 +17,7 @@
       --accent-dim:  rgba(62, 143, 255, 0.10);
       --green:       #2DBF6E;
       --sidebar-w:   232px;
+      --toc-w:       200px;
       --header-h:    52px;
       --radius:      6px;
     }
@@ -84,6 +85,10 @@
     .theme-btn:hover { border-color: var(--muted); color: var(--text); }
 
     /* ── Layout ──────────────────────────────────────────────── */
+    /* Sidebar and TOC are fixed-width; .main is the flexible middle
+       column and centers its (reading-width-capped) content within
+       whatever space remains, so the page always fills the viewport
+       width instead of leaving dead space when the TOC is empty. */
     .layout { display: flex; padding-top: var(--header-h); min-height: 100vh; }
 
     /* ── Sidebar ─────────────────────────────────────────────── */
@@ -128,9 +133,44 @@
     .main {
       flex: 1;
       min-width: 0;
-      padding: 3rem 3.5rem 6rem;
-      max-width: 740px;
+      display: flex;
+      justify-content: center;
+      padding: 3rem 2.5rem 6rem;
     }
+    .main-inner {
+      width: 100%;
+      max-width: 760px;
+    }
+
+    /* ── TOC (right rail) ───────────────────────────────────── */
+    .toc {
+      width: var(--toc-w);
+      flex-shrink: 0;
+      position: sticky;
+      top: var(--header-h);
+      height: calc(100vh - var(--header-h));
+      overflow-y: auto;
+      padding: 3rem 1.5rem 2rem 0;
+    }
+    .toc.empty { display: none; }
+    .toc-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      margin-bottom: 0.625rem;
+      display: block;
+    }
+    .toc-link {
+      display: block;
+      padding: 0.25rem 0;
+      font-size: 0.8125rem;
+      color: var(--muted);
+      border-left: 2px solid var(--border);
+      padding-left: 0.75rem;
+    }
+    .toc-link:hover { color: var(--text); text-decoration: none; }
 
     /* ── Hero ────────────────────────────────────────────────── */
     .hero { padding-bottom: 2.5rem; margin-bottom: 2.5rem; border-bottom: 1px solid var(--border); }
@@ -208,6 +248,15 @@
       margin-bottom: 1rem;
       scroll-margin-top: calc(var(--header-h) + 1.25rem);
     }
+
+    h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 1.75rem 0 0.75rem;
+      scroll-margin-top: calc(var(--header-h) + 1.25rem);
+    }
+    h3:first-of-type { margin-top: 0.5rem; }
 
     p { color: var(--muted); margin-bottom: 0.875rem; }
     p:last-child { margin-bottom: 0; }
@@ -333,9 +382,12 @@
     .pager-title { font-size: 0.875rem; color: var(--text); }
 
     /* ── Responsive ──────────────────────────────────────────── */
+    @media (max-width: 1180px) {
+      .toc { display: none; }
+    }
     @media (max-width: 860px) {
       .sidebar { display: none; }
-      .main { padding: 2rem 1.5rem 4rem; max-width: 100%; }
+      .main { padding: 2rem 1.5rem 4rem; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -360,14 +412,18 @@
       <nav>
         <div class="nav-section">
           <span class="nav-label">Getting started</span>
+          <a class="nav-link" href="#why">Why</a>
           <a class="nav-link" href="#install">Install</a>
           <a class="nav-link" href="#generate">Generate docs</a>
           <a class="nav-link" href="#output">Output</a>
+          <a class="nav-link" href="#coverage">Coverage</a>
+          <a class="nav-link" href="#applying">Applying it to your project</a>
         </div>
         <div class="nav-section">
           <span class="nav-label">Usage</span>
           <a class="nav-link" href="#flags">Flags</a>
           <a class="nav-link" href="#config">Config file</a>
+          <a class="nav-link" href="#build-check">Build check</a>
           <a class="nav-link" href="#postman">Postman</a>
           <a class="nav-link" href="#docker">Docker</a>
           <a class="nav-link" href="#ci">CI &amp; scripts</a>
@@ -381,6 +437,7 @@
     </aside>
 
     <main class="main">
+      <div class="main-inner">
 
       <!-- Hero -->
       <div class="hero">
@@ -395,6 +452,26 @@
           <button class="hero-copy">Copy</button>
         </div>
       </div>
+
+      <!-- Why -->
+      <div class="section" id="why">
+        <h2>Why</h2>
+        <p>The standard way to generate OpenAPI docs for a Go API — <a href="https://github.com/swaggo/swag" target="_blank" rel="noopener">swaggo/swag</a> — works by parsing comment annotations you write above every handler:</p>
+        <div class="code-block">
+          <pre><code><span class="c">// @Summary      Show an account
+// @Router       /accounts/{id} [get]
+// @Param        id   path  int  true  "Account ID"
+// @Success      200  {object}  model.Account</span>
+func (c *Controller) ShowAccount(ctx *gin.Context) {</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>That's a real, well-established tool, but the annotations are a second source of truth you maintain by hand: add an endpoint and forget the comment block, and the docs silently fall behind the code with no error to catch it.</p>
+        <p><strong>api-doc-gen removes that step entirely.</strong> It reads your code as-is — route registrations, handler signatures, request/response structs, binding calls — via Go's own AST parser, the same way <code>go vet</code> or <code>gofmt</code> do, and builds the OpenAPI/Postman spec from what's actually there. No comments to write, no existing code to touch.</p>
+        <p>One consequence of that: because there's nothing to keep in sync, docs stay accurate as you build incrementally. Register one handler, generate, ship; add the next one whenever it's ready, generate again — each run reflects exactly what's in the code at that moment, with zero extra steps. (To be precise: every run is a full, fresh scan of the project, not a cached diff of what changed — "incremental" describes the workflow this enables, not an incremental-build engine under the hood.)</p>
+        <p>"No annotations" only helps if the scanner is actually reliable, so the analyzer is built to degrade honestly rather than guess silently: it resolves route groups, auth middleware, embedded struct fields, query/path parameters, and response bodies across real-world patterns in Gin, Echo, Fiber, Gorilla Mux, and Chi; falls back to generic <code>net/http</code>-style detection for anything else; and surfaces ambiguity instead of hiding it — a <code>.go</code> file that fails to parse, a framework it can't confidently pick between, or zero endpoints found are all reported explicitly (<code>-v</code> for detail) rather than producing a spec that looks complete but silently isn't.</p>
+      </div>
+
+      <hr class="section-rule">
 
       <!-- Install -->
       <div class="section" id="install">
@@ -440,12 +517,6 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
           Run <code>api-doc-gen init</code> inside your project to generate a <code>.apidoc-gen.yaml</code> config file.
           Commit it so the whole team shares the same defaults.
         </div>
-        <p>Optional <code>Makefile</code> target:</p>
-        <div class="code-block">
-          <pre><code>docs:
-	api-doc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
-          <button class="copy-btn">Copy</button>
-        </div>
       </div>
 
       <hr class="section-rule">
@@ -468,8 +539,70 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
             </tbody>
           </table>
         </div>
-        <p><strong>Swagger</strong> — after generating, a local preview server starts automatically (bound to <code>127.0.0.1</code> only — never exposed to your network) and opens <code>index.html</code> in your browser. Pass <code>-q</code>/<code>--quiet</code> in CI or scripts to skip this. The Swagger UI assets are vendored into the binary and written alongside your docs, so the page works fully offline — no CDN calls, nothing to break if you view it later without a network connection.</p>
+        <p><strong>Swagger</strong> — after generating, a local preview server starts automatically (bound to <code>127.0.0.1</code> only — never exposed to your network) and opens <code>index.html</code> in your browser. Pass <code>-q</code>/<code>--quiet</code> in CI or scripts to skip this. The Swagger UI assets are vendored into the binary and written alongside your docs, so the page works fully offline — no CDN calls, nothing to break if you view it later without a network connection. To reopen it later, open <code>./docs/index.html</code> directly in your browser.</p>
         <p><strong>Postman</strong> — open Postman, click <strong>Import</strong> in the sidebar, and drag <code>collection.json</code> onto the dialog. Endpoints are organized into folders by tag, with example request bodies and bearer auth pre-wired.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Coverage -->
+      <div class="section" id="coverage">
+        <h2>Coverage</h2>
+        <p>What the analyzer actually detects and emits, checked against the code rather than aspirational.</p>
+
+        <h3 id="coverage-supported">Supported</h3>
+        <ul>
+          <li>Paths, operations, path and query parameters</li>
+          <li>Request bodies — JSON binding calls (<code>ShouldBindJSON</code>, <code>BodyParser</code>, <code>Decode</code>, and common project-specific wrapper names matched by hint)</li>
+          <li>Response bodies — JSON responses across Gin/Echo/Fiber/Gorilla Mux/Chi/net/http response patterns</li>
+          <li>Bearer auth detection — marks a route <code>security: [BearerAuth]</code> when its middleware looks like auth (or matches your configured <code>auth_middleware</code> list)</li>
+          <li>Struct tags — <code>json</code> (name, <code>omitempty</code>, <code>-</code> to exclude), <code>binding:"required"</code> / <code>validate:"required"</code></li>
+          <li>Embedded struct fields promoted into the parent schema</li>
+          <li>Tags for Swagger UI grouping, derived from the path</li>
+          <li>OpenAPI 3.0.3 and Postman Collection v2.1 output</li>
+          <li>Common external types — <code>time.Time</code>, <code>time.Duration</code>, <code>uuid.UUID</code> (<a href="https://github.com/google/uuid" target="_blank" rel="noopener">google/uuid</a>), and <code>database/sql</code>'s <code>Null*</code> types resolve to their real, verified JSON shape (checked against <code>encoding/json</code>'s actual output, not assumed — <code>sql.NullString</code> looks like it should marshal as a plain string, but it has no custom <code>MarshalJSON</code>, so it's really <code>{"String":...,"Valid":...}</code>)</li>
+        </ul>
+
+        <h3 id="coverage-not-supported">Not yet supported</h3>
+        <ul>
+          <li>Header parameters — not extracted</li>
+          <li>Non-JSON content types — request/response bodies are always modeled as <code>application/json</code>; no multipart/form-data, XML, or plain text</li>
+          <li>Auth schemes other than Bearer — no API Key, Basic Auth, or OAuth2 security scheme detection</li>
+          <li>Enums, example values, response headers — the schema model has fields for all three (so output stays forward-compatible), but nothing in the analyzer populates them yet</li>
+          <li>Any other type from outside the scanned project (a third-party library type not in the supported list above, a shared internal module, etc.) resolves to an empty <code>object</code> with no fields</li>
+          <li>File uploads (<code>multipart/form-data</code>) — not detected</li>
+        </ul>
+        <p>Found a pattern that isn't covered? <a href="https://github.com/devenock/api-doc-gen/issues" target="_blank" rel="noopener">Open an issue</a> — new patterns belong in the analyzer, not worked around.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Applying it to your project -->
+      <div class="section" id="applying">
+        <h2>Applying it to your project</h2>
+        <p>Your project does not need any changes — the tool reads your existing route definitions.</p>
+
+        <h3 id="applying-layout">Recommended layout</h3>
+        <div class="code-block">
+          <pre><code>my-go-api/
+├── go.mod
+├── main.go
+├── handlers/
+├── .apidoc-gen.yaml   <span class="c">← optional config (see below)</span>
+└── docs/              <span class="c">← generated output</span></code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+
+        <h3 id="applying-makefile">Optional Makefile target</h3>
+        <p>So the whole team runs the same command:</p>
+        <div class="code-block">
+          <pre><code>docs:
+	api-doc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+
+        <h3 id="applying-config">Optional config file</h3>
+        <p>Run <code>api-doc-gen init</code> inside your project to create <code>.apidoc-gen.yaml</code>. Commit it so everyone shares the same defaults (output dir, title, framework, etc.). In interactive mode, doc type and framework are skipped entirely once set in the file; title, version, base path, and output directory are still prompted but pre-filled with the file's value — press Enter to accept it. Use <code>--no-interactive</code> to skip all prompts and use the file (plus flags/env) as-is.</p>
       </div>
 
       <hr class="section-rule">
@@ -477,6 +610,8 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
       <!-- Flags -->
       <div class="section" id="flags">
         <h2>Flags</h2>
+
+        <h3 id="flags-core">Core</h3>
         <div class="tbl-wrap">
           <table>
             <thead><tr><th>Flag</th><th>Description</th></tr></thead>
@@ -485,16 +620,43 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
               <tr><td><code>-o, --output</code></td><td>Output directory (default: <code>./docs</code>)</td></tr>
               <tr><td><code>-f, --framework</code></td><td>Force framework: <code>gin</code> · <code>echo</code> · <code>fiber</code> · <code>gorilla</code> · <code>chi</code></td></tr>
               <tr><td><code>-y, --no-interactive</code></td><td>Disable all prompts — required in CI</td></tr>
-              <tr><td><code>--dry-run</code></td><td>Show what would be generated, write nothing</td></tr>
-              <tr><td><code>--show-config</code></td><td>Print effective config and exit</td></tr>
-              <tr><td><code>--upload</code></td><td>Upload Postman collection via API (see <a href="#postman">Postman</a>)</td></tr>
+              <tr><td><code>--exclude</code></td><td>Additional directory names to skip (repeatable), added to the defaults: <code>vendor</code>, <code>node_modules</code>, <code>.git</code>, <code>test</code>, <code>tests</code></td></tr>
+              <tr><td><code>--tags</code></td><td>Filter endpoints by tag: plain name to include, <code>!name</code> to exclude (comma-separated, mixable)</td></tr>
+              <tr><td><code>--required-by-default</code></td><td>Mark every struct field required unless it has <code>json:",omitempty"</code> (default: only <code>binding</code>/<code>validate:"required"</code> tags count)</td></tr>
               <tr><td><code>--title</code></td><td>API title (default: auto-detected from your <code>go.mod</code> module name)</td></tr>
               <tr><td><code>--version</code></td><td>API version string (default: <code>1.0.0</code>)</td></tr>
               <tr><td><code>--base-path</code></td><td>Prefix prepended to every path</td></tr>
+              <tr><td><code>--description</code></td><td>API description shown in the generated spec</td></tr>
+              <tr><td><code>--dry-run</code></td><td>Show what would be generated, write nothing</td></tr>
+              <tr><td><code>--show-config</code></td><td>Print effective config and exit</td></tr>
               <tr><td><code>--write-annotations</code></td><td>Write swag-style <code>// @...</code> comments above same-file handler functions</td></tr>
-              <tr><td><code>--skip-build-check</code></td><td>Skip the <code>go vet ./...</code> pre-flight check against the target project</td></tr>
-              <tr><td><code>-q, --quiet</code></td><td>Suppress progress output and skip the auto-opened browser preview</td></tr>
-              <tr><td><code>-v, --verbose</code></td><td>Show detected framework, endpoint count, etc.</td></tr>
+              <tr><td><code>--skip-build-check</code></td><td>Skip the <code>go vet ./...</code> pre-flight check against the target project (see <a href="#build-check">Build check</a>)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="flags-postman">Postman</h3>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>--upload</code></td><td>Upload the collection via the Postman API (see <a href="#postman">Postman</a>)</td></tr>
+              <tr><td><code>--no-upload</code></td><td>Generate the file only, skip upload entirely</td></tr>
+              <tr><td><code>--postman-api-key</code></td><td>Postman API key (see resolution order in <a href="#config-postman-key">Config file</a>)</td></tr>
+              <tr><td><code>--postman-workspace</code></td><td>Target workspace (default: your default workspace)</td></tr>
+              <tr><td><code>--direct-import</code></td><td>No functional effect outside the interactive wizard today — see the note in <a href="#config-upload-matrix">Config file</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="flags-global">Global (all commands)</h3>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>--config</code></td><td>Path to config file (default: <code>.apidoc-gen.yaml</code> in the current directory)</td></tr>
+              <tr><td><code>-v, --verbose</code></td><td>Show detected framework, endpoint count, matched middleware, etc.</td></tr>
+              <tr><td><code>-q, --quiet</code></td><td>Suppress progress output and skip the auto-opened browser preview (errors still print to stderr)</td></tr>
             </tbody>
           </table>
         </div>
@@ -516,21 +678,108 @@ title: My API
 version: 1.0.0</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
-        <p>Precedence (highest wins): flags → env vars → config file.</p>
+
+        <h3 id="config-precedence">Precedence</h3>
+        <p>Configuration is merged from lowest to highest precedence — flags always win:</p>
+        <ol>
+          <li><strong>Config file</strong> — <code>.apidoc-gen.yaml</code> in the current directory (or the path set by <code>--config</code>)</li>
+          <li><strong>Env vars</strong> — <code>APIDOC_&lt;KEY&gt;</code> (e.g. <code>APIDOC_TYPE</code>, <code>APIDOC_OUTPUT</code>)</li>
+          <li><strong>Flags</strong> — e.g. <code>--type swagger</code>, <code>-o ./docs</code></li>
+        </ol>
+
+        <h3 id="config-mapping">Flag · env · config key mapping</h3>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>Config key</th><th>Env var</th></tr></thead>
+            <thead><tr><th>Flag</th><th>Env var</th><th>Config key</th><th>Default</th></tr></thead>
             <tbody>
-              <tr><td><code>type</code></td><td><code>APIDOC_TYPE</code></td></tr>
-              <tr><td><code>output</code></td><td><code>APIDOC_OUTPUT</code></td></tr>
-              <tr><td><code>framework</code></td><td><code>APIDOC_FRAMEWORK</code></td></tr>
-              <tr><td><code>title</code></td><td><code>APIDOC_TITLE</code></td></tr>
-              <tr><td><code>version</code></td><td><code>APIDOC_VERSION</code></td></tr>
+              <tr><td><code>--output, -o</code></td><td><code>APIDOC_OUTPUT</code></td><td><code>output</code></td><td><code>./docs</code></td></tr>
+              <tr><td><code>--type, -t</code></td><td><code>APIDOC_TYPE</code></td><td><code>type</code></td><td>—</td></tr>
+              <tr><td><code>--framework, -f</code></td><td><code>APIDOC_FRAMEWORK</code></td><td><code>framework</code></td><td>auto-detect</td></tr>
+              <tr><td><code>--base-path</code></td><td><code>APIDOC_BASE_PATH</code></td><td><code>base_path</code></td><td><code>""</code></td></tr>
+              <tr><td><code>--title</code></td><td><code>APIDOC_TITLE</code></td><td><code>title</code></td><td>auto-detected from <code>go.mod</code>'s module name (falls back to <code>API Documentation</code>)</td></tr>
+              <tr><td><code>--version</code></td><td><code>APIDOC_VERSION</code></td><td><code>version</code></td><td><code>1.0.0</code></td></tr>
+              <tr><td><code>--description</code></td><td><code>APIDOC_DESCRIPTION</code></td><td><code>description</code></td><td><code>""</code></td></tr>
+              <tr><td><code>--exclude</code></td><td><code>APIDOC_EXCLUDE</code></td><td><code>exclude</code></td><td><code>vendor</code>, <code>node_modules</code>, <code>.git</code>, <code>test</code>, <code>tests</code></td></tr>
+              <tr><td><code>--no-interactive, -y</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--verbose, -v</code></td><td><code>APIDOC_VERBOSE</code></td><td><code>verbose</code></td><td><code>false</code></td></tr>
+              <tr><td><code>--quiet, -q</code></td><td><code>APIDOC_QUIET</code></td><td><code>quiet</code></td><td><code>false</code></td></tr>
+              <tr><td><code>--dry-run</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--show-config</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--write-annotations</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--skip-build-check</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--required-by-default</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--tags</code></td><td>—</td><td>—</td><td>none — keeps everything</td></tr>
+              <tr><td><code>--upload</code> <em>(postman)</em></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--no-upload</code> <em>(postman)</em></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--direct-import</code> <em>(postman)</em></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--postman-api-key</code></td><td><code>APIDOC_POSTMAN_API_KEY</code> · <code>POSTMAN_API_KEY</code></td><td>not in config — secret</td><td>—</td></tr>
+              <tr><td><code>--postman-workspace</code></td><td>—</td><td>—</td><td>default workspace</td></tr>
+              <tr><td><code>[path]</code> <em>(positional)</em></td><td>—</td><td>—</td><td><code>.</code></td></tr>
             </tbody>
           </table>
         </div>
-        <p>Inspect what's loaded: <code>api-doc-gen generate --show-config</code></p>
+        <p>Default <code>exclude</code> dirs are matched by exact directory name (basename), not substring.</p>
+
+        <h3 id="config-auth-middleware">Auth middleware detection</h3>
+        <p>Config-file only (no flag/env equivalent). By default, a route group is marked authenticated (<code>security: [BearerAuth]</code> in the generated spec) when its middleware's name contains <code>auth</code> or <code>jwt</code> (case-insensitive), plus a small set of common exact names. Set <code>auth_middleware</code> in <code>.apidoc-gen.yaml</code> to override that heuristic entirely with an exact (case-insensitive) list of your own middleware names:</p>
+        <div class="code-block">
+          <pre><code>auth_middleware:
+  - requireSession
+  - JWTAuth</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Run with <code>-v</code> to see exactly what was matched, either way.</p>
+
+        <h3 id="config-postman-key">Postman API key resolution</h3>
+        <p>The Postman API key is never stored in <code>.apidoc-gen.yaml</code>. Resolution order:</p>
+        <ol>
+          <li><code>--postman-api-key &lt;key&gt;</code></li>
+          <li><code>APIDOC_POSTMAN_API_KEY</code></li>
+          <li><code>POSTMAN_API_KEY</code></li>
+          <li><code>~/.config/apidoc-gen/credentials.json</code> (written on first interactive prompt; mode <code>0600</code>)</li>
+          <li>Interactive prompt (only when <code>--no-interactive</code> is not set)</li>
+        </ol>
+
+        <h3 id="config-upload-matrix">Upload behaviour matrix</h3>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Mode</th><th>Key available?</th><th><code>--upload</code></th><th><code>--no-upload</code></th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td>Interactive</td><td>yes</td><td>—</td><td>no</td><td>Auto-upload, print Postman URL</td></tr>
+              <tr><td>Interactive</td><td>no</td><td>no</td><td>no</td><td>Prompt for key, save, upload</td></tr>
+              <tr><td>Interactive</td><td>—</td><td>—</td><td>yes</td><td>Skip upload</td></tr>
+              <tr><td><code>--no-interactive</code></td><td>yes</td><td>—</td><td>no</td><td>Auto-upload</td></tr>
+              <tr><td><code>--no-interactive</code></td><td>no</td><td>no</td><td>no</td><td>Skip silently, print local-file path</td></tr>
+              <tr><td><code>--no-interactive</code></td><td>no</td><td>yes</td><td>no</td><td><strong>Error</strong> (exit code 1)</td></tr>
+              <tr><td>any</td><td>—</td><td>—</td><td>yes</td><td>Skip upload</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The collection UID is cached in <code>.apidoc-gen-cache.json</code> (project root, gitignored by default). Delete it to force a new collection on the next upload.</p>
+        <p><code>--direct-import</code> / the wizard's "Import directly into Postman" option currently produce the same outcome as doing nothing: if Postman desktop is installed, it opens; either way you still drag <code>collection.json</code> into the sidebar (or File &gt; Import) yourself. There is no automatic local-file import yet — only <code>--upload</code> (cloud API) results in Postman opening pre-loaded with the collection.</p>
+
+        <h3 id="config-inspect">Inspect effective config</h3>
+        <div class="code-block">
+          <pre><code>api-doc-gen generate --show-config</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Prints the merged values and exits without generating or prompting.</p>
         <p>Full reference: <a href="../docs/CONFIGURATION.md" target="_blank" rel="noopener">CONFIGURATION.md</a></p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Build check -->
+      <div class="section" id="build-check">
+        <h2>Build check</h2>
+        <p>Before analyzing, <code>generate</code> runs <code>go vet ./...</code> against the target project as a pre-flight check. It's purely advisory — a project that fails it still gets docs generated from whatever the AST parser can recover, but you get a warning up front that the result may be incomplete, rather than silently missing routes with no explanation:</p>
+        <div class="code-block">
+          <pre><code>⚠️  This project does not currently pass `go vet ./...` —
+   generated docs may be incomplete or incorrect.
+   Run with -v for details, or pass --skip-build-check to suppress this check.</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Pass <code>--skip-build-check</code> to disable it (e.g. running against a branch mid-refactor in CI). It also skips itself automatically wherever the <code>go</code> toolchain isn't on <code>PATH</code> — including this project's own Docker runtime image, which ships as a slim <code>alpine</code> base with just the compiled binary and no Go toolchain.</p>
       </div>
 
       <hr class="section-rule">
@@ -538,8 +787,12 @@ version: 1.0.0</code></pre>
       <!-- Postman -->
       <div class="section" id="postman">
         <h2>Postman</h2>
-        <p><strong>Manual import (default)</strong> — generate <code>collection.json</code>, then in Postman click <strong>Import</strong> in the sidebar and drag the file onto the dialog.</p>
-        <p><strong>Auto-upload</strong> — pass <code>--upload</code> to have the CLI upload the collection directly to your Postman workspace via the Postman API. You'll be prompted for an API key the first time; generate one at <a href="https://postman.co/settings/me/api-keys" target="_blank" rel="noopener">postman.co/settings/me/api-keys</a>. The key is saved to <code>~/.config/apidoc-gen/credentials.json</code> and reused on future runs. Repeat runs update the same collection — no duplicates.</p>
+
+        <h3 id="postman-manual">Manual import (default)</h3>
+        <p>Generate <code>collection.json</code>, then in Postman click <strong>Import</strong> in the sidebar and drag the file onto the dialog.</p>
+
+        <h3 id="postman-upload">Auto-upload</h3>
+        <p>Pass <code>--upload</code> to have the CLI upload the collection directly to your Postman workspace via the Postman API. You'll be prompted for an API key the first time; generate one at <a href="https://postman.co/settings/me/api-keys" target="_blank" rel="noopener">postman.co/settings/me/api-keys</a>. The key is saved to <code>~/.config/apidoc-gen/credentials.json</code> and reused on future runs. Repeat runs update the same collection — no duplicates.</p>
         <div class="code-block">
           <pre><code><span class="c"># First run — prompts for key once, then uploads</span>
 api-doc-gen generate --no-interactive --type postman --upload -o ./docs
@@ -551,7 +804,7 @@ APIDOC_POSTMAN_API_KEY=your_key api-doc-gen generate -y --type postman --upload
 api-doc-gen generate -y --type postman --no-upload</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
-        <p>The collection UID is cached in <code>.apidoc-gen-cache.json</code> (gitignored) so subsequent uploads always update the same collection.</p>
+        <p>The collection UID is cached in <code>.apidoc-gen-cache.json</code> (gitignored) so subsequent uploads always update the same collection. See the <a href="#config-upload-matrix">upload behaviour matrix</a> for exactly what happens in each mode.</p>
       </div>
 
       <hr class="section-rule">
@@ -559,7 +812,15 @@ api-doc-gen generate -y --type postman --no-upload</code></pre>
       <!-- Docker -->
       <div class="section" id="docker">
         <h2>Docker</h2>
-        <p>Run without installing Go locally. Mount your project as the workspace:</p>
+        <p>No Go installation needed. Pull the published image:</p>
+        <div class="code-block">
+          <pre><code>docker run --rm \
+  -v "$(pwd)":/workspace \
+  -w /workspace \
+  ghcr.io/devenock/api-doc-gen:latest generate --no-interactive --type swagger -o ./docs</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Or build it yourself from source:</p>
         <div class="code-block">
           <pre><code>docker build -t api-doc-gen .
 
@@ -610,22 +871,43 @@ docker run --rm \
       <div class="section" id="troubleshooting">
         <h2>Troubleshooting</h2>
 
-        <p><strong>Command not found after install</strong><br>
-        Go's bin directory is not on your PATH. Add it and reload your shell:</p>
+        <h3 id="ts-not-found">Command not found after go install</h3>
+        <p>Go's bin directory is not on your <code>PATH</code>. Add it and reload your shell:</p>
         <div class="code-block">
           <pre><code>export PATH="$PATH:$(go env GOPATH)/bin"
 source ~/.zshrc   <span class="c"># or ~/.bashrc</span></code></pre>
           <button class="copy-btn">Copy</button>
         </div>
 
-        <p><strong>No endpoints found</strong><br>
-        Pass <code>--framework</code> explicitly (e.g. <code>--framework gin</code>), or run with <code>-v</code> to see what was detected. Confirm route files are not inside an excluded directory (<code>vendor</code>, <code>test</code>).</p>
+        <h3 id="ts-no-endpoints">No endpoints found</h3>
+        <p>Usually one of:</p>
+        <ul>
+          <li>The framework wasn't auto-detected — pass <code>--framework</code> explicitly (e.g. <code>--framework gin</code>).</li>
+          <li>Routes are registered in a file inside an excluded directory (<code>vendor</code>, <code>test</code>, <code>tests</code>, etc.) — check <code>--exclude</code> and the defaults.</li>
+          <li>Routes are registered through an indirection the analyzer doesn't follow (a wrapper function several layers removed from the route-registration call).</li>
+          <li>Run with <code>-v</code> to see exactly what the analyzer read and which framework it picked.</li>
+        </ul>
 
-        <p><strong>Config not picked up</strong><br>
-        Ensure <code>.apidoc-gen.yaml</code> is in the directory you're running from, not a subdirectory. Inspect with <code>api-doc-gen generate --show-config</code>.</p>
+        <h3 id="ts-multi-framework">"Multiple frameworks detected in go.mod"</h3>
+        <p>Your <code>go.mod</code> imports more than one supported framework (e.g. migrating from Gin to Echo). Pass <code>--framework</code> explicitly to disambiguate.</p>
 
-        <p><strong>Prompts appearing in CI</strong><br>
-        Always pass <code>-y</code> (<code>--no-interactive</code>) and <code>--type</code>. Without these the CLI waits for interactive input.</p>
+        <h3 id="ts-vet-fail">"This project does not currently pass go vet ./..."</h3>
+        <p>Advisory only — docs are still generated from whatever the AST parser can recover. Run with <code>-v</code> for details on what failed, or pass <code>--skip-build-check</code> to suppress the warning (see <a href="#build-check">Build check</a>).</p>
+
+        <h3 id="ts-parse-fail">"N file(s) could not be parsed"</h3>
+        <p>One or more <code>.go</code> files have a syntax error the Go parser can't recover from. Endpoints and types in that file are skipped; everything else still generates. Run with <code>-v</code> to see which files failed and why.</p>
+
+        <h3 id="ts-invalid-config">Invalid configuration</h3>
+        <p>Two specific error strings to watch for: an unrecognized <code>type</code> value (only <code>swagger</code> and <code>postman</code> are valid), or an output path that resolves outside your project directory when it wasn't explicitly passed via <code>--output</code>/<code>-o</code> (a deliberate safety check — see <a href="#security">Security</a>).</p>
+
+        <h3 id="ts-config-not-read">Config file not being read</h3>
+        <p>Ensure <code>.apidoc-gen.yaml</code> is in the directory you're running from, not a subdirectory (or point <code>--config</code> at it explicitly). Inspect the merged result with <code>api-doc-gen generate --show-config</code>.</p>
+
+        <h3 id="ts-prompts-in-ci">Prompts appearing in CI</h3>
+        <p>Always pass <code>-y</code> (<code>--no-interactive</code>) and <code>--type</code>. Without these the CLI waits for interactive input. Exit codes in non-interactive mode: <code>0</code> success · <code>1</code> validation error · <code>2</code> runtime error.</p>
+
+        <h3 id="ts-quiet-verbose">Quiet and verbose modes</h3>
+        <p><code>-q</code>/<code>--quiet</code> suppresses progress output and skips the auto-opened browser preview; errors still print to stderr. <code>-v</code>/<code>--verbose</code> shows the detected framework, endpoint count, matched auth middleware, and per-file parse results.</p>
 
         <p>Full guide: <a href="../docs/TROUBLESHOOTING.md" target="_blank" rel="noopener">TROUBLESHOOTING.md</a></p>
       </div>
@@ -642,7 +924,11 @@ source ~/.zshrc   <span class="c"># or ~/.bashrc</span></code></pre>
         </a>
       </nav>
 
+      </div>
     </main>
+
+    <aside class="toc" aria-label="On this page" id="toc"></aside>
+
   </div>
 
   <script>
@@ -698,17 +984,50 @@ source ~/.zshrc   <span class="c"># or ~/.bashrc</span></code></pre>
     const hero      = document.querySelector('.hero');
     const pagerPrev = document.getElementById('pagerPrev');
     const pagerNext = document.getElementById('pagerNext');
+    const tocEl     = document.getElementById('toc');
+
+    // ── On-this-page TOC ───────────────────────────────────────
+    // Rebuilt from the active section's <h3> headings each time the
+    // page switches — sections with no subsections just leave the
+    // rail empty, which collapses it entirely (see .toc.empty).
+    function renderToc(sectionEl) {
+      const headings = sectionEl ? Array.from(sectionEl.querySelectorAll('h3')) : [];
+      if (headings.length === 0) {
+        tocEl.innerHTML = '';
+        tocEl.classList.add('empty');
+        return;
+      }
+      tocEl.classList.remove('empty');
+      const label = document.createElement('span');
+      label.className = 'toc-label';
+      label.textContent = 'On this page';
+      tocEl.replaceChildren(label);
+      headings.forEach(h => {
+        const link = document.createElement('a');
+        link.className = 'toc-link';
+        link.href = '#' + h.id;
+        link.textContent = h.textContent;
+        link.addEventListener('click', e => {
+          e.preventDefault();
+          h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+        tocEl.appendChild(link);
+      });
+    }
 
     function showPage(id) {
       let index = pages.findIndex(p => p.id === id);
       if (index === -1) index = 0;
 
+      let activeSection = null;
       pages.forEach((p, i) => {
         const section = document.getElementById(p.id);
         if (section) section.style.display = i === index ? '' : 'none';
+        if (i === index) activeSection = section;
         p.link.classList.toggle('active', i === index);
       });
       if (hero) hero.style.display = index === 0 ? '' : 'none';
+      renderToc(activeSection);
 
       const prev = pages[index - 1];
       const next = pages[index + 1];
@@ -740,11 +1059,28 @@ source ~/.zshrc   <span class="c"># or ~/.bashrc</span></code></pre>
     pagerPrev.addEventListener('click', e => { e.preventDefault(); navigateTo(pagerPrev.href.split('#')[1]); });
     pagerNext.addEventListener('click', e => { e.preventDefault(); navigateTo(pagerNext.href.split('#')[1]); });
 
-    window.addEventListener('popstate', () => {
-      showPage(location.hash.slice(1) || pages[0].id);
-    });
+    // A shared/bookmarked link may point at a subsection <h3> id rather
+    // than a page id (e.g. #ts-no-endpoints) - resolve it to the page
+    // that contains it so it doesn't just fall back to the first page.
+    function resolveInitialHash() {
+      const hash = location.hash.slice(1);
+      if (!hash) return { pageId: pages[0].id, target: null };
+      if (pages.some(p => p.id === hash)) return { pageId: hash, target: null };
+      const el = document.getElementById(hash);
+      const section = el ? el.closest('.section') : null;
+      if (section) return { pageId: section.id, target: el };
+      return { pageId: pages[0].id, target: null };
+    }
 
-    showPage(location.hash.slice(1) || pages[0].id);
+    function showForCurrentHash() {
+      const resolved = resolveInitialHash();
+      showPage(resolved.pageId);
+      if (resolved.target) resolved.target.scrollIntoView();
+    }
+
+    window.addEventListener('popstate', showForCurrentHash);
+
+    showForCurrentHash();
   </script>
 
 </body>
