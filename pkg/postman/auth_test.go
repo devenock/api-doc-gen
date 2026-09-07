@@ -3,17 +3,22 @@ package postman
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 // isolateConfigDir points CredentialsPath at a throwaway directory so tests
 // never read or write the real user credentials file, and clears the env
 // vars LoadAPIKey checks first so tests control exactly what it sees.
+// CredentialsPath resolves its base directory via os.UserConfigDir(), which
+// reads a different env var per OS (XDG_CONFIG_HOME/HOME on Unix, AppData on
+// Windows) - all three must be set or this isolates nothing on Windows.
 func isolateConfigDir(t *testing.T) {
 	t.Helper()
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "xdgconfig"))
+	t.Setenv("AppData", filepath.Join(tmp, "AppData", "Roaming"))
 	t.Setenv(EnvAPIDocPostmanKey, "")
 	t.Setenv(EnvPostmanKey, "")
 }
@@ -33,8 +38,15 @@ func TestSaveAndLoadAPIKey_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("credentials file not created: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("credentials file perm = %o, want 0600 (it holds a secret)", perm)
+	// Windows has no POSIX permission bits - os.WriteFile(0o600) there just
+	// clears the read-only attribute, and Stat reports back something like
+	// 0666, not 0600. The 0600 request is still correct/harmless to make (see
+	// SaveAPIKey), but asserting the exact bits back only makes sense where
+	// the OS actually models them.
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("credentials file perm = %o, want 0600 (it holds a secret)", perm)
+		}
 	}
 
 	key, source := LoadAPIKey()
