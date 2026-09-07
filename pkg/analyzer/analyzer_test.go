@@ -160,6 +160,77 @@ func CreateProduct(c *gin.Context) {
 	}
 }
 
+// TestAnalyze_ExternalTypeSchemas covers the hardcoded external-type schemas
+// (time.Time/Duration, uuid.UUID, database/sql's Null* types) — fields whose
+// type is defined outside the scanned project, where the analyzer can't see
+// the real definition. Note the fixture doesn't need github.com/google/uuid
+// as an actual resolvable dependency: this package is AST-only and never
+// type-checks or builds the target project, so a syntactically valid import
+// is all parsing requires.
+func TestAnalyze_ExternalTypeSchemas(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import (
+	"database/sql"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+)
+
+type Account struct {
+	ID        uuid.UUID      ` + "`json:\"id\"`" + `
+	CreatedAt time.Time      ` + "`json:\"created_at\"`" + `
+	Timeout   time.Duration  ` + "`json:\"timeout\"`" + `
+	Nickname  sql.NullString ` + "`json:\"nickname\"`" + `
+}
+
+func CreateAccount(c *gin.Context) {
+	var a Account
+	c.ShouldBindJSON(&a)
+	c.JSON(201, a)
+}
+
+func main() {
+	r := gin.Default()
+	r.POST("/accounts", CreateAccount)
+	r.Run()
+}
+`,
+	})
+
+	spec := analyze(t, dir, "gin")
+	schema, ok := spec.Models["Account"]
+	if !ok {
+		t.Fatal("expected Account schema in spec.Models")
+	}
+
+	id := schema.Properties["id"]
+	if id.Type != "string" || id.Format != "uuid" {
+		t.Errorf("id (uuid.UUID) = %+v, want {Type: string, Format: uuid}", id)
+	}
+	createdAt := schema.Properties["created_at"]
+	if createdAt.Type != "string" || createdAt.Format != "date-time" {
+		t.Errorf("created_at (time.Time) = %+v, want {Type: string, Format: date-time}", createdAt)
+	}
+	timeout := schema.Properties["timeout"]
+	if timeout.Type != "integer" || timeout.Format != "int64" {
+		t.Errorf("timeout (time.Duration) = %+v, want {Type: integer, Format: int64}", timeout)
+	}
+	nickname := schema.Properties["nickname"]
+	if nickname.Type != "object" {
+		t.Fatalf("nickname (sql.NullString) = %+v, want Type: object", nickname)
+	}
+	if s, ok := nickname.Properties["String"]; !ok || s.Type != "string" {
+		t.Errorf("nickname.String = %+v, want {Type: string}", s)
+	}
+	if v, ok := nickname.Properties["Valid"]; !ok || v.Type != "boolean" {
+		t.Errorf("nickname.Valid = %+v, want {Type: boolean}", v)
+	}
+}
+
 // TestAnalyze_Gin_JSONTagSemantics is the "edge-jsontags" fixture from the
 // code review: a struct exercising every json/binding tag edge case in one
 // place. It must model encoding/json's actual marshaling behavior, not Go's

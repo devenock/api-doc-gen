@@ -105,7 +105,8 @@ What the analyzer actually detects and emits, checked against the code rather th
 - [ ] Non-JSON content types — request/response bodies are always modeled as `application/json`; no multipart/form-data, XML, or plain text
 - [ ] Auth schemes other than Bearer — no API Key, Basic Auth, or OAuth2 security scheme detection
 - [ ] Enums, example values, response headers — the schema model has fields for all three (so output stays forward-compatible), but nothing in the analyzer populates them yet
-- [ ] Types from outside the scanned project — `time.Time` is special-cased; any other external type (`uuid.UUID`, a shared internal module, etc.) resolves to an empty `object` with no fields
+- [x] Common external types — `time.Time`, `time.Duration`, `uuid.UUID` ([google/uuid](https://github.com/google/uuid)), and `database/sql`'s `Null*` types resolve to their real, verified JSON shape (checked against `encoding/json`'s actual output, not assumed — `sql.NullString` looks like it should marshal as a plain string, but it has no custom `MarshalJSON`, so it's really `{"String":...,"Valid":...}`)
+- [ ] Any other type from outside the scanned project (a third-party library type not in the list above, a shared internal module, etc.) resolves to an empty `object` with no fields
 - [ ] File uploads (`multipart/form-data`) — not detected
 
 Found a pattern that isn't covered? [Open an issue](https://github.com/devenock/api-doc-gen/issues) — new patterns belong in the analyzer, not worked around.

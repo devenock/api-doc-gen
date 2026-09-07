@@ -231,6 +231,58 @@ func (a *Analyzer) resolveEmbeddedFields() {
 	}
 }
 
+// externalTypeSchemas maps "package.Type", as written at the selector
+// expression (e.g. "time.Time", "sql.NullString"), to the schema it should
+// produce. Every entry here was checked against encoding/json's actual
+// output before being added, not assumed from the Go-level shape — that
+// distinction matters: sql.NullString looks like it should marshal as a
+// plain string, but it has no custom MarshalJSON, so it actually marshals
+// as its literal struct fields ({"String":...,"Valid":...}). Getting this
+// wrong would be worse than the generic {"type":"object"} fallback below,
+// since it would confidently show the wrong shape instead of an honestly
+// incomplete one.
+//
+// Matched purely by identifier name (this package has no go/types import
+// resolution), so it has the same known limitation the pre-existing
+// time.Time case already had: an import alias or a same-named local type
+// would be matched too. Accepted for the same reason it already was.
+var externalTypeSchemas = map[string]models.Schema{
+	"time.Time": {Type: "string", Format: "date-time"},
+	// Duration has no custom MarshalJSON; it's `type Duration int64`
+	// marshaling as a plain nanosecond count, not a formatted string.
+	"time.Duration": {Type: "integer", Format: "int64"},
+	// github.com/google/uuid: implements encoding.TextMarshaler, so
+	// encoding/json renders it as the canonical hyphenated string form.
+	"uuid.UUID": {Type: "string", Format: "uuid"},
+
+	// database/sql's Null* types have no custom MarshalJSON either, so each
+	// marshals as its two literal fields, not the plain underlying value.
+	"sql.NullString": {Type: "object", Properties: map[string]models.Schema{
+		"String": {Type: "string"}, "Valid": {Type: "boolean"},
+	}},
+	"sql.NullBool": {Type: "object", Properties: map[string]models.Schema{
+		"Bool": {Type: "boolean"}, "Valid": {Type: "boolean"},
+	}},
+	"sql.NullFloat64": {Type: "object", Properties: map[string]models.Schema{
+		"Float64": {Type: "number"}, "Valid": {Type: "boolean"},
+	}},
+	"sql.NullInt64": {Type: "object", Properties: map[string]models.Schema{
+		"Int64": {Type: "integer", Format: "int64"}, "Valid": {Type: "boolean"},
+	}},
+	"sql.NullInt32": {Type: "object", Properties: map[string]models.Schema{
+		"Int32": {Type: "integer", Format: "int32"}, "Valid": {Type: "boolean"},
+	}},
+	"sql.NullInt16": {Type: "object", Properties: map[string]models.Schema{
+		"Int16": {Type: "integer"}, "Valid": {Type: "boolean"},
+	}},
+	"sql.NullByte": {Type: "object", Properties: map[string]models.Schema{
+		"Byte": {Type: "integer"}, "Valid": {Type: "boolean"},
+	}},
+	"sql.NullTime": {Type: "object", Properties: map[string]models.Schema{
+		"Time": {Type: "string", Format: "date-time"}, "Valid": {Type: "boolean"},
+	}},
+}
+
 // goTypeToSchema maps a Go ast.Expr type to an OpenAPI-style Schema.
 func (a *Analyzer) goTypeToSchema(expr ast.Expr) models.Schema {
 	switch t := expr.(type) {
@@ -244,10 +296,14 @@ func (a *Analyzer) goTypeToSchema(expr ast.Expr) models.Schema {
 	case *ast.MapType:
 		return models.Schema{Type: "object", AdditionalProperties: map[string]interface{}{}}
 	case *ast.SelectorExpr:
-		// e.g. time.Time
+		// e.g. time.Time — a type from outside the scanned project, which we
+		// have no way to inspect the fields of (no go/types, and it isn't
+		// necessarily even downloaded). externalTypeSchemas special-cases
+		// the handful of common ones with a well-established JSON shape;
+		// anything else falls back to a bare object below.
 		if ident, ok := t.X.(*ast.Ident); ok {
-			if ident.Name == "time" && t.Sel.Name == "Time" {
-				return models.Schema{Type: "string", Format: "date-time"}
+			if schema, ok := externalTypeSchemas[ident.Name+"."+t.Sel.Name]; ok {
+				return schema
 			}
 		}
 		return models.Schema{Type: "object"}
