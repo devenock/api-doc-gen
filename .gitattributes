@@ -1,0 +1,9 @@
+# Force LF line endings regardless of platform/git config. Several tests
+# embed multi-line Go source fixtures as raw string literals and assert on
+# exact newline-delimited content (see internal/annotations/writer_test.go,
+# pkg/analyzer/*_test.go's writeProject/writeSource helpers); GitHub's
+# windows-latest runners default to core.autocrlf=true, which would silently
+# rewrite those literals' embedded newlines to CRLF on checkout and break
+# every such assertion - not a real Windows incompatibility, just line-ending
+# churn from git itself.
+* text=auto eol=lf
