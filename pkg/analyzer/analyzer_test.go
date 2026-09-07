@@ -1204,3 +1204,65 @@ func main() {
 	spec := analyze(t, dir, "")
 	findEndpoint(t, spec, "GET", "/health")
 }
+
+// tagFilterFixture is shared by the TestAnalyze_TagsFilter_* tests: two
+// tagged route groups (from tagFromPath, derived from the first path
+// segment) to include/exclude between.
+func tagFilterFixture(t *testing.T) string {
+	t.Helper()
+	return writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+func main() {
+	r := gin.Default()
+	r.GET("/users", ListUsers)
+	r.GET("/orders", ListOrders)
+	r.Run()
+}
+
+func ListUsers(c *gin.Context)  { c.JSON(200, gin.H{}) }
+func ListOrders(c *gin.Context) { c.JSON(200, gin.H{}) }
+`,
+	})
+}
+
+func TestAnalyze_TagsFilter_IncludeOnlyMatchingTag(t *testing.T) {
+	dir := tagFilterFixture(t)
+	cfg := &config.Config{
+		ProjectPath: dir, Framework: "gin", DocType: "swagger",
+		Title: "Test API", Version: "1.0.0", Tags: []string{"users"},
+	}
+	spec, err := NewAnalyzer(cfg).Analyze()
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(spec.Endpoints) != 1 || spec.Endpoints[0].Path != "/users" {
+		t.Errorf("expected only /users, got %v", spec.Endpoints)
+	}
+}
+
+func TestAnalyze_TagsFilter_ExcludeTag(t *testing.T) {
+	dir := tagFilterFixture(t)
+	cfg := &config.Config{
+		ProjectPath: dir, Framework: "gin", DocType: "swagger",
+		Title: "Test API", Version: "1.0.0", Tags: []string{"!orders"},
+	}
+	spec, err := NewAnalyzer(cfg).Analyze()
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(spec.Endpoints) != 1 || spec.Endpoints[0].Path != "/users" {
+		t.Errorf("expected only /users (orders excluded), got %v", spec.Endpoints)
+	}
+}
+
+func TestAnalyze_TagsFilter_Unset_KeepsEverything(t *testing.T) {
+	dir := tagFilterFixture(t)
+	spec := analyze(t, dir, "gin")
+	if len(spec.Endpoints) != 2 {
+		t.Errorf("expected both endpoints with no --tags filter, got %v", spec.Endpoints)
+	}
+}

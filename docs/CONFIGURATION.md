@@ -29,6 +29,7 @@ Configuration is merged from lowest to highest precedence: **config file** → *
 | `--write-annotations` | _(n/a)_ | _(n/a)_ | `false` — writes swag-style `// @...` comments above same-file handler functions |
 | `--skip-build-check` | _(n/a)_ | _(n/a)_ | `false` — skips the `go vet ./...` pre-flight check against the target project |
 | `--required-by-default` | _(n/a)_ | _(n/a)_ | `false` — marks every struct field required unless it has `json:",omitempty"`, instead of only fields with an explicit `binding`/`validate:"required"` tag |
+| `--tags` | _(n/a)_ | _(n/a)_ | _(none — keeps everything)_ — filter endpoints by tag; a plain name includes only endpoints with that tag, a `!name` excludes them. Mixable, comma-separated |
 | `--upload` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` |
 | `--no-upload` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` |
 | `--direct-import` _(postman)_ | _(n/a)_ | _(n/a)_ | `false` — no functional effect outside the interactive wizard today (see note below) |

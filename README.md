@@ -150,6 +150,7 @@ docs:
 | `--upload` | Upload Postman collection via Postman API (prompts for API key once) |
 | `--skip-build-check` | Skip the `go vet ./...` pre-flight check (see below) |
 | `--required-by-default` | Mark every struct field required unless it has `json:",omitempty"` (default: only `binding`/`validate:"required"` tags count) |
+| `--tags` | Filter endpoints by tag: `users` includes only that tag, `!internal` excludes it (comma-separated, mixable) |
 
 Full reference: `api-doc-gen generate --help`
 

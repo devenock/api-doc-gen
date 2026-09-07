@@ -320,6 +320,9 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 	// Deduplicate by (method, path), keeping first occurrence
 	a.endpoints = a.deduplicateEndpoints(a.endpoints)
 
+	// Filter by --tags, if set. Must run after tags are fully assigned above.
+	a.endpoints = a.filterEndpointsByTags(a.endpoints)
+
 	// Create API spec
 	spec := &models.APISpec{
 		Title:       a.config.Title,

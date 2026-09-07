@@ -41,6 +41,7 @@ func init() {
 	generateCmd.Flags().Bool("interactive", true, "use interactive mode when type is not set")
 	generateCmd.Flags().BoolP("no-interactive", "y", false, "disable interactive mode (use config/flags only; good for CI)")
 	generateCmd.Flags().StringSlice("exclude", []string{}, "directories to exclude from scanning")
+	generateCmd.Flags().StringSlice("tags", []string{}, "filter endpoints by tag: plain name to include, !name to exclude (comma-separated)")
 	generateCmd.Flags().String("base-path", "", "base path for API endpoints")
 	generateCmd.Flags().String("title", "", "API title (default: project name from go.mod)")
 	generateCmd.Flags().String("version", "1.0.0", "API version")
@@ -69,6 +70,7 @@ func init() {
 	_ = viper.BindPFlag("interactive", generateCmd.Flags().Lookup("interactive"))
 	_ = viper.BindPFlag("no-interactive", generateCmd.Flags().Lookup("no-interactive"))
 	_ = viper.BindPFlag("exclude", generateCmd.Flags().Lookup("exclude"))
+	_ = viper.BindPFlag("tags", generateCmd.Flags().Lookup("tags"))
 	_ = viper.BindPFlag("base-path", generateCmd.Flags().Lookup("base-path"))
 	_ = viper.BindPFlag("title", generateCmd.Flags().Lookup("title"))
 	_ = viper.BindPFlag("version", generateCmd.Flags().Lookup("version"))
@@ -101,6 +103,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		DocType:             viper.GetString("type"),
 		Framework:           viper.GetString("framework"),
 		Exclude:             viper.GetStringSlice("exclude"),
+		Tags:                viper.GetStringSlice("tags"),
 		BasePath:            viper.GetString("base-path"),
 		Title:               viper.GetString("title"),
 		Version:             viper.GetString("version"),

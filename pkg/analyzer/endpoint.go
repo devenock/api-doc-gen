@@ -467,3 +467,46 @@ func (a *Analyzer) deduplicateEndpoints(endpoints []models.Endpoint) []models.En
 	}
 	return out
 }
+
+// filterEndpointsByTags keeps only endpoints matching a.config.Tags, when
+// set — see the Config.Tags doc comment for the include/exclude convention.
+// Runs after tags are fully assigned (the tagFromPath fallback in Analyze),
+// so filtering sees the same tags the generated docs will show.
+func (a *Analyzer) filterEndpointsByTags(endpoints []models.Endpoint) []models.Endpoint {
+	if len(a.config.Tags) == 0 {
+		return endpoints
+	}
+	var include, exclude []string
+	for _, f := range a.config.Tags {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		if strings.HasPrefix(f, "!") {
+			exclude = append(exclude, strings.TrimPrefix(f, "!"))
+		} else {
+			include = append(include, f)
+		}
+	}
+	hasAny := func(epTags, filterTags []string) bool {
+		for _, want := range filterTags {
+			for _, epTag := range epTags {
+				if epTag == want {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	var out []models.Endpoint
+	for _, ep := range endpoints {
+		if hasAny(ep.Tags, exclude) {
+			continue
+		}
+		if len(include) > 0 && !hasAny(ep.Tags, include) {
+			continue
+		}
+		out = append(out, ep)
+	}
+	return out
+}

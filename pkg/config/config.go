@@ -66,6 +66,14 @@ type Config struct {
 	// "AuthorMiddleware", or a false negative like "requireSession".
 	AuthMiddleware []string
 
+	// Tags filters which endpoints are included in the generated docs by
+	// their (auto-derived-from-path) tag. A plain entry ("users") is an
+	// include filter — at least one include entry must match, if any are
+	// given. A "!"-prefixed entry ("!internal") excludes any endpoint
+	// carrying that tag outright, regardless of include matches. Mirrors
+	// swag's --tags flag/convention. Unset (the default) keeps everything.
+	Tags []string
+
 	// Postman upload settings (only honored when DocType == "postman").
 	// PostmanAPIKey is resolved at runtime from --postman-api-key, env, or the
 	// credentials file; do not persist it to .apidoc-gen.yaml (it is a secret).
