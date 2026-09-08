@@ -48,6 +48,10 @@ func (a *Analyzer) collectTypesInFile(filePath string) error {
 			schema := a.buildSchemaFromStruct(structType)
 			if schema.Type != "" || len(schema.Properties) > 0 {
 				a.typeRegistry[name] = schema
+				if a.typePackageName == nil {
+					a.typePackageName = make(map[string]string)
+				}
+				a.typePackageName[name] = node.Name.Name
 			}
 		}
 	}

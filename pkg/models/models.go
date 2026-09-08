@@ -13,6 +13,14 @@ type APISpec struct {
 	Servers     []Server          `json:"servers" yaml:"servers"`
 	Endpoints   []Endpoint        `json:"endpoints" yaml:"endpoints"`
 	Models      map[string]Schema `json:"models" yaml:"models"`
+
+	// TypePackageName maps a type name (as used in RequestTypeName/
+	// ResponseTypeName) to the Go package it's declared in, e.g.
+	// "CreateUserRequest" -> "models". Used only by --write-annotations to
+	// qualify a cross-package type reference (models.CreateUserRequest)
+	// instead of a bare name swag can't resolve outside the handler's own
+	// package - not part of the OpenAPI/Postman output itself.
+	TypePackageName map[string]string `json:"-" yaml:"-"`
 }
 
 // server represent an API server

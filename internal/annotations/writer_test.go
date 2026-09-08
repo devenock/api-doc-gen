@@ -37,7 +37,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {}
 		},
 	}
 
-	n, err := WriteSwagAnnotations(dir, endpoints, "/api/v1")
+	n, err := WriteSwagAnnotations(dir, endpoints, "/api/v1", nil)
 	if err != nil {
 		t.Fatalf("WriteSwagAnnotations: %v", err)
 	}
@@ -66,6 +66,111 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {}
 	}
 }
 
+// TestWriteSwagAnnotations_ParamUsesActualLocationAndRequiredness guards
+// against a real bug found by actually running swag against generated
+// output: every @Param line was hardcoded as "path ... true", regardless of
+// the parameter's real location - a query param (already correctly tagged
+// In: "query", Required: false on the endpoint model) came out identical to
+// a required path param, silently misdescribing the API to anything that
+// consumes these annotations.
+func TestWriteSwagAnnotations_ParamUsesActualLocationAndRequiredness(t *testing.T) {
+	dir := t.TempDir()
+	file := writeSource(t, dir, "handlers.go", `package handlers
+
+import "net/http"
+
+func ListUsers(w http.ResponseWriter, r *http.Request) {}
+`)
+
+	endpoints := []models.Endpoint{
+		{
+			Path: "/users", Method: "GET", Summary: "ListUsers",
+			SourceFile: file, HandlerName: "ListUsers",
+			Parameters: []models.Parameter{
+				{Name: "id", In: "path", Required: true, Description: "user ID"},
+				{Name: "role", In: "query", Required: false},
+			},
+		},
+	}
+	if _, err := WriteSwagAnnotations(dir, endpoints, "", nil); err != nil {
+		t.Fatalf("WriteSwagAnnotations: %v", err)
+	}
+
+	out, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(out)
+
+	for _, want := range []string{
+		`// @Param id path string true "user ID"`,
+		// No description was given for "role" - it must still come out as a
+		// non-empty quoted string (swag's own @Param regexp requires at
+		// least one character between the quotes, or it fails to parse the
+		// comment at all and aborts the whole file).
+		`// @Param role query string false "role"`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("output missing %q, got:\n%s", want, content)
+		}
+	}
+}
+
+// TestWriteSwagAnnotations_QualifiesCrossPackageTypeName guards against
+// another bug confirmed by running swag directly: request/response type
+// names were always written bare (CreateUserRequest), which swag can only
+// resolve within the annotated handler's own package. Handlers and their
+// request/response structs living in separate packages (handlers/ +
+// models/) is the normal, idiomatic layout - and exactly how every example
+// in this repo is organized - so an unqualified name reliably failed with
+// "cannot find type definition" the moment swag itself parsed the output.
+func TestWriteSwagAnnotations_QualifiesCrossPackageTypeName(t *testing.T) {
+	dir := t.TempDir()
+	file := writeSource(t, dir, "handlers.go", `package handlers
+
+import (
+	"net/http"
+
+	"example.com/api/models"
+)
+
+func CreateUser(w http.ResponseWriter, r *http.Request) {
+	var req models.CreateUserRequest
+	_ = req
+}
+`)
+
+	endpoints := []models.Endpoint{
+		{
+			Path: "/users", Method: "POST", Summary: "CreateUser",
+			SourceFile: file, HandlerName: "CreateUser",
+			RequestBody:      &models.RequestBody{},
+			RequestTypeName:  "CreateUserRequest",
+			ResponseTypeName: "UserResponse", // declared in "handlers" itself - must stay bare
+		},
+	}
+	typePackageName := map[string]string{
+		"CreateUserRequest": "models",
+		"UserResponse":      "handlers",
+	}
+	if _, err := WriteSwagAnnotations(dir, endpoints, "", typePackageName); err != nil {
+		t.Fatalf("WriteSwagAnnotations: %v", err)
+	}
+
+	out, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(out)
+
+	if !strings.Contains(content, `// @Param request body models.CreateUserRequest true "Request body"`) {
+		t.Errorf("expected the cross-package request type to be qualified as models.CreateUserRequest, got:\n%s", content)
+	}
+	if !strings.Contains(content, `// @Success 200 {object} UserResponse "Success"`) {
+		t.Errorf("expected the same-package response type to stay bare (UserResponse), got:\n%s", content)
+	}
+}
+
 func TestWriteSwagAnnotations_ReplacesExistingBlockInsteadOfDuplicating(t *testing.T) {
 	dir := t.TempDir()
 	file := writeSource(t, dir, "handlers.go", `package handlers
@@ -80,7 +185,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) {}
 	endpoints := []models.Endpoint{
 		{Path: "/users/{id}", Method: "GET", Summary: "GetUser", SourceFile: file, HandlerName: "GetUser"},
 	}
-	if _, err := WriteSwagAnnotations(dir, endpoints, ""); err != nil {
+	if _, err := WriteSwagAnnotations(dir, endpoints, "", nil); err != nil {
 		t.Fatalf("WriteSwagAnnotations: %v", err)
 	}
 
@@ -114,7 +219,7 @@ func Health(w http.ResponseWriter, r *http.Request) {}
 		{Path: "/health", Method: "GET", Summary: "Health", SourceFile: file, HandlerName: "Health"},
 		{Path: "/healthz", Method: "GET", Summary: "Health", SourceFile: file, HandlerName: "Health"},
 	}
-	n, err := WriteSwagAnnotations(dir, endpoints, "")
+	n, err := WriteSwagAnnotations(dir, endpoints, "", nil)
 	if err != nil {
 		t.Fatalf("WriteSwagAnnotations: %v", err)
 	}
@@ -162,7 +267,7 @@ func Evil(w http.ResponseWriter, r *http.Request) {}
 			Parameters: []models.Parameter{{Name: "id\n" + injected, Description: "id"}},
 		},
 	}
-	if _, err := WriteSwagAnnotations(dir, endpoints, ""); err != nil {
+	if _, err := WriteSwagAnnotations(dir, endpoints, "", nil); err != nil {
 		t.Fatalf("WriteSwagAnnotations: %v", err)
 	}
 
@@ -192,7 +297,7 @@ func Evil(w http.ResponseWriter, r *http.Request) {}
 
 func TestWriteSwagAnnotations_SkipsEndpointsWithoutSourceInfo(t *testing.T) {
 	endpoints := []models.Endpoint{{Path: "/x", Method: "GET"}}
-	n, err := WriteSwagAnnotations(t.TempDir(), endpoints, "")
+	n, err := WriteSwagAnnotations(t.TempDir(), endpoints, "", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

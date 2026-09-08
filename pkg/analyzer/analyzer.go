@@ -35,6 +35,7 @@ type Analyzer struct {
 	endpoints        []models.Endpoint
 	models           map[string]models.Schema
 	typeRegistry     map[string]models.Schema // type name -> schema (for request/response resolution)
+	typePackageName  map[string]string        // type name -> the Go package it's declared in (e.g. "models"), for qualifying cross-package type refs in --write-annotations output
 	stringConsts     map[string]string        // project-wide: identifier -> value, for package-level `const x = "..."` / `var x = "..."` declarations (see literalStringArg)
 	curGroupPrefix   map[string]string        // per-file: variable name -> path prefix (Gin/Echo/Fiber Group, Gorilla Subrouter)
 	curAuthGroups    map[string]bool          // per-file: variable name -> true if group uses auth middleware
@@ -327,12 +328,13 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 
 	// Create API spec
 	spec := &models.APISpec{
-		Title:       a.config.Title,
-		Version:     a.config.Version,
-		Description: a.config.Description,
-		BasePath:    a.config.BasePath,
-		Endpoints:   a.endpoints,
-		Models:      a.models,
+		Title:           a.config.Title,
+		Version:         a.config.Version,
+		Description:     a.config.Description,
+		BasePath:        a.config.BasePath,
+		Endpoints:       a.endpoints,
+		Models:          a.models,
+		TypePackageName: a.typePackageName,
 	}
 
 	// Add servers if configured
