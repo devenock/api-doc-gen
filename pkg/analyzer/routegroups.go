@@ -13,6 +13,55 @@ import (
 // these are framework-agnostic — Echo and Fiber share the exact same
 // grouping shape, so there was never a separate implementation to split out.
 
+// collectStringConsts records package-level const/var declarations whose
+// value is a single string literal (const apiPrefix = "/api/v1"), collected
+// during pass 1 (collectTypesInFile) before any route parsing runs, so
+// literalStringArg can resolve a path/prefix argument passed by name in
+// pass 2 - a pattern real projects commonly use for route paths and version
+// prefixes instead of inline literals. Grouped declarations where the
+// number of names and values don't match (e.g. `const (a = iota; b)`) are
+// skipped: there's no literal value to record for those.
+func (a *Analyzer) collectStringConsts(genDecl *ast.GenDecl) {
+	for _, spec := range genDecl.Specs {
+		valueSpec, ok := spec.(*ast.ValueSpec)
+		if !ok || len(valueSpec.Names) != len(valueSpec.Values) {
+			continue
+		}
+		for i, name := range valueSpec.Names {
+			lit, ok := valueSpec.Values[i].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				continue
+			}
+			if a.stringConsts == nil {
+				a.stringConsts = make(map[string]string)
+			}
+			a.stringConsts[name.Name] = strings.Trim(lit.Value, `"`)
+		}
+	}
+}
+
+// literalStringArg resolves expr to a string value: either a direct string
+// literal, or a bare identifier referencing a package-level const/var
+// collected by collectStringConsts. Every route-family parser uses this
+// (instead of a bare *ast.BasicLit type-assertion) for the path/prefix
+// argument of a route or group-registration call, so `const apiPrefix =
+// "/api/v1"; v1 := r.Group(apiPrefix)` resolves the same as an inline
+// `r.Group("/api/v1")` rather than silently losing the prefix (or, for a
+// single route registration, dropping the endpoint entirely).
+func (a *Analyzer) literalStringArg(expr ast.Expr) (string, bool) {
+	switch e := expr.(type) {
+	case *ast.BasicLit:
+		if e.Kind != token.STRING {
+			return "", false
+		}
+		return strings.Trim(e.Value, `"`), true
+	case *ast.Ident:
+		v, ok := a.stringConsts[e.Name]
+		return v, ok
+	}
+	return "", false
+}
+
 // groupVarKey returns a stable string identity for a router-group variable
 // expression, so both `v1 := r.Group(...)` (plain identifier) and
 // `rt.staff = api.Group(...)` / route calls like `rt.staff.POST(...)`
@@ -57,11 +106,10 @@ func (a *Analyzer) buildGinGroupPrefixes(file *ast.File) map[string]string {
 		if !ok || sel.Sel.Name != "Group" || len(call.Args) < 1 {
 			return true
 		}
-		pathLit, ok := call.Args[0].(*ast.BasicLit)
-		if !ok || pathLit.Kind != token.STRING {
+		path, ok := a.literalStringArg(call.Args[0])
+		if !ok {
 			return true
 		}
-		path := strings.Trim(pathLit.Value, `"`)
 		childKey := groupVarKey(assign.Lhs[0])
 		parentKey := groupVarKey(sel.X)
 		if childKey == "" || parentKey == "" {

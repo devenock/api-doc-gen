@@ -25,7 +25,12 @@ import (
 // wider window than a single directory walk) would have its target read
 // and, worse, written to, regardless of where it points. See the equivalent
 // guard (with the fuller rationale) in pkg/analyzer.
-func WriteSwagAnnotations(projectPath string, endpoints []models.Endpoint, basePath string) (written int, err error) {
+// typePackageName maps a type name (RequestTypeName/ResponseTypeName) to the
+// Go package it's declared in (models.APISpec.TypePackageName), so a
+// cross-package reference can be written as swag expects (models.Foo)
+// instead of a bare name swag can only resolve within the handler's own
+// package.
+func WriteSwagAnnotations(projectPath string, endpoints []models.Endpoint, basePath string, typePackageName map[string]string) (written int, err error) {
 	root, err := os.OpenRoot(projectPath)
 	if err != nil {
 		return 0, fmt.Errorf("open project directory: %w", err)
@@ -44,7 +49,7 @@ func WriteSwagAnnotations(projectPath string, endpoints []models.Endpoint, baseP
 	}
 
 	for k, eps := range groups {
-		n, e := writeSwagToFile(root, projectPath, k.file, k.handler, eps, basePath)
+		n, e := writeSwagToFile(root, projectPath, k.file, k.handler, eps, basePath, typePackageName)
 		if e != nil {
 			return written, e
 		}
@@ -53,7 +58,7 @@ func WriteSwagAnnotations(projectPath string, endpoints []models.Endpoint, baseP
 	return written, nil
 }
 
-func writeSwagToFile(root *os.Root, projectPath, filePath, handlerName string, endpoints []models.Endpoint, basePath string) (int, error) {
+func writeSwagToFile(root *os.Root, projectPath, filePath, handlerName string, endpoints []models.Endpoint, basePath string, typePackageName map[string]string) (int, error) {
 	if len(endpoints) == 0 {
 		return 0, nil
 	}
@@ -98,7 +103,7 @@ func writeSwagToFile(root *os.Root, projectPath, filePath, handlerName string, e
 		return 0, nil
 	}
 
-	block := buildSwagBlock(ep, endpoints, basePath)
+	block := buildSwagBlock(ep, endpoints, basePath, node.Name.Name, node.Imports, typePackageName)
 	newContent := insertOrReplaceSwagBlock(content, funcLine, block)
 	if string(newContent) == string(content) {
 		return 0, nil
@@ -109,7 +114,7 @@ func writeSwagToFile(root *os.Root, projectPath, filePath, handlerName string, e
 	return 1, nil
 }
 
-func buildSwagBlock(ep models.Endpoint, all []models.Endpoint, basePath string) []string {
+func buildSwagBlock(ep models.Endpoint, all []models.Endpoint, basePath, handlerPkg string, handlerImports []*ast.ImportSpec, typePackageName map[string]string) []string {
 	var lines []string
 	lines = append(lines, "// @Summary "+escapeSwagLine(ep.Summary))
 	if ep.Description != "" {
@@ -126,19 +131,32 @@ func buildSwagBlock(ep models.Endpoint, all []models.Endpoint, basePath string) 
 	lines = append(lines, "// @Produce json")
 
 	for _, p := range ep.Parameters {
-		lines = append(lines, fmt.Sprintf("// @Param %s path string true %q", escapeSwagLine(p.Name), p.Description))
+		in := p.In
+		if in == "" {
+			in = "path"
+		}
+		// swag's own @Param regexp requires a non-empty quoted description
+		// (`"([^"]+)"`, one-or-more) - an empty "" fails it outright and
+		// aborts parsing the whole file, so a param with no description
+		// (common for path/query params, which rarely get one) falls back
+		// to its name rather than emitting a description-shaped hole.
+		desc := p.Description
+		if desc == "" {
+			desc = p.Name
+		}
+		lines = append(lines, fmt.Sprintf("// @Param %s %s string %t %q", escapeSwagLine(p.Name), in, p.Required, desc))
 	}
 	if ep.RequestBody != nil {
-		typeName := ep.RequestTypeName
+		typeName := qualifyTypeName(ep.RequestTypeName, handlerPkg, handlerImports, typePackageName)
 		if typeName == "" {
 			typeName = "object"
 		}
 		lines = append(lines, fmt.Sprintf("// @Param request body %s true \"Request body\"", typeName))
 	}
 
-	respType := "object"
-	if ep.ResponseTypeName != "" {
-		respType = ep.ResponseTypeName
+	respType := qualifyTypeName(ep.ResponseTypeName, handlerPkg, handlerImports, typePackageName)
+	if respType == "" {
+		respType = "object"
 	}
 	lines = append(lines, fmt.Sprintf("// @Success 200 {object} %s \"Success\"", respType))
 	if len(ep.Security) > 0 {
@@ -152,6 +170,46 @@ func buildSwagBlock(ep models.Endpoint, all []models.Endpoint, basePath string) 
 		lines = append(lines, fmt.Sprintf("// @Router %s [%s]", path, strings.ToLower(e.Method)))
 	}
 	return lines
+}
+
+// qualifyTypeName returns typeName as swag needs it in the handler's file:
+// bare if it's declared in the handler's own package (or its package is
+// unknown), or "pkg.TypeName" when it's declared elsewhere - swag can only
+// resolve a bare name within the annotated function's own package (see
+// PackagesDefinitions.FindTypeSpec upstream), so a cross-package reference
+// left unqualified fails with "cannot find type definition" when swag
+// itself later parses these annotations.
+//
+// The matching import is guaranteed to already be present in
+// handlerImports: whatever binding code in this same handler originally
+// referenced typeName (var req models.CreateUserRequest) necessarily
+// imports models to compile. If no matching import is found regardless
+// (typePackageName has no entry, e.g. the type was resolved before this
+// tracking existed, or came from an update this file predates), the bare
+// name is returned unchanged rather than guessing a qualifier that might be
+// wrong.
+func qualifyTypeName(typeName, handlerPkg string, handlerImports []*ast.ImportSpec, typePackageName map[string]string) string {
+	if typeName == "" {
+		return ""
+	}
+	declPkg := typePackageName[typeName]
+	if declPkg == "" || declPkg == handlerPkg {
+		return typeName
+	}
+	for _, imp := range handlerImports {
+		path := strings.Trim(imp.Path.Value, `"`)
+		alias := path
+		if idx := strings.LastIndex(path, "/"); idx >= 0 {
+			alias = path[idx+1:]
+		}
+		if imp.Name != nil {
+			alias = imp.Name.Name
+		}
+		if alias == declPkg {
+			return alias + "." + typeName
+		}
+	}
+	return typeName
 }
 
 // escapeSwagLine strips embedded newlines before a value is interpolated

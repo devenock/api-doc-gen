@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/devenock/api-doc-gen/internal/annotations"
@@ -208,7 +209,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 
 	// --write-annotations: write swag comments above handler functions.
 	if viper.GetBool("write-annotations") || cfg.WriteAnnotations {
-		n, err := annotations.WriteSwagAnnotations(cfg.ProjectPath, apiSpec.Endpoints, cfg.BasePath)
+		n, err := annotations.WriteSwagAnnotations(cfg.ProjectPath, apiSpec.Endpoints, cfg.BasePath, apiSpec.TypePackageName)
 		if err != nil && !quiet {
 			fmt.Fprintf(os.Stderr, "Warning: write-annotations: %v\n", err)
 		} else if !quiet && n > 0 {
@@ -250,8 +251,7 @@ func runServeDocs(ctx context.Context, outputDir string, quiet bool) error {
 
 	if !quiet {
 		fmt.Println()
-		fmt.Printf("🌐 Starting Swagger UI at %s\n", browserURL)
-		fmt.Println("   Press Ctrl+C to stop")
+		fmt.Printf("🌐 Swagger UI: %s\n", browserURL)
 		fmt.Println()
 	}
 
@@ -261,6 +261,18 @@ func runServeDocs(ctx context.Context, outputDir string, quiet bool) error {
 		openBrowser(browserURL)
 	}()
 
+	// lastActivity tracks the most recent request, so the auto-shutdown
+	// below waits out real browser load time (which can vary - a cold
+	// browser start is slower than a warm one) instead of a blind fixed
+	// delay that risks cutting the server off before the page finishes
+	// loading, or lingering long after it's done.
+	var lastActivity atomic.Int64
+	fileServer := http.FileServer(http.Dir(absDir))
+	trackedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastActivity.Store(time.Now().UnixNano())
+		fileServer.ServeHTTP(w, r)
+	})
+
 	// Loopback-only: this serves the whole output directory over plain HTTP
 	// with no auth, so binding to all interfaces would expose it to the LAN
 	// (or the public internet, if run on a host without a firewall) whenever
@@ -268,25 +280,55 @@ func runServeDocs(ctx context.Context, outputDir string, quiet bool) error {
 	// (Slowloris-style) resource-exhaustion connection.
 	srv := &http.Server{
 		Addr:              "127.0.0.1:" + port,
-		Handler:           http.FileServer(http.Dir(absDir)),
+		Handler:           trackedHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.ListenAndServe() }()
 
-	select {
-	case <-ctx.Done():
-		// Execute() installed the signal handler that canceled ctx; give the
-		// server a moment to close its listener/connections cleanly.
+	// Auto-exit once the browser has loaded the page and gone quiet, rather
+	// than blocking indefinitely for a manual Ctrl+C: once index.html,
+	// its assets, and openapi.json have been fetched, the docs are fully
+	// usable client-side, and "Try it out" targets the app's own detected
+	// port (see detectListenPort), not this preview server - so nothing
+	// here needs to keep running past that point. Ctrl+C still works if the
+	// user wants to stop even sooner.
+	const (
+		idleGracePeriod = 2 * time.Second  // shut down this long after the last request
+		neverLoadedCap  = 10 * time.Second // shut down after this long if the browser never made a single request (e.g. the open command failed)
+	)
+	shutdown := func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
-		return nil
-	case err := <-serveErr:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return &exitCodeError{fmt.Errorf("serve failed: %w", err), ExitRuntimeError}
+	}
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.Now().Add(neverLoadedCap)
+	for {
+		select {
+		case <-ctx.Done():
+			shutdown()
+			return nil
+		case err := <-serveErr:
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				return &exitCodeError{fmt.Errorf("serve failed: %w", err), ExitRuntimeError}
+			}
+			return nil
+		case <-ticker.C:
+			last := lastActivity.Load()
+			if last == 0 {
+				if time.Now().After(deadline) {
+					shutdown()
+					return nil
+				}
+				continue
+			}
+			if time.Since(time.Unix(0, last)) >= idleGracePeriod {
+				shutdown()
+				return nil
+			}
 		}
-		return nil
 	}
 }
 

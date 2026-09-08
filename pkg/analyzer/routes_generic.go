@@ -3,7 +3,6 @@ package analyzer
 import (
 	"fmt"
 	"go/ast"
-	"go/token"
 	"strings"
 
 	"github.com/devenock/api-doc-gen/pkg/models"
@@ -38,9 +37,8 @@ func (a *Analyzer) parseGenericRoutes(n ast.Node, file *ast.File) {
 
 	// Pattern 1: router.GET("/path", handler) / router.Get("/path", handler)
 	if isRouteMethod && len(callExpr.Args) >= 2 {
-		if pathLit, ok := callExpr.Args[0].(*ast.BasicLit); ok && pathLit.Kind == token.STRING {
+		if path, ok := a.literalStringArg(callExpr.Args[0]); ok {
 			if _, isLiteral := callExpr.Args[len(callExpr.Args)-1].(*ast.BasicLit); !isLiteral {
-				path := strings.Trim(pathLit.Value, `"`)
 				ep := a.newGenericEndpoint(path, strings.ToUpper(method))
 				a.extractHandlerComments(file, lastHandlerName(callExpr.Args), ep)
 				a.endpoints = append(a.endpoints, *ep)
@@ -52,8 +50,7 @@ func (a *Analyzer) parseGenericRoutes(n ast.Node, file *ast.File) {
 	// Pattern 2: http.HandleFunc("/path", handler) or mux.Handle("/path", handler)
 	// Method is unknown for stdlib registrations; default to GET so the path is visible.
 	if (selExpr.Sel.Name == "HandleFunc" || selExpr.Sel.Name == "Handle") && len(callExpr.Args) >= 2 {
-		if pathLit, ok := callExpr.Args[0].(*ast.BasicLit); ok && pathLit.Kind == token.STRING {
-			path := strings.Trim(pathLit.Value, `"`)
+		if path, ok := a.literalStringArg(callExpr.Args[0]); ok {
 			ep := a.newGenericEndpoint(path, "GET")
 			a.extractHandlerComments(file, lastHandlerName(callExpr.Args), ep)
 			a.endpoints = append(a.endpoints, *ep)
