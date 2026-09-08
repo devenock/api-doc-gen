@@ -75,6 +75,20 @@ func GetUserPreferences(cfg *config.Config) error {
 		cfg.Title = title
 	}
 
+	// API Description (default from config file / flags). Optional - the
+	// same field --description/APIDOC_DESCRIPTION/the config file's
+	// `description` key already set, just previously with no way to set it
+	// from the wizard itself.
+	descriptionPrompt := promptui.Prompt{
+		Label:   "API Description (optional)",
+		Default: cfg.Description,
+	}
+	description, err := descriptionPrompt.Run()
+	if err != nil {
+		return err
+	}
+	cfg.Description = description
+
 	// API Version (default from config file / flags)
 	versionPrompt := promptui.Prompt{
 		Label:   "API Version",
