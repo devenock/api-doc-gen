@@ -150,6 +150,69 @@ func ListUsers(c *gin.Context) {}
 	findEndpoint(t, spec, "GET", "/api/v1/users")
 }
 
+// TestAnalyze_ServerURL_DetectedFromListenCall guards the fix for another
+// real-world finding: the generated docs' server URL always defaulted to
+// :8080 unless the port happened to be in a .env file, so Swagger UI's
+// "Try it out" sent requests to the wrong port for any app that hardcodes
+// its listen address in code (the common case) instead. detectListenPort
+// must find the literal port passed to .Run/.Listen/.Start/
+// http.ListenAndServe and use it instead of the generic default.
+func TestAnalyze_ServerURL_DetectedFromListenCall(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+func main() {
+	r := gin.Default()
+	r.GET("/ping", Ping)
+	r.Run(":9091")
+}
+
+func Ping(c *gin.Context) {}
+`,
+	})
+
+	spec := analyze(t, dir, "gin")
+
+	if len(spec.Servers) != 1 || spec.Servers[0].URL != "http://localhost:9091" {
+		t.Errorf("Servers = %+v, want a single server at http://localhost:9091", spec.Servers)
+	}
+}
+
+// TestAnalyze_ServerURL_FallsBackToEnvWhenPortIsNotALiteral covers the case
+// detectListenPort can't resolve - the port is read from an env var at
+// runtime, not passed as a literal or named constant - which must still
+// fall back to the existing .env-scanning behavior rather than silently
+// defaulting to :8080 when a real value is sitting right there in .env.
+func TestAnalyze_ServerURL_FallsBackToEnvWhenPortIsNotALiteral(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		".env":   "PORT=9999\n",
+		"main.go": `package main
+
+import (
+	"net/http"
+	"os"
+)
+
+func main() {
+	http.HandleFunc("/ping", Ping)
+	http.ListenAndServe(":"+os.Getenv("PORT"), nil)
+}
+
+func Ping(w http.ResponseWriter, r *http.Request) {}
+`,
+	})
+
+	spec := analyze(t, dir, "")
+
+	if len(spec.Servers) != 1 || spec.Servers[0].URL != "http://localhost:9999" {
+		t.Errorf("Servers = %+v, want a single server at http://localhost:9999 (from .env)", spec.Servers)
+	}
+}
+
 func TestAnalyze_Gin_EmbeddedFieldsPromotedIntoSchema(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",

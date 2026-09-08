@@ -43,6 +43,7 @@ type Analyzer struct {
 	parseDiagnostics []ParseDiagnostic        // .go files that matched the walk but failed to parse — see Diagnostics()
 	authMatches      []string                 // middleware names matched as auth-like — see AuthMiddlewareMatches()
 	bindHintMatches  []string                 // call names matched as JSON-binding by hint (not exact method name) — see BindHintMatches()
+	detectedPort     string                   // port parsed from the app's own .Run/.Listen/.Start/http.ListenAndServe call, if found — see detectListenPort
 
 	// root scopes every file read/parse in this package to config.ProjectPath's
 	// tree, opened once in Analyze() and closed when it returns. Plain
@@ -343,10 +344,16 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 			})
 		}
 	} else {
-		// Default server: try to read port from .env, fall back to :8080
+		// Default server: prefer the port the app's own code actually listens
+		// on (detectListenPort, scanned during pass 2 above); fall back to
+		// .env, then :8080 - see detectServerURL.
+		url := detectServerURL(a.config.ProjectPath)
+		if a.detectedPort != "" {
+			url = "http://localhost:" + a.detectedPort
+		}
 		spec.Servers = []models.Server{
 			{
-				URL:         detectServerURL(a.config.ProjectPath),
+				URL:         url,
 				Description: "Development server",
 			},
 		}
@@ -382,8 +389,11 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 }
 
 // detectServerURL returns the base URL for the API server by scanning the
-// project's .env file for a PORT / APP_PORT / SERVER_PORT entry.
-// Falls back to http://localhost:8080 when nothing is found.
+// project's .env file for a PORT / APP_PORT / SERVER_PORT entry. This is the
+// fallback used when detectListenPort found nothing in the app's own code
+// (e.g. the port is read from an env var at runtime rather than passed as a
+// literal/constant) - see the call site in Analyze. Falls back further to
+// http://localhost:8080 when nothing is found there either.
 func detectServerURL(projectPath string) string {
 	data, err := readProjectFile(projectPath, ".env")
 	if err != nil {
@@ -404,6 +414,74 @@ func detectServerURL(projectPath string) string {
 		}
 	}
 	return "http://localhost:8080"
+}
+
+// detectListenPort scans a single AST node for the app's own "start
+// listening" call - Gin/Echo's .Run, Fiber's .Listen, Echo's .Start, or the
+// standard library's http.ListenAndServe - and records the port from its
+// address argument (":8080", "0.0.0.0:8080", "localhost:8080", ...) so the
+// generated docs' server URL points at the port the application actually
+// listens on, not a generic default. Only the first match found across the
+// whole project is kept; a project has exactly one such call in practice.
+// The address argument is resolved via literalStringArg, so a named
+// constant (const addr = ":8080") is picked up exactly like an inline
+// literal would be.
+func (a *Analyzer) detectListenPort(n ast.Node) {
+	if a.detectedPort != "" {
+		return
+	}
+	call, ok := n.(*ast.CallExpr)
+	if !ok || len(call.Args) == 0 {
+		return
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return
+	}
+	var addrArg ast.Expr
+	switch sel.Sel.Name {
+	case "Run", "Listen", "Start":
+		addrArg = call.Args[0]
+	case "ListenAndServe":
+		// Only the stdlib net/http package-level function - not just any
+		// method that happens to also be named ListenAndServe.
+		if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "http" {
+			addrArg = call.Args[0]
+		}
+	}
+	if addrArg == nil {
+		return
+	}
+	addr, ok := a.literalStringArg(addrArg)
+	if !ok {
+		return
+	}
+	if port := portFromAddr(addr); port != "" {
+		a.detectedPort = port
+	}
+}
+
+// portFromAddr extracts the port from a net.Listen-style address (":8080",
+// "0.0.0.0:8080", "localhost:8080"). Returns "" if there's no colon or
+// nothing purely numeric follows the last one - e.g. an empty address
+// (Gin's r.Run() with no args defaults to :8080, but that default lives in
+// Gin's source, not this literal, so there's nothing to parse here) or a
+// unix socket path.
+func portFromAddr(addr string) string {
+	idx := strings.LastIndex(addr, ":")
+	if idx == -1 {
+		return ""
+	}
+	port := addr[idx+1:]
+	if port == "" {
+		return ""
+	}
+	for _, r := range port {
+		if r < '0' || r > '9' {
+			return ""
+		}
+	}
+	return port
 }
 
 // frameworkMarkers maps each supported framework to the go.mod dependency
@@ -490,6 +568,16 @@ func (a *Analyzer) parseFile(filePath string) error {
 		a.recordParseFailure(filePath, err)
 		return nil // Skip files that can't be parsed
 	}
+
+	// Look for the app's own listen call in every file regardless of
+	// framework - in particular, this must run before the Chi branch below,
+	// which returns early and would otherwise skip Chi files entirely, even
+	// though a Chi app's http.ListenAndServe call commonly lives right next
+	// to its router setup in the same file.
+	ast.Inspect(node, func(n ast.Node) bool {
+		a.detectListenPort(n)
+		return true
+	})
 
 	a.curFilePath = filePath
 	// Build route group prefix map and auth groups for this file
