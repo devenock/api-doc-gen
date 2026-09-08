@@ -39,11 +39,10 @@ func (a *Analyzer) buildGorillaSubrouterPrefixes(file *ast.File) map[string]stri
 		if !ok || innerSel.Sel.Name != "PathPrefix" || len(inner.Args) != 1 {
 			return true
 		}
-		pathLit, ok := inner.Args[0].(*ast.BasicLit)
-		if !ok || pathLit.Kind != token.STRING {
+		path, ok := a.literalStringArg(inner.Args[0])
+		if !ok {
 			return true
 		}
-		path := strings.Trim(pathLit.Value, `"`)
 		childKey := groupVarKey(assign.Lhs[0])
 		parentKey := groupVarKey(innerSel.X)
 		if childKey == "" || parentKey == "" {
@@ -136,11 +135,10 @@ func (a *Analyzer) parseGorillaRoutes(n ast.Node, file *ast.File) {
 		return
 	}
 
-	pathLit, ok := callExpr.Args[0].(*ast.BasicLit)
-	if !ok || pathLit.Kind != token.STRING {
+	path, ok := a.literalStringArg(callExpr.Args[0])
+	if !ok {
 		return
 	}
-	path := strings.Trim(pathLit.Value, `"`)
 
 	receiverName := groupVarKey(selExpr.X)
 
@@ -173,11 +171,10 @@ func (a *Analyzer) parseGorillaMethods(n ast.Node, file *ast.File) {
 	if !ok || (innerSel.Sel.Name != "HandleFunc" && innerSel.Sel.Name != "Handle") {
 		return
 	}
-	pathLit, ok := inner.Args[0].(*ast.BasicLit)
-	if !ok || pathLit.Kind != token.STRING {
+	path, ok := a.literalStringArg(inner.Args[0])
+	if !ok {
 		return
 	}
-	path := strings.Trim(pathLit.Value, `"`)
 
 	// httpMethodConsts maps the net/http package-level constant names to their
 	// string values so that .Methods(http.MethodPost) is handled the same way

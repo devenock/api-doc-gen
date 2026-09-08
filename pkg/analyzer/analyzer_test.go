@@ -119,6 +119,37 @@ func AuthMiddleware() gin.HandlerFunc { return nil }
 	}
 }
 
+// TestAnalyze_Gin_GroupPrefixAndPathFromNamedConstant guards against a real
+// production bug: group-prefix and route-path arguments were resolved only
+// when passed as an inline string literal. A named constant - a common,
+// arguably better-practice alternative to a magic string, especially for a
+// shared version prefix - silently dropped the whole prefix (for a group)
+// or the endpoint entirely (for a single route), with no warning.
+func TestAnalyze_Gin_GroupPrefixAndPathFromNamedConstant(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		"main.go": `package main
+
+import "github.com/gin-gonic/gin"
+
+const apiV1Prefix = "/api/v1"
+const usersPath = "/users"
+
+func main() {
+	r := gin.Default()
+	v1 := r.Group(apiV1Prefix)
+	v1.GET(usersPath, ListUsers)
+}
+
+func ListUsers(c *gin.Context) {}
+`,
+	})
+
+	spec := analyze(t, dir, "gin")
+
+	findEndpoint(t, spec, "GET", "/api/v1/users")
+}
+
 func TestAnalyze_Gin_EmbeddedFieldsPromotedIntoSchema(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",

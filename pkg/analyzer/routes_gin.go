@@ -3,7 +3,6 @@ package analyzer
 import (
 	"fmt"
 	"go/ast"
-	"go/token"
 	"strings"
 
 	"github.com/devenock/api-doc-gen/pkg/models"
@@ -63,8 +62,8 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 		return
 	}
 
-	pathLit, ok := callExpr.Args[0].(*ast.BasicLit)
-	if !ok || pathLit.Kind != token.STRING {
+	path, ok := a.literalStringArg(callExpr.Args[0])
+	if !ok {
 		return
 	}
 
@@ -79,8 +78,6 @@ func (a *Analyzer) parseGinRoutes(n ast.Node, file *ast.File) {
 	if _, isLiteral := callExpr.Args[len(callExpr.Args)-1].(*ast.BasicLit); isLiteral {
 		return
 	}
-
-	path := strings.Trim(pathLit.Value, `"`)
 
 	// Prepend group prefix if receiver is a tracked group variable, whether a
 	// plain local (products.GET(...)) or a struct field (rt.products.GET(...)).

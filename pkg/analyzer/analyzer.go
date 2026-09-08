@@ -35,6 +35,7 @@ type Analyzer struct {
 	endpoints        []models.Endpoint
 	models           map[string]models.Schema
 	typeRegistry     map[string]models.Schema // type name -> schema (for request/response resolution)
+	stringConsts     map[string]string        // project-wide: identifier -> value, for package-level `const x = "..."` / `var x = "..."` declarations (see literalStringArg)
 	curGroupPrefix   map[string]string        // per-file: variable name -> path prefix (Gin/Echo/Fiber Group, Gorilla Subrouter)
 	curAuthGroups    map[string]bool          // per-file: variable name -> true if group uses auth middleware
 	curFilePath      string                   // current file being parsed (for SourceFile on endpoints)

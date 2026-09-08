@@ -25,7 +25,14 @@ func (a *Analyzer) collectTypesInFile(filePath string) error {
 	}
 	for _, decl := range node.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
-		if !ok || genDecl.Tok != token.TYPE {
+		if !ok {
+			continue
+		}
+		if genDecl.Tok == token.CONST || genDecl.Tok == token.VAR {
+			a.collectStringConsts(genDecl)
+			continue
+		}
+		if genDecl.Tok != token.TYPE {
 			continue
 		}
 		for _, spec := range genDecl.Specs {

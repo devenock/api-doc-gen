@@ -3,7 +3,6 @@ package analyzer
 import (
 	"fmt"
 	"go/ast"
-	"go/token"
 	"strings"
 
 	"github.com/devenock/api-doc-gen/pkg/models"
@@ -71,15 +70,15 @@ func (a *Analyzer) walkChiStmts(stmts []ast.Stmt, file *ast.File, prefix string,
 		case chiValidMethods[strings.ToUpper(sel.Sel.Name)]:
 			a.buildChiEndpoint(call, file, prefix, scopeAuth)
 		case sel.Sel.Name == "Route" && len(call.Args) == 2:
-			pathLit, ok := call.Args[0].(*ast.BasicLit)
-			if !ok || pathLit.Kind != token.STRING {
+			pathVal, ok := a.literalStringArg(call.Args[0])
+			if !ok {
 				continue
 			}
 			lit, ok := call.Args[1].(*ast.FuncLit)
 			if !ok || lit.Body == nil {
 				continue
 			}
-			subPath := joinPath(prefix, strings.Trim(pathLit.Value, `"`))
+			subPath := joinPath(prefix, pathVal)
 			a.walkChiStmts(lit.Body.List, file, subPath, scopeAuth)
 		case sel.Sel.Name == "Group" && len(call.Args) == 1:
 			lit, ok := call.Args[0].(*ast.FuncLit)
@@ -115,11 +114,11 @@ func (a *Analyzer) buildChiEndpoint(call *ast.CallExpr, file *ast.File, prefix s
 	if len(call.Args) < 2 {
 		return
 	}
-	pathLit, ok := call.Args[0].(*ast.BasicLit)
-	if !ok || pathLit.Kind != token.STRING {
+	pathVal, ok := a.literalStringArg(call.Args[0])
+	if !ok {
 		return
 	}
-	path := normalizeBracePath(joinPath(prefix, strings.Trim(pathLit.Value, `"`)))
+	path := normalizeBracePath(joinPath(prefix, pathVal))
 	method := strings.ToUpper(call.Fun.(*ast.SelectorExpr).Sel.Name)
 
 	var tags []string
