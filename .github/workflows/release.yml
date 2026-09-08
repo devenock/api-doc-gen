@@ -1,9 +1,21 @@
 name: Release
 
+# workflow_call lets auto-release.yml invoke this directly after pushing a
+# new tag, rather than relying on that tag push to trigger this workflow on
+# its own: pushes made with the default GITHUB_TOKEN (which auto-release.yml
+# uses) deliberately do NOT trigger other workflow runs (GitHub's anti-loop
+# protection) - so without this, an auto-tagged release would create the
+# tag but silently never actually build or publish anything.
 on:
   push:
     tags:
       - "v*"
+  workflow_call:
+    inputs:
+      ref:
+        description: "Tag to release (defaults to whatever ref triggered this run)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -14,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref || github.ref }}
           fetch-depth: 0
 
       - uses: actions/setup-go@v5
