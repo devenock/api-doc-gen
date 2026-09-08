@@ -212,6 +212,19 @@ func (a *Analyzer) Framework() string {
 	return string(a.framework)
 }
 
+// DetectedPort returns the port found in the app's own source by
+// detectListenPort (e.g. from r.Run(":8080")), or "" if nothing was found.
+// Call after Analyze() returns. Deliberately separate from the Servers
+// field on the returned APISpec, which may instead reflect a
+// user-configured .apidoc-gen.yaml `servers:` entry pointing anywhere
+// (a remote host, a different scheme) - this is specifically a same-machine
+// port guess, safe for a caller to also try for its own local server (e.g.
+// the Swagger UI preview server binding to the app's own port instead of an
+// arbitrary fixed one).
+func (a *Analyzer) DetectedPort() string {
+	return a.detectedPort
+}
+
 // Analyze scans the codebase and extracts API information
 func (a *Analyzer) Analyze() (*models.APISpec, error) {
 	root, err := os.OpenRoot(a.config.ProjectPath)

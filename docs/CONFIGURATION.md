@@ -25,7 +25,7 @@ Configuration is merged from lowest to highest precedence: **config file** → *
 | `--quiet`, `-q` | `APIDOC_QUIET` | `quiet` | `false` |
 | `--dry-run` | _(n/a)_ | _(n/a)_ | `false` |
 | `--show-config` | _(n/a)_ | _(n/a)_ | `false` |
-| `--serve` _(swagger)_ | _(n/a)_ | _(n/a)_ | `true` — after generating, serves `./docs` at `http://localhost:8765` and opens it in your browser; pass `--serve=false` to skip |
+| `--serve` _(swagger)_ | _(n/a)_ | _(n/a)_ | `true` — after generating, serves `./docs` and opens it in your browser (on the app's own detected port when found in its source, falling back to `8765` if that port is taken or nothing was detected); pass `--serve=false` to skip |
 | `--write-annotations` | _(n/a)_ | _(n/a)_ | `false` — writes swag-style `// @...` comments above same-file handler functions |
 | `--skip-build-check` | _(n/a)_ | _(n/a)_ | `false` — skips the `go vet ./...` pre-flight check against the target project |
 | `--required-by-default` | _(n/a)_ | _(n/a)_ | `false` — marks every struct field required unless it has `json:",omitempty"`, instead of only fields with an explicit `binding`/`validate:"required"` tag |

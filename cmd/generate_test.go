@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -201,5 +202,55 @@ func TestRunGenerate_ServeFalseReturnsWithoutBlocking(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("generate did not return within 5s - --serve=false is not skipping runServeDocs")
+	}
+}
+
+// TestListenForPreview_PrefersDetectedPort guards the fix for a real
+// finding: the Swagger UI preview server always bound the fixed port 8765,
+// unrelated to whatever port the app itself actually runs on. It must
+// prefer the app's own detected port instead.
+func TestListenForPreview_PrefersDetectedPort(t *testing.T) {
+	ln, port, err := listenForPreview("18080")
+	if err != nil {
+		t.Fatalf("listenForPreview: %v", err)
+	}
+	defer ln.Close()
+	if port != "18080" {
+		t.Errorf("port = %q, want 18080 (the preferred port was free, should have been used)", port)
+	}
+}
+
+// TestListenForPreview_FallsBackWhenPreferredPortIsTaken covers the other
+// half: the preferred port can't always be bound - most plausibly because
+// the real app is genuinely running on it while its docs are being
+// previewed - and that must fall back to 8765 rather than erroring out.
+func TestListenForPreview_FallsBackWhenPreferredPortIsTaken(t *testing.T) {
+	occupied, err := net.Listen("tcp", "127.0.0.1:18081")
+	if err != nil {
+		t.Fatalf("failed to occupy test port: %v", err)
+	}
+	defer occupied.Close()
+
+	ln, port, err := listenForPreview("18081")
+	if err != nil {
+		t.Fatalf("listenForPreview: %v", err)
+	}
+	defer ln.Close()
+	if port != "8765" {
+		t.Errorf("port = %q, want 8765 (preferred port 18081 was occupied)", port)
+	}
+}
+
+// TestListenForPreview_NoPreferredPortUsesFallback covers the case
+// DetectedPort found nothing at all (empty string) - must go straight to
+// 8765 rather than trying to bind an empty address.
+func TestListenForPreview_NoPreferredPortUsesFallback(t *testing.T) {
+	ln, port, err := listenForPreview("")
+	if err != nil {
+		t.Fatalf("listenForPreview: %v", err)
+	}
+	defer ln.Close()
+	if port != "8765" {
+		t.Errorf("port = %q, want 8765", port)
 	}
 }
