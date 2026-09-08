@@ -148,7 +148,7 @@ docs:
 | `-f, --framework` | Force framework: `gin` `echo` `fiber` `gorilla` `chi` |
 | `-y, --no-interactive` | No prompts — required for CI |
 | `--dry-run` | Show what would be generated without writing files |
-| `--serve` | Serve the Swagger UI and open it in your browser after generating (default `true`; pass `--serve=false` to skip) |
+| `--serve` | Serve the Swagger UI (on the app's own detected port when found, else `8765`) and open it in your browser after generating (default `true`; pass `--serve=false` to skip) |
 | `--skip-build-check` | Skip the `go vet ./...` pre-flight check (see below) |
 | `--required-by-default` | Mark every struct field required unless it has `json:",omitempty"` (default: only `binding`/`validate:"required"` tags count) |
 | `--tags` | Filter endpoints by tag: `users` includes only that tag, `!internal` excludes it (comma-separated, mixable) |

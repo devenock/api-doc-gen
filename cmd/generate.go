@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -222,7 +223,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	// and browser open.
 	if cfg.DocType == "swagger" && !quiet {
 		if viper.GetBool("serve") {
-			return runServeDocs(cmd.Context(), cfg.Output, quiet)
+			return runServeDocs(cmd.Context(), cfg.Output, quiet, apiAnalyzer.DetectedPort())
 		}
 		fmt.Printf("   Open %s in your browser to view it.\n", filepath.Join(cfg.Output, "index.html"))
 	}
@@ -235,9 +236,31 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// listenForPreview binds a loopback listener for the Swagger UI preview
+// server, trying preferredPort first (when non-empty) and falling back to
+// 8765 if that port can't be bound - typically because the app itself is
+// already listening on it, which the docs preview server obviously can't
+// also do. Returns the listener and the port it actually bound.
+func listenForPreview(preferredPort string) (net.Listener, string, error) {
+	const fallbackPort = "8765"
+	tried := []string{fallbackPort}
+	if preferredPort != "" && preferredPort != fallbackPort {
+		tried = []string{preferredPort, fallbackPort}
+	}
+	var lastErr error
+	for _, p := range tried {
+		ln, err := net.Listen("tcp", "127.0.0.1:"+p)
+		if err == nil {
+			return ln, p, nil
+		}
+		lastErr = err
+	}
+	return nil, "", lastErr
+}
+
 // runServeDocs serves the output directory on a local port, opens the browser
 // automatically, and blocks until ctx is canceled (Ctrl+C).
-func runServeDocs(ctx context.Context, outputDir string, quiet bool) error {
+func runServeDocs(ctx context.Context, outputDir string, quiet bool, preferredPort string) error {
 	absDir, err := filepath.Abs(outputDir)
 	if err != nil {
 		return &exitCodeError{fmt.Errorf("failed to resolve output path: %w", err), ExitRuntimeError}
@@ -246,12 +269,24 @@ func runServeDocs(ctx context.Context, outputDir string, quiet bool) error {
 		return &exitCodeError{fmt.Errorf("output directory does not exist: %s", absDir), ExitRuntimeError}
 	}
 
-	port := "8765"
+	// Prefer the port the app itself listens on (detected from its own
+	// source - see Analyzer.DetectedPort) so the Swagger UI preview opens on
+	// the same port as the running app, rather than an arbitrary fixed one.
+	// Falls back to 8765 if that port can't be bound - most commonly because
+	// the real app is actually running on it right now, which is a very
+	// plausible thing to be true while previewing its docs.
+	ln, port, err := listenForPreview(preferredPort)
+	if err != nil {
+		return &exitCodeError{fmt.Errorf("failed to start preview server: %w", err), ExitRuntimeError}
+	}
 	browserURL := "http://localhost:" + port + "/index.html"
 
 	if !quiet {
 		fmt.Println()
 		fmt.Printf("🌐 Swagger UI: %s\n", browserURL)
+		if preferredPort != "" && port != preferredPort {
+			fmt.Printf("   (port %s is in use - probably the app itself is running - using %s instead)\n", preferredPort, port)
+		}
 		fmt.Println()
 	}
 
@@ -277,14 +312,16 @@ func runServeDocs(ctx context.Context, outputDir string, quiet bool) error {
 	// with no auth, so binding to all interfaces would expose it to the LAN
 	// (or the public internet, if run on a host without a firewall) whenever
 	// generate --serve runs. ReadHeaderTimeout guards against a slow-headers
-	// (Slowloris-style) resource-exhaustion connection.
+	// (Slowloris-style) resource-exhaustion connection. Serves on the
+	// listener listenForPreview already opened above, rather than
+	// ListenAndServe's own Addr-based bind, since the port was chosen (with
+	// fallback) before the server was constructed.
 	srv := &http.Server{
-		Addr:              "127.0.0.1:" + port,
 		Handler:           trackedHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- srv.ListenAndServe() }()
+	go func() { serveErr <- srv.Serve(ln) }()
 
 	// Auto-exit once the browser has loaded the page and gone quiet, rather
 	// than blocking indefinitely for a manual Ctrl+C: once index.html,

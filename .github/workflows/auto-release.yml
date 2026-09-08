@@ -1,0 +1,47 @@
+name: Auto Release
+
+# Cuts a new patch release automatically once CI passes on main - i.e. once
+# a PR merges. Triggered off the CI workflow's own completion (rather than
+# push: branches: [main] directly) so a merge that fails CI never gets
+# tagged. Pushing the new tag below then triggers release.yml (GoReleaser
+# binaries) and docker.yml (image publish) exactly as a manually-pushed tag
+# would - this workflow's only job is deciding the next version number and
+# creating that tag.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Compute next patch version
+        id: next
+        run: |
+          latest=$(git tag -l 'v*' --sort=-v:refname | head -n1)
+          if [ -z "$latest" ]; then
+            latest="v0.0.0"
+          fi
+          latest="${latest#v}"
+          IFS='.' read -r major minor patch <<< "$latest"
+          next="v${major}.${minor}.$((patch + 1))"
+          echo "Latest tag: ${latest:-none} -> next: $next"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.next.outputs.version }}" -m "Release ${{ steps.next.outputs.version }}"
+          git push origin "${{ steps.next.outputs.version }}"
