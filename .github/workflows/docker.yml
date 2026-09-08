@@ -1,9 +1,23 @@
 name: docker
 
+# workflow_call lets auto-release.yml invoke this directly for a newly
+# auto-tagged version - see the matching comment in release.yml for why the
+# tag push itself can't be relied on to trigger this. docker/metadata-action
+# below infers tags from the ambient GitHub event context (branch vs. tag
+# push), which reflects the *original* triggering event when this runs via
+# workflow_call rather than the tag being released - so an explicit
+# type=raw entry for inputs.ref is added as a fallback that doesn't depend
+# on that inference being correct.
 on:
   push:
     branches: [main]
     tags: ["v*"]
+  workflow_call:
+    inputs:
+      ref:
+        description: "Tag to build and publish an image for (defaults to whatever ref triggered this run)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -14,6 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       # linux/arm64 needs QEMU emulation to build on the amd64 runner.
       - uses: docker/setup-qemu-action@v3
@@ -34,6 +50,7 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ inputs.ref }},enable=${{ inputs.ref != '' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -42,6 +59,6 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ inputs.ref || github.ref_name }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

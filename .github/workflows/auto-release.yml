@@ -3,10 +3,15 @@ name: Auto Release
 # Cuts a new patch release automatically once CI passes on main - i.e. once
 # a PR merges. Triggered off the CI workflow's own completion (rather than
 # push: branches: [main] directly) so a merge that fails CI never gets
-# tagged. Pushing the new tag below then triggers release.yml (GoReleaser
-# binaries) and docker.yml (image publish) exactly as a manually-pushed tag
-# would - this workflow's only job is deciding the next version number and
-# creating that tag.
+# tagged.
+#
+# The "tag" job pushes the new tag using the default GITHUB_TOKEN, which
+# GitHub deliberately does NOT let trigger other workflow runs (anti-loop
+# protection) - so release.yml/docker.yml's own `push: tags: ["v*"]`
+# triggers never fire for it. The "release" and "docker" jobs below work
+# around that by invoking those workflows directly via workflow_call,
+# passing the exact tag just created, instead of relying on the push to
+# trigger them.
 
 on:
   workflow_run:
@@ -20,6 +25,8 @@ jobs:
   tag:
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,3 +52,22 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "${{ steps.next.outputs.version }}" -m "Release ${{ steps.next.outputs.version }}"
           git push origin "${{ steps.next.outputs.version }}"
+
+  release:
+    needs: tag
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      ref: ${{ needs.tag.outputs.version }}
+    secrets: inherit
+
+  docker:
+    needs: tag
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      ref: ${{ needs.tag.outputs.version }}
+    secrets: inherit
