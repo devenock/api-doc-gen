@@ -30,21 +30,22 @@ import (
 
 // Analyzer analyzes the codebase to extract API information
 type Analyzer struct {
-	config           *config.Config
-	framework        models.FrameWorkType
-	endpoints        []models.Endpoint
-	models           map[string]models.Schema
-	typeRegistry     map[string]models.Schema // type name -> schema (for request/response resolution)
-	typePackageName  map[string]string        // type name -> the Go package it's declared in (e.g. "models"), for qualifying cross-package type refs in --write-annotations output
-	stringConsts     map[string]string        // project-wide: identifier -> value, for package-level `const x = "..."` / `var x = "..."` declarations (see literalStringArg)
-	curGroupPrefix   map[string]string        // per-file: variable name -> path prefix (Gin/Echo/Fiber Group, Gorilla Subrouter)
-	curAuthGroups    map[string]bool          // per-file: variable name -> true if group uses auth middleware
-	curFilePath      string                   // current file being parsed (for SourceFile on endpoints)
-	consumedCalls    map[*ast.CallExpr]bool   // per-file: gorilla HandleFunc/Handle calls already consumed by a .Methods() chain
-	parseDiagnostics []ParseDiagnostic        // .go files that matched the walk but failed to parse — see Diagnostics()
-	authMatches      []string                 // middleware names matched as auth-like — see AuthMiddlewareMatches()
-	bindHintMatches  []string                 // call names matched as JSON-binding by hint (not exact method name) — see BindHintMatches()
-	detectedPort     string                   // port parsed from the app's own .Run/.Listen/.Start/http.ListenAndServe call, if found — see detectListenPort
+	config            *config.Config
+	framework         models.FrameWorkType
+	endpoints         []models.Endpoint
+	models            map[string]models.Schema
+	typeRegistry      map[string]models.Schema // type name -> schema (for request/response resolution)
+	typePackageName   map[string]string        // type name -> the Go package it's declared in (e.g. "models"), for qualifying cross-package type refs in --write-annotations output
+	stringConsts      map[string]string        // project-wide: identifier -> value, for package-level `const x = "..."` / `var x = "..."` declarations (see literalStringArg)
+	curGroupPrefix    map[string]string        // per-file: variable name -> path prefix (Gin/Echo/Fiber Group, Gorilla Subrouter)
+	curAuthGroups     map[string]bool          // per-file: variable name -> true if group uses auth middleware
+	curFilePath       string                   // current file being parsed (for SourceFile on endpoints)
+	consumedCalls     map[*ast.CallExpr]bool   // per-file: gorilla HandleFunc/Handle calls already consumed by a .Methods() chain
+	parseDiagnostics  []ParseDiagnostic        // .go files that matched the walk but failed to parse — see Diagnostics()
+	authMatches       []string                 // middleware names matched as auth-like — see AuthMiddlewareMatches()
+	bindHintMatches   []string                 // call names matched as JSON-binding by hint (not exact method name) — see BindHintMatches()
+	detectedPort      string                   // port parsed from the app's own .Run/.Listen/.Start/http.ListenAndServe call, if found — see detectListenPort
+	resolvedLocalPort string                   // the port actually used for the auto-detected Servers[0] URL (detectedPort, or the .env/hardcoded fallback from detectServerURL) — see DetectedPort
 
 	// root scopes every file read/parse in this package to config.ProjectPath's
 	// tree, opened once in Analyze() and closed when it returns. Plain
@@ -212,17 +213,20 @@ func (a *Analyzer) Framework() string {
 	return string(a.framework)
 }
 
-// DetectedPort returns the port found in the app's own source by
-// detectListenPort (e.g. from r.Run(":8080")), or "" if nothing was found.
-// Call after Analyze() returns. Deliberately separate from the Servers
-// field on the returned APISpec, which may instead reflect a
-// user-configured .apidoc-gen.yaml `servers:` entry pointing anywhere
-// (a remote host, a different scheme) - this is specifically a same-machine
-// port guess, safe for a caller to also try for its own local server (e.g.
-// the Swagger UI preview server binding to the app's own port instead of an
-// arbitrary fixed one).
+// DetectedPort returns the same port used to build the auto-detected
+// Servers[0] URL: the app's own source (detectListenPort, e.g. from
+// r.Run(":8080")) when found, else whatever detectServerURL resolved (a
+// .env PORT entry, or its own hardcoded :8080 fallback). Call after
+// Analyze() returns. Returns "" only when config.Servers was set explicitly
+// (a user-configured .apidoc-gen.yaml `servers:` entry may not be a local
+// port at all - a remote host, a different scheme - so it would be wrong to
+// also try binding a local server, e.g. the Swagger UI preview server, to
+// it).
 func (a *Analyzer) DetectedPort() string {
-	return a.detectedPort
+	if len(a.config.Servers) > 0 {
+		return ""
+	}
+	return a.resolvedLocalPort
 }
 
 // Analyze scans the codebase and extracts API information
@@ -361,10 +365,16 @@ func (a *Analyzer) Analyze() (*models.APISpec, error) {
 	} else {
 		// Default server: prefer the port the app's own code actually listens
 		// on (detectListenPort, scanned during pass 2 above); fall back to
-		// .env, then :8080 - see detectServerURL.
+		// .env, then :8080 - see detectServerURL. Also drives DetectedPort()
+		// below, so the two stay in sync - a caller trying to reuse "the
+		// port we detected" (e.g. the Swagger UI preview server) must see
+		// exactly what ended up in this URL, not just the code-scan half of it.
 		url := detectServerURL(a.config.ProjectPath)
 		if a.detectedPort != "" {
 			url = "http://localhost:" + a.detectedPort
+		}
+		if idx := strings.LastIndex(url, ":"); idx >= 0 {
+			a.resolvedLocalPort = url[idx+1:]
 		}
 		spec.Servers = []models.Server{
 			{

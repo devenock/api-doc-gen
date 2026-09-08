@@ -213,6 +213,74 @@ func Ping(w http.ResponseWriter, r *http.Request) {}
 	}
 }
 
+// TestAnalyzer_DetectedPort_MatchesEnvFallback guards a real bug: when the
+// app's port is only resolvable via .env (not a literal/const in code -
+// TestAnalyze_ServerURL_FallsBackToEnvWhenPortIsNotALiteral's scenario
+// above), DetectedPort() returned "" instead of matching whatever port
+// Servers[0].URL actually ended up using. A caller trying to reuse "the
+// port we detected" (the Swagger UI preview server binding to the app's own
+// port) fell back to its own unrelated default instead, even though the
+// Servers dropdown in the generated docs correctly showed the real port -
+// the two were silently out of sync.
+func TestAnalyzer_DetectedPort_MatchesEnvFallback(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod": "module example.com/api\n\ngo 1.24\n",
+		".env":   "PORT=9999\n",
+		"main.go": `package main
+
+import (
+	"net/http"
+	"os"
+)
+
+func main() {
+	http.HandleFunc("/ping", Ping)
+	http.ListenAndServe(":"+os.Getenv("PORT"), nil)
+}
+
+func Ping(w http.ResponseWriter, r *http.Request) {}
+`,
+	})
+
+	cfg := &config.Config{ProjectPath: dir, DocType: "swagger", Title: "Test API", Version: "1.0.0"}
+	a := NewAnalyzer(cfg)
+	spec, err := a.Analyze()
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	if len(spec.Servers) != 1 || spec.Servers[0].URL != "http://localhost:9999" {
+		t.Fatalf("Servers = %+v, want a single server at http://localhost:9999 (from .env)", spec.Servers)
+	}
+	if got := a.DetectedPort(); got != "9999" {
+		t.Errorf("DetectedPort() = %q, want %q to match Servers[0].URL", got, "9999")
+	}
+}
+
+// TestAnalyzer_DetectedPort_EmptyWhenServersConfigured guards the other
+// direction: a user-configured .apidoc-gen.yaml `servers:` entry may point
+// anywhere (a remote host, a different scheme) - DetectedPort() must not
+// hand that back as if it were a local port safe to bind a server to.
+func TestAnalyzer_DetectedPort_EmptyWhenServersConfigured(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"go.mod":  "module example.com/api\n\ngo 1.24\n",
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	cfg := &config.Config{
+		ProjectPath: dir, DocType: "swagger", Title: "Test API", Version: "1.0.0",
+		Servers: []config.ServerConfig{{URL: "https://api.example.com"}},
+	}
+	a := NewAnalyzer(cfg)
+	if _, err := a.Analyze(); err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	if got := a.DetectedPort(); got != "" {
+		t.Errorf("DetectedPort() = %q, want \"\" when servers are user-configured", got)
+	}
+}
+
 func TestAnalyze_Gin_EmbeddedFieldsPromotedIntoSchema(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
