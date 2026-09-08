@@ -53,11 +53,17 @@ By participating, you agree to uphold our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Releases (maintainers)
 
-Pushing a tag matching `v*` (e.g. `v1.2.0`) triggers `.github/workflows/release.yml`,
-which runs GoReleaser (`.goreleaser.yaml`) to build Linux/macOS/Windows binaries,
-publish them to GitHub Releases, and embed the version so `api-doc-gen --version`
-reports it. Validate the config locally with `goreleaser check`, or dry-run a full
-build without publishing via `goreleaser release --snapshot --clean`.
+Releases are automatic: `.github/workflows/auto-release.yml` runs after CI passes
+on `main` (i.e. after every merged PR) and pushes a new tag one patch version above
+the latest existing one (`v0.1.0` → `v0.1.1`). That tag push is what triggers
+`.github/workflows/release.yml`, which runs GoReleaser (`.goreleaser.yaml`) to build
+Linux/macOS/Windows binaries, publish them to GitHub Releases, and embed the version
+so `api-doc-gen --version` reports it (`docker.yml` also publishes a matching image).
+No manual tagging needed for routine merges — for a minor/major bump instead, push
+that tag yourself before merging the PR that warrants it; the workflow only ever
+bumps the patch component. Validate the GoReleaser config locally with
+`goreleaser check`, or dry-run a full build without publishing via
+`goreleaser release --snapshot --clean`.
 
 ## Questions
 
