@@ -24,8 +24,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/devenock/api-doc-gen/pkg/config"
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/config"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 // Analyzer analyzes the codebase to extract API information
@@ -218,7 +218,7 @@ func (a *Analyzer) Framework() string {
 // r.Run(":8080")) when found, else whatever detectServerURL resolved (a
 // .env PORT entry, or its own hardcoded :8080 fallback). Call after
 // Analyze() returns. Returns "" only when config.Servers was set explicitly
-// (a user-configured .apidoc-gen.yaml `servers:` entry may not be a local
+// (a user-configured .specyl.yaml `servers:` entry may not be a local
 // port at all - a remote host, a different scheme - so it would be wrong to
 // also try binding a local server, e.g. the Swagger UI preview server, to
 // it).

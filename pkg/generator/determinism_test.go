@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/devenock/api-doc-gen/pkg/config"
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/config"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 // determinismTestSpec builds a spec with enough map-keyed data (multiple

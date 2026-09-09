@@ -1,4 +1,4 @@
-# Contributing to api-doc-gen
+# Contributing to specyl
 
 Thank you for considering contributing. This document explains how to get set up and submit changes.
 
@@ -18,11 +18,11 @@ By participating, you agree to uphold our [Code of Conduct](CODE_OF_CONDUCT.md).
 2. **Prerequisites:** Go 1.26 or later.
 3. **Build and test:**
    ```bash
-   cd api-doc-gen
+   cd specyl
    make build
    make test
    ```
-4. **Run locally:** `./bin/api-doc-gen generate --help` or `make run` (runs generate in the project directory). Build outputs are written to `./bin/`.
+4. **Run locally:** `./bin/specyl generate --help` or `make run` (runs generate in the project directory). Build outputs are written to `./bin/`.
 
 ## Project layout
 
@@ -58,7 +58,7 @@ on `main` (i.e. after every merged PR) and pushes a new tag one patch version ab
 the latest existing one (`v0.1.0` → `v0.1.1`). That tag push is what triggers
 `.github/workflows/release.yml`, which runs GoReleaser (`.goreleaser.yaml`) to build
 Linux/macOS/Windows binaries, publish them to GitHub Releases, and embed the version
-so `api-doc-gen --version` reports it (`docker.yml` also publishes a matching image).
+so `specyl --version` reports it (`docker.yml` also publishes a matching image).
 No manual tagging needed for routine merges — for a minor/major bump instead, push
 that tag yourself before merging the PR that warrants it; the workflow only ever
 bumps the patch component. Validate the GoReleaser config locally with

@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/devenock/api-doc-gen/pkg/config"
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/config"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 // PostmanGenerator generates Postman collections

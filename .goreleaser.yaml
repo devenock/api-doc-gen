@@ -1,6 +1,6 @@
 version: 2
 
-project_name: api-doc-gen
+project_name: specyl
 
 before:
   hooks:
@@ -8,7 +8,7 @@ before:
 
 builds:
   - main: .
-    binary: api-doc-gen
+    binary: specyl
     env:
       - CGO_ENABLED=0
     goos:
@@ -19,7 +19,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X github.com/devenock/api-doc-gen/cmd.version={{ .Version }}
+      - -s -w -X github.com/devenock/specyl/cmd.version={{ .Version }}
 
 archives:
   - formats: [tar.gz]
@@ -43,4 +43,4 @@ changelog:
 release:
   github:
     owner: devenock
-    name: api-doc-gen
+    name: specyl

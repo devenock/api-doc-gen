@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>api-doc-gen</title>
+  <title>Specyl</title>
   <style>
     /* ── Tokens ──────────────────────────────────────────────── */
     :root {
@@ -398,10 +398,10 @@
 <body>
 
   <header class="hdr">
-    <a href="index.html" class="hdr-brand">api-doc-gen</a>
+    <a href="index.html" class="hdr-brand">Specyl</a>
     <div class="hdr-right">
       <a href="index.html">Home</a>
-      <a href="https://github.com/devenock/api-doc-gen" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/devenock/specyl" target="_blank" rel="noopener">GitHub</a>
       <button class="theme-btn" id="themeBtn" aria-label="Toggle theme">☀</button>
     </div>
   </header>
@@ -441,14 +441,14 @@
 
       <!-- Hero -->
       <div class="hero">
-        <h1 class="hero-name">api-doc-gen</h1>
+        <h1 class="hero-name">Specyl</h1>
         <p class="hero-desc">
           Scan your Go API and generate Swagger/OpenAPI or a Postman Collection —
           no annotations, no code changes. Supports Gin, Echo, Fiber, Gorilla Mux, and Chi.
         </p>
         <div class="hero-install">
           <span class="hero-prompt">$</span>
-          <code>go install github.com/devenock/api-doc-gen@latest</code>
+          <code>go install github.com/devenock/specyl@latest</code>
           <button class="hero-copy">Copy</button>
         </div>
       </div>
@@ -466,7 +466,7 @@ func (c *Controller) ShowAccount(ctx *gin.Context) {</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
         <p>That's a real, well-established tool, but the annotations are a second source of truth you maintain by hand: add an endpoint and forget the comment block, and the docs silently fall behind the code with no error to catch it.</p>
-        <p><strong>api-doc-gen removes that step entirely.</strong> It reads your code as-is — route registrations, handler signatures, request/response structs, binding calls — via Go's own AST parser, the same way <code>go vet</code> or <code>gofmt</code> do, and builds the OpenAPI/Postman spec from what's actually there. No comments to write, no existing code to touch.</p>
+        <p><strong>specyl removes that step entirely.</strong> It reads your code as-is — route registrations, handler signatures, request/response structs, binding calls — via Go's own AST parser, the same way <code>go vet</code> or <code>gofmt</code> do, and builds the OpenAPI/Postman spec from what's actually there. No comments to write, no existing code to touch.</p>
         <p>One consequence of that: because there's nothing to keep in sync, docs stay accurate as you build incrementally. Register one handler, generate, ship; add the next one whenever it's ready, generate again — each run reflects exactly what's in the code at that moment, with zero extra steps. (To be precise: every run is a full, fresh scan of the project, not a cached diff of what changed — "incremental" describes the workflow this enables, not an incremental-build engine under the hood.)</p>
         <p>"No annotations" only helps if the scanner is actually reliable, so the analyzer is built to degrade honestly rather than guess silently: it resolves route groups, auth middleware, embedded struct fields, query/path parameters, and response bodies across real-world patterns in Gin, Echo, Fiber, Gorilla Mux, and Chi; falls back to generic <code>net/http</code>-style detection for anything else; and surfaces ambiguity instead of hiding it — a <code>.go</code> file that fails to parse, a framework it can't confidently pick between, or zero endpoints found are all reported explicitly (<code>-v</code> for detail) rather than producing a spec that looks complete but silently isn't.</p>
       </div>
@@ -484,12 +484,12 @@ export PATH="$PATH:$(go env GOPATH)/bin"</code></pre>
         </div>
         <p>Verify:</p>
         <div class="code-block">
-          <pre><code>api-doc-gen --version</code></pre>
+          <pre><code>specyl --version</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
         <div class="callout">
           No Go toolchain? Prebuilt binaries for Linux, macOS, and Windows (amd64/arm64) are published on the
-          <a href="https://github.com/devenock/api-doc-gen/releases" target="_blank" rel="noopener">Releases page</a> for every tagged version.
+          <a href="https://github.com/devenock/specyl/releases" target="_blank" rel="noopener">Releases page</a> for every tagged version.
         </div>
       </div>
 
@@ -501,20 +501,20 @@ export PATH="$PATH:$(go env GOPATH)/bin"</code></pre>
         <p>Run from your Go project root — the directory that contains <code>go.mod</code> and your route definitions.</p>
         <div class="code-block">
           <pre><code><span class="c"># Interactive wizard — choose type, output dir, title, etc.</span>
-api-doc-gen generate
+specyl generate
 
 <span class="c"># Or non-interactive — skip all prompts</span>
-api-doc-gen generate --no-interactive --type swagger -o ./docs
-api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
+specyl generate --no-interactive --type swagger -o ./docs
+specyl generate --no-interactive --type postman -o ./docs</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
         <p>Point at a project in a different directory:</p>
         <div class="code-block">
-          <pre><code>api-doc-gen generate /path/to/your-api --no-interactive --type swagger -o /path/to/your-api/docs</code></pre>
+          <pre><code>specyl generate /path/to/your-api --no-interactive --type swagger -o /path/to/your-api/docs</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
         <div class="callout">
-          Run <code>api-doc-gen init</code> inside your project to generate a <code>.apidoc-gen.yaml</code> config file.
+          Run <code>specyl init</code> inside your project to generate a <code>.specyl.yaml</code> config file.
           Commit it so the whole team shares the same defaults.
         </div>
       </div>
@@ -572,7 +572,7 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
           <li>Any other type from outside the scanned project (a third-party library type not in the supported list above, a shared internal module, etc.) resolves to an empty <code>object</code> with no fields</li>
           <li>File uploads (<code>multipart/form-data</code>) — not detected</li>
         </ul>
-        <p>Found a pattern that isn't covered? <a href="https://github.com/devenock/api-doc-gen/issues" target="_blank" rel="noopener">Open an issue</a> — new patterns belong in the analyzer, not worked around.</p>
+        <p>Found a pattern that isn't covered? <a href="https://github.com/devenock/specyl/issues" target="_blank" rel="noopener">Open an issue</a> — new patterns belong in the analyzer, not worked around.</p>
       </div>
 
       <hr class="section-rule">
@@ -588,7 +588,7 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
 ├── go.mod
 ├── main.go
 ├── handlers/
-├── .apidoc-gen.yaml   <span class="c">← optional config (see below)</span>
+├── .specyl.yaml   <span class="c">← optional config (see below)</span>
 └── docs/              <span class="c">← generated output</span></code></pre>
           <button class="copy-btn">Copy</button>
         </div>
@@ -597,12 +597,12 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
         <p>So the whole team runs the same command:</p>
         <div class="code-block">
           <pre><code>docs:
-	api-doc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
+	specyl generate --no-interactive --type swagger -o ./docs</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
 
         <h3 id="applying-config">Optional config file</h3>
-        <p>Run <code>api-doc-gen init</code> inside your project to create <code>.apidoc-gen.yaml</code>. Commit it so everyone shares the same defaults (output dir, title, framework, etc.). In interactive mode, doc type and framework are skipped entirely once set in the file; title, version, base path, and output directory are still prompted but pre-filled with the file's value — press Enter to accept it. Use <code>--no-interactive</code> to skip all prompts and use the file (plus flags/env) as-is.</p>
+        <p>Run <code>specyl init</code> inside your project to create <code>.specyl.yaml</code>. Commit it so everyone shares the same defaults (output dir, title, framework, etc.). In interactive mode, doc type and framework are skipped entirely once set in the file; title, version, base path, and output directory are still prompted but pre-filled with the file's value — press Enter to accept it. Use <code>--no-interactive</code> to skip all prompts and use the file (plus flags/env) as-is.</p>
       </div>
 
       <hr class="section-rule">
@@ -641,13 +641,13 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
           <table>
             <thead><tr><th>Flag</th><th>Description</th></tr></thead>
             <tbody>
-              <tr><td><code>--config</code></td><td>Path to config file (default: <code>.apidoc-gen.yaml</code> in the current directory)</td></tr>
+              <tr><td><code>--config</code></td><td>Path to config file (default: <code>.specyl.yaml</code> in the current directory)</td></tr>
               <tr><td><code>-v, --verbose</code></td><td>Show detected framework, endpoint count, matched middleware, etc.</td></tr>
               <tr><td><code>-q, --quiet</code></td><td>Suppress progress output and skip the auto-opened browser preview (errors still print to stderr)</td></tr>
             </tbody>
           </table>
         </div>
-        <p>Full list: <code>api-doc-gen generate --help</code></p>
+        <p>Full list: <code>specyl generate --help</code></p>
       </div>
 
       <hr class="section-rule">
@@ -655,9 +655,9 @@ api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
       <!-- Config -->
       <div class="section" id="config">
         <h2>Config file</h2>
-        <p>Create <code>.apidoc-gen.yaml</code> in your project root to set persistent defaults. Run <code>api-doc-gen init</code> to generate one interactively.</p>
+        <p>Create <code>.specyl.yaml</code> in your project root to set persistent defaults. Run <code>specyl init</code> to generate one interactively.</p>
         <div class="code-block">
-          <pre><code><span class="c"># .apidoc-gen.yaml</span>
+          <pre><code><span class="c"># .specyl.yaml</span>
 type: swagger
 output: ./docs
 framework: ""       <span class="c"># leave blank to auto-detect from go.mod</span>
@@ -669,8 +669,8 @@ version: 1.0.0</code></pre>
         <h3 id="config-precedence">Precedence</h3>
         <p>Configuration is merged from lowest to highest precedence — flags always win:</p>
         <ol>
-          <li><strong>Config file</strong> — <code>.apidoc-gen.yaml</code> in the current directory (or the path set by <code>--config</code>)</li>
-          <li><strong>Env vars</strong> — <code>APIDOC_&lt;KEY&gt;</code> (e.g. <code>APIDOC_TYPE</code>, <code>APIDOC_OUTPUT</code>)</li>
+          <li><strong>Config file</strong> — <code>.specyl.yaml</code> in the current directory (or the path set by <code>--config</code>)</li>
+          <li><strong>Env vars</strong> — <code>SPECYL_&lt;KEY&gt;</code> (e.g. <code>SPECYL_TYPE</code>, <code>SPECYL_OUTPUT</code>)</li>
           <li><strong>Flags</strong> — e.g. <code>--type swagger</code>, <code>-o ./docs</code></li>
         </ol>
 
@@ -679,17 +679,17 @@ version: 1.0.0</code></pre>
           <table>
             <thead><tr><th>Flag</th><th>Env var</th><th>Config key</th><th>Default</th></tr></thead>
             <tbody>
-              <tr><td><code>--output, -o</code></td><td><code>APIDOC_OUTPUT</code></td><td><code>output</code></td><td><code>./docs</code></td></tr>
-              <tr><td><code>--type, -t</code></td><td><code>APIDOC_TYPE</code></td><td><code>type</code></td><td>—</td></tr>
-              <tr><td><code>--framework, -f</code></td><td><code>APIDOC_FRAMEWORK</code></td><td><code>framework</code></td><td>auto-detect</td></tr>
-              <tr><td><code>--base-path</code></td><td><code>APIDOC_BASE_PATH</code></td><td><code>base_path</code></td><td><code>""</code></td></tr>
-              <tr><td><code>--title</code></td><td><code>APIDOC_TITLE</code></td><td><code>title</code></td><td>auto-detected from <code>go.mod</code>'s module name (falls back to <code>API Documentation</code>)</td></tr>
-              <tr><td><code>--version</code></td><td><code>APIDOC_VERSION</code></td><td><code>version</code></td><td><code>1.0.0</code></td></tr>
-              <tr><td><code>--description</code></td><td><code>APIDOC_DESCRIPTION</code></td><td><code>description</code></td><td><code>""</code></td></tr>
-              <tr><td><code>--exclude</code></td><td><code>APIDOC_EXCLUDE</code></td><td><code>exclude</code></td><td><code>vendor</code>, <code>node_modules</code>, <code>.git</code>, <code>test</code>, <code>tests</code></td></tr>
+              <tr><td><code>--output, -o</code></td><td><code>SPECYL_OUTPUT</code></td><td><code>output</code></td><td><code>./docs</code></td></tr>
+              <tr><td><code>--type, -t</code></td><td><code>SPECYL_TYPE</code></td><td><code>type</code></td><td>—</td></tr>
+              <tr><td><code>--framework, -f</code></td><td><code>SPECYL_FRAMEWORK</code></td><td><code>framework</code></td><td>auto-detect</td></tr>
+              <tr><td><code>--base-path</code></td><td><code>SPECYL_BASE_PATH</code></td><td><code>base_path</code></td><td><code>""</code></td></tr>
+              <tr><td><code>--title</code></td><td><code>SPECYL_TITLE</code></td><td><code>title</code></td><td>auto-detected from <code>go.mod</code>'s module name (falls back to <code>API Documentation</code>)</td></tr>
+              <tr><td><code>--version</code></td><td><code>SPECYL_VERSION</code></td><td><code>version</code></td><td><code>1.0.0</code></td></tr>
+              <tr><td><code>--description</code></td><td><code>SPECYL_DESCRIPTION</code></td><td><code>description</code></td><td><code>""</code></td></tr>
+              <tr><td><code>--exclude</code></td><td><code>SPECYL_EXCLUDE</code></td><td><code>exclude</code></td><td><code>vendor</code>, <code>node_modules</code>, <code>.git</code>, <code>test</code>, <code>tests</code></td></tr>
               <tr><td><code>--no-interactive, -y</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
-              <tr><td><code>--verbose, -v</code></td><td><code>APIDOC_VERBOSE</code></td><td><code>verbose</code></td><td><code>false</code></td></tr>
-              <tr><td><code>--quiet, -q</code></td><td><code>APIDOC_QUIET</code></td><td><code>quiet</code></td><td><code>false</code></td></tr>
+              <tr><td><code>--verbose, -v</code></td><td><code>SPECYL_VERBOSE</code></td><td><code>verbose</code></td><td><code>false</code></td></tr>
+              <tr><td><code>--quiet, -q</code></td><td><code>SPECYL_QUIET</code></td><td><code>quiet</code></td><td><code>false</code></td></tr>
               <tr><td><code>--dry-run</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
               <tr><td><code>--show-config</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
               <tr><td><code>--write-annotations</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
@@ -704,7 +704,7 @@ version: 1.0.0</code></pre>
         <p>Default <code>exclude</code> dirs are matched by exact directory name (basename), not substring.</p>
 
         <h3 id="config-auth-middleware">Auth middleware detection</h3>
-        <p>Config-file only (no flag/env equivalent). By default, a route group is marked authenticated (<code>security: [BearerAuth]</code> in the generated spec) when its middleware's name contains <code>auth</code> or <code>jwt</code> (case-insensitive), plus a small set of common exact names. Set <code>auth_middleware</code> in <code>.apidoc-gen.yaml</code> to override that heuristic entirely with an exact (case-insensitive) list of your own middleware names:</p>
+        <p>Config-file only (no flag/env equivalent). By default, a route group is marked authenticated (<code>security: [BearerAuth]</code> in the generated spec) when its middleware's name contains <code>auth</code> or <code>jwt</code> (case-insensitive), plus a small set of common exact names. Set <code>auth_middleware</code> in <code>.specyl.yaml</code> to override that heuristic entirely with an exact (case-insensitive) list of your own middleware names:</p>
         <div class="code-block">
           <pre><code>auth_middleware:
   - requireSession
@@ -715,7 +715,7 @@ version: 1.0.0</code></pre>
 
         <h3 id="config-inspect">Inspect effective config</h3>
         <div class="code-block">
-          <pre><code>api-doc-gen generate --show-config</code></pre>
+          <pre><code>specyl generate --show-config</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
         <p>Prints the merged values and exits without generating or prompting.</p>
@@ -742,7 +742,7 @@ version: 1.0.0</code></pre>
       <!-- Postman -->
       <div class="section" id="postman">
         <h2>Postman</h2>
-        <p><code>--type postman</code> generates <code>collection.json</code> with your endpoints organized into folders by tag, example request bodies pre-filled, and Bearer auth wired up. api-doc-gen does not upload it anywhere or talk to the Postman API — that would need an API key, and holding Postman credentials just to skip a five-second drag-and-drop isn't worth the complexity. Import it yourself:</p>
+        <p><code>--type postman</code> generates <code>collection.json</code> with your endpoints organized into folders by tag, example request bodies pre-filled, and Bearer auth wired up. Specyl does not upload it anywhere or talk to the Postman API — that would need an API key, and holding Postman credentials just to skip a five-second drag-and-drop isn't worth the complexity. Import it yourself:</p>
         <ol>
           <li>Open Postman</li>
           <li>Click <strong>Import</strong> (top-left of the sidebar)</li>
@@ -750,7 +750,7 @@ version: 1.0.0</code></pre>
         </ol>
         <p>Or drag the file directly into the Postman sidebar.</p>
         <div class="code-block">
-          <pre><code>api-doc-gen generate --no-interactive --type postman -o ./docs</code></pre>
+          <pre><code>specyl generate --no-interactive --type postman -o ./docs</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
       </div>
@@ -765,17 +765,17 @@ version: 1.0.0</code></pre>
           <pre><code>docker run --rm \
   -v "$(pwd)":/workspace \
   -w /workspace \
-  ghcr.io/devenock/api-doc-gen:latest generate --no-interactive --type swagger -o ./docs</code></pre>
+  ghcr.io/devenock/specyl:latest generate --no-interactive --type swagger -o ./docs</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
         <p>Or build it yourself from source:</p>
         <div class="code-block">
-          <pre><code>docker build -t api-doc-gen .
+          <pre><code>docker build -t specyl .
 
 docker run --rm \
   -v "$(pwd)":/workspace \
   -w /workspace \
-  api-doc-gen generate --no-interactive --type swagger -o ./docs</code></pre>
+  specyl generate --no-interactive --type swagger -o ./docs</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
         <p>Replace <code>$(pwd)</code> with the path to your API project if you're not running from its root. The container runs as a non-root user — if generated files come out owned by a UID your host user can't write to, add <code>--user "$(id -u):$(id -g)"</code> to the <code>docker run</code> command.</p>
@@ -791,8 +791,8 @@ docker run --rm \
           <pre><code><span class="c"># GitHub Actions example</span>
 - name: Generate API docs
   run: |
-    go install github.com/devenock/api-doc-gen@latest
-    api-doc-gen generate -y --type swagger -o ./docs --title "My API"</code></pre>
+    go install github.com/devenock/specyl@latest
+    specyl generate -y --type swagger -o ./docs --title "My API"</code></pre>
           <button class="copy-btn">Copy</button>
         </div>
         <p>Exit codes: <code>0</code> success · <code>1</code> validation error · <code>2</code> runtime error.</p>
@@ -803,14 +803,14 @@ docker run --rm \
       <!-- Security -->
       <div class="section" id="security">
         <h2>Security</h2>
-        <p>api-doc-gen only reads your project's source to extract routes and types via static AST parsing — it never executes your code. A few specific hardening notes, since this runs against real codebases:</p>
+        <p>specyl only reads your project's source to extract routes and types via static AST parsing — it never executes your code. A few specific hardening notes, since this runs against real codebases:</p>
         <ul>
           <li><strong>Confined file access</strong> — every file read is scoped to your project directory via Go's <code>os.Root</code>, so a symlink (accidental or crafted) pointing outside the project tree is never followed, even if it's swapped in mid-scan.</li>
-          <li><strong>Output stays put</strong> — the output directory is validated to stay within your working directory unless you pass <code>--output</code>/<code>-o</code> explicitly yourself, so a <code>.apidoc-gen.yaml</code> from a repo you don't control can't silently redirect where files get written.</li>
+          <li><strong>Output stays put</strong> — the output directory is validated to stay within your working directory unless you pass <code>--output</code>/<code>-o</code> explicitly yourself, so a <code>.specyl.yaml</code> from a repo you don't control can't silently redirect where files get written.</li>
           <li><strong>Local-only preview</strong> — the Swagger UI preview server binds to <code>127.0.0.1</code>, never your network, and generated docs are fully offline (no CDN dependency).</li>
-          <li><strong>No credentials, ever</strong> — api-doc-gen never talks to any external API (Postman included); it only reads your project and writes files locally, so there's no credential-handling surface at all.</li>
+          <li><strong>No credentials, ever</strong> — Specyl never talks to any external API (Postman included); it only reads your project and writes files locally, so there's no credential-handling surface at all.</li>
         </ul>
-        <p>Found a security issue? See <a href="https://github.com/devenock/api-doc-gen/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a> for how to report it.</p>
+        <p>Found a security issue? See <a href="https://github.com/devenock/specyl/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a> for how to report it.</p>
       </div>
 
       <hr class="section-rule">
@@ -849,7 +849,7 @@ source ~/.zshrc   <span class="c"># or ~/.bashrc</span></code></pre>
         <p>Two specific error strings to watch for: an unrecognized <code>type</code> value (only <code>swagger</code> and <code>postman</code> are valid), or an output path that resolves outside your project directory when it wasn't explicitly passed via <code>--output</code>/<code>-o</code> (a deliberate safety check — see <a href="#security">Security</a>).</p>
 
         <h3 id="ts-config-not-read">Config file not being read</h3>
-        <p>Ensure <code>.apidoc-gen.yaml</code> is in the directory you're running from, not a subdirectory (or point <code>--config</code> at it explicitly). Inspect the merged result with <code>api-doc-gen generate --show-config</code>.</p>
+        <p>Ensure <code>.specyl.yaml</code> is in the directory you're running from, not a subdirectory (or point <code>--config</code> at it explicitly). Inspect the merged result with <code>specyl generate --show-config</code>.</p>
 
         <h3 id="ts-prompts-in-ci">Prompts appearing in CI</h3>
         <p>Always pass <code>-y</code> (<code>--no-interactive</code>) and <code>--type</code>. Without these the CLI waits for interactive input. Exit codes in non-interactive mode: <code>0</code> success · <code>1</code> validation error · <code>2</code> runtime error.</p>
@@ -887,12 +887,12 @@ source ~/.zshrc   <span class="c"># or ~/.bashrc</span></code></pre>
     function applyTheme(t) {
       root.setAttribute('data-theme', t);
       btn.textContent = t === 'dark' ? '☀' : '🌙';
-      try { localStorage.setItem('apidocTheme', t); } catch {}
+      try { localStorage.setItem('specylTheme', t); } catch {}
     }
 
     (function () {
       let saved;
-      try { saved = localStorage.getItem('apidocTheme'); } catch {}
+      try { saved = localStorage.getItem('specylTheme'); } catch {}
       applyTheme(saved || 'dark');
     })();
 

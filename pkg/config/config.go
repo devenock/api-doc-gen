@@ -35,7 +35,7 @@ type Config struct {
 	// ProjectPath — see the README's cross-directory example, which passes an
 	// absolute -o for exactly this reason), and Validate only trusts an
 	// Output that escapes the working directory tree when a human typed it on
-	// the command line for this run. A malicious .apidoc-gen.yaml committed
+	// the command line for this run. A malicious .specyl.yaml committed
 	// to a repo (auth_middleware and friends are meant to be shared/trusted,
 	// but output is a filesystem write target) must not be able to silently
 	// redirect where generate writes files.
@@ -57,7 +57,7 @@ type Config struct {
 	// `json:",omitempty"` or an explicit validation tag says otherwise.
 	RequiredByDefault bool
 
-	// AuthMiddleware, when set (via .apidoc-gen.yaml's auth_middleware key),
+	// AuthMiddleware, when set (via .specyl.yaml's auth_middleware key),
 	// is the exact list of middleware identifier names (case-insensitive)
 	// that mark a route group as authenticated, overriding the analyzer's
 	// built-in heuristic (a common-name set plus a substring match on

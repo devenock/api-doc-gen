@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devenock/api-doc-gen/pkg/config"
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/config"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 func TestSwaggerGenerate_WritesExpectedFiles(t *testing.T) {

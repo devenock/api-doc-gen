@@ -68,7 +68,7 @@ func withWorkingDir(t *testing.T, dir string) {
 
 func TestInitConfig_MalformedConfigFileWarns(t *testing.T) {
 	withWorkingDir(t, t.TempDir())
-	if err := os.WriteFile(".apidoc-gen.yaml", []byte("type: swagger\n  bad indentation: [\n"), 0o644); err != nil {
+	if err := os.WriteFile(".specyl.yaml", []byte("type: swagger\n  bad indentation: [\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	oldCfgFile := cfgFile

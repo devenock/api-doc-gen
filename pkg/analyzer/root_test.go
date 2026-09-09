@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/devenock/api-doc-gen/pkg/config"
+	"github.com/devenock/specyl/pkg/config"
 )
 
 // newRootedAnalyzer builds an Analyzer with root opened exactly as Analyze()

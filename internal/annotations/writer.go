@@ -1,6 +1,6 @@
 // Package annotations implements --write-annotations: writing swag-style
 // `// @...` comment blocks above same-file handler functions, so a project
-// that adopts api-doc-gen can migrate to swaggo/swag-compatible annotations
+// that adopts specyl can migrate to swaggo/swag-compatible annotations
 // without writing them by hand.
 package annotations
 
@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 // WriteSwagAnnotations writes swag-style comment blocks above handler functions for each endpoint that has SourceFile and HandlerName set.

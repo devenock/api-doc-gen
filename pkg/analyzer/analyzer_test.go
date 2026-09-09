@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devenock/api-doc-gen/pkg/config"
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/config"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 // writeProject materializes files (relative path -> content) under a fresh
@@ -258,7 +258,7 @@ func Ping(w http.ResponseWriter, r *http.Request) {}
 }
 
 // TestAnalyzer_DetectedPort_EmptyWhenServersConfigured guards the other
-// direction: a user-configured .apidoc-gen.yaml `servers:` entry may point
+// direction: a user-configured .specyl.yaml `servers:` entry may point
 // anywhere (a remote host, a different scheme) - DetectedPort() must not
 // hand that back as if it were a local port safe to bind a server to.
 func TestAnalyzer_DetectedPort_EmptyWhenServersConfigured(t *testing.T) {

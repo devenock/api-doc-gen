@@ -2,7 +2,7 @@
 
 ## Command not found after `go install`
 
-The binary is named **`api-doc-gen`** (with a hyphen). If the shell says it cannot find it, Go's bin directory is not on your PATH.
+The binary is named **`specyl`** (with a hyphen). If the shell says it cannot find it, Go's bin directory is not on your PATH.
 
 **Fix:**
 
@@ -17,10 +17,10 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 source ~/.zshrc
 ```
 
-Verify with `api-doc-gen --version`. Or run by full path:
+Verify with `specyl --version`. Or run by full path:
 
 ```bash
-$(go env GOPATH)/bin/api-doc-gen generate --no-interactive --type swagger -o ./docs
+$(go env GOPATH)/bin/specyl generate --no-interactive --type swagger -o ./docs
 ```
 
 ## No endpoints found
@@ -28,8 +28,8 @@ $(go env GOPATH)/bin/api-doc-gen generate --no-interactive --type swagger -o ./d
 If the analyzer finds zero endpoints, the CLI prints a warning by default (no `-v` needed) showing the detected framework and the likely cause, right before it writes the (empty) output file. If you see that warning:
 
 - **Framework not detected** — ensure your framework is in `go.mod`. Set `--framework` explicitly if auto-detection misses it: `--framework gin`. Supported: `gin`, `echo`, `fiber`, `gorilla`, `chi`.
-- **Wrong directory** — run from the project root (where `go.mod` lives), or pass the path: `api-doc-gen generate /path/to/project`.
-- **Excluded directories** — route files inside `vendor`, `test`, or `tests` are skipped by default. Override with `--exclude ""` or adjust `exclude` in `.apidoc-gen.yaml`.
+- **Wrong directory** — run from the project root (where `go.mod` lives), or pass the path: `specyl generate /path/to/project`.
+- **Excluded directories** — route files inside `vendor`, `test`, or `tests` are skipped by default. Override with `--exclude ""` or adjust `exclude` in `.specyl.yaml`.
 - **Verbose output** — run with `-v` to also see the file count and the full endpoint list once found, or `--dry-run` to inspect without writing files.
 
 ## "Multiple frameworks detected in go.mod"
@@ -55,17 +55,17 @@ One or more `.go` files matched by the project walk have a syntax error (or othe
 
 ## Config file not being read
 
-- Ensure `.apidoc-gen.yaml` is in the **current working directory** when you run the command, not a parent or child directory.
+- Ensure `.specyl.yaml` is in the **current working directory** when you run the command, not a parent or child directory.
 - Check for YAML syntax errors (no tabs, correct indentation).
-- Env vars must be prefixed with `APIDOC_` (e.g. `APIDOC_TYPE=swagger`).
-- Inspect what is actually loaded: `api-doc-gen generate --show-config`
+- Env vars must be prefixed with `SPECYL_` (e.g. `SPECYL_TYPE=swagger`).
+- Inspect what is actually loaded: `specyl generate --show-config`
 
 ## Prompts appearing in CI
 
 The CLI is interactive by default. To disable all prompts:
 
 ```bash
-api-doc-gen generate --no-interactive --type swagger -o ./docs
+specyl generate --no-interactive --type swagger -o ./docs
 ```
 
 Both `--no-interactive` (or `-y`) and `--type` are required — without `--type` the CLI still needs to ask which format to generate.

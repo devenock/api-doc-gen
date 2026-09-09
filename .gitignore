@@ -1,8 +1,7 @@
 # Build output
 bin/
 dist/
-apidoc-gen
-api-doc-gen
+specyl
 *.exe
 *.exe~
 *.dll
@@ -15,8 +14,8 @@ api-doc-gen
 coverage.html
 coverage.txt
 
-# Local config (optional; remove if you want to track .apidoc-gen.yaml)
-# .apidoc-gen.yaml
+# Local config (optional; remove if you want to track .specyl.yaml)
+# .specyl.yaml
 
 # Generated docs (when testing locally)
 docs-out/

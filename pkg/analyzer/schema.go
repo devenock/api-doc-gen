@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 // This file builds models.Schema from Go struct declarations: parsing struct
