@@ -1,0 +1,31 @@
+name: Deploy GitHub Pages
+
+# Publishes web/ (the marketing site + docs.html) to the gh-pages branch on
+# every push to main, so it stays in sync automatically instead of needing a
+# manual deploy step. One-time setup still required in the GitHub UI:
+# Settings -> Pages -> Source -> "Deploy from a branch" -> gh-pages -> / (root)
+# (only selectable after this workflow has run at least once and created the
+# branch).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy web/ to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./web
