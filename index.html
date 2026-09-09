@@ -383,10 +383,21 @@
       margin-bottom: 1.375rem;
     }
     .fw {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
       font-family: ui-monospace, monospace;
       font-size: 0.9375rem;
       font-weight: 600;
       color: var(--text);
+    }
+    .fw-icon {
+      width: 22px;
+      height: 22px;
+      padding: 3px;
+      border-radius: 6px;
+      background: #fff;
+      object-fit: contain;
     }
     .fw-note { font-size: 0.875rem; color: var(--muted); }
     code {
@@ -571,11 +582,11 @@
   <section class="section fw-section">
     <p class="eyebrow">Framework support</p>
     <div class="fw-row">
-      <span class="fw">Gin</span>
-      <span class="fw">Echo</span>
-      <span class="fw">Fiber</span>
-      <span class="fw">Gorilla&nbsp;Mux</span>
-      <span class="fw">Chi</span>
+      <span class="fw"><img class="fw-icon" src="icons/gin.svg" alt="" width="22" height="22">Gin</span>
+      <span class="fw"><img class="fw-icon" src="icons/echo.svg" alt="" width="22" height="22">Echo</span>
+      <span class="fw"><img class="fw-icon" src="icons/fiber.png" alt="" width="22" height="22">Fiber</span>
+      <span class="fw"><img class="fw-icon" src="icons/gorilla.png" alt="" width="22" height="22">Gorilla&nbsp;Mux</span>
+      <span class="fw"><img class="fw-icon" src="icons/chi.svg" alt="" width="22" height="22">Chi</span>
     </div>
     <p class="fw-note">Auto-detected from <code>go.mod</code> — or override with <code>--framework</code>.</p>
   </section>
