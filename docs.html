@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Specyl</title>
+  <style>
+    /* ── Tokens ──────────────────────────────────────────────── */
+    :root {
+      --bg:          #090C11;
+      --surface:     #10151E;
+      --surface-hi:  #171E2A;
+      --border:      #1C2535;
+      --text:        #D6E3F0;
+      --muted:       #546478;
+      --accent:      #3E8FFF;
+      --accent-dim:  rgba(62, 143, 255, 0.10);
+      --green:       #2DBF6E;
+      --sidebar-w:   232px;
+      --toc-w:       200px;
+      --header-h:    52px;
+      --radius:      6px;
+    }
+    :root[data-theme="light"] {
+      --bg:          #F4F7FB;
+      --surface:     #FFFFFF;
+      --surface-hi:  #EBF0F7;
+      --border:      #D5DDE8;
+      --text:        #0D1825;
+      --muted:       #607080;
+      --accent:      #1468CC;
+      --accent-dim:  rgba(20, 104, 204, 0.08);
+      --green:       #1A9050;
+    }
+
+    /* ── Reset ───────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14.5px;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Header ──────────────────────────────────────────────── */
+    .hdr {
+      position: fixed;
+      inset: 0 0 auto 0;
+      height: var(--header-h);
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.5rem;
+      z-index: 100;
+    }
+    .hdr-brand {
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .hdr-brand:hover { color: var(--accent); text-decoration: none; }
+    .hdr-right { display: flex; align-items: center; gap: 1.25rem; }
+    .hdr-right a { font-size: 0.8125rem; color: var(--muted); }
+    .hdr-right a:hover { color: var(--text); text-decoration: none; }
+    .theme-btn {
+      width: 30px; height: 30px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.12s, color 0.12s;
+    }
+    .theme-btn:hover { border-color: var(--muted); color: var(--text); }
+
+    /* ── Layout ──────────────────────────────────────────────── */
+    /* Sidebar and TOC are fixed-width; .main is the flexible middle
+       column and centers its (reading-width-capped) content within
+       whatever space remains, so the page always fills the viewport
+       width instead of leaving dead space when the TOC is empty. */
+    .layout { display: flex; padding-top: var(--header-h); min-height: 100vh; }
+
+    /* ── Sidebar ─────────────────────────────────────────────── */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      position: sticky;
+      top: var(--header-h);
+      height: calc(100vh - var(--header-h));
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      padding: 1.75rem 0 2rem;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .sidebar::-webkit-scrollbar { width: 3px; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .nav-section { margin-bottom: 1.5rem; }
+    .nav-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      padding: 0 1.25rem;
+      margin-bottom: 0.375rem;
+      display: block;
+    }
+    .nav-link {
+      display: block;
+      padding: 0.3rem 1.25rem;
+      font-size: 0.8125rem;
+      color: var(--muted);
+      border-left: 2px solid transparent;
+      transition: color 0.1s, background 0.1s, border-color 0.1s;
+    }
+    .nav-link:hover { color: var(--text); background: var(--surface); text-decoration: none; }
+    .nav-link.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-dim); }
+
+    /* ── Main ────────────────────────────────────────────────── */
+    .main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      justify-content: center;
+      padding: 3rem 2.5rem 6rem;
+    }
+    .main-inner {
+      width: 100%;
+      max-width: 760px;
+    }
+
+    /* ── TOC (right rail) ───────────────────────────────────── */
+    .toc {
+      width: var(--toc-w);
+      flex-shrink: 0;
+      position: sticky;
+      top: var(--header-h);
+      height: calc(100vh - var(--header-h));
+      overflow-y: auto;
+      padding: 3rem 1.5rem 2rem 0;
+    }
+    .toc.empty { display: none; }
+    .toc-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      margin-bottom: 0.625rem;
+      display: block;
+    }
+    .toc-link {
+      display: block;
+      padding: 0.25rem 0;
+      font-size: 0.8125rem;
+      color: var(--muted);
+      border-left: 2px solid var(--border);
+      padding-left: 0.75rem;
+    }
+    .toc-link:hover { color: var(--text); text-decoration: none; }
+
+    /* ── Hero ────────────────────────────────────────────────── */
+    .hero { padding-bottom: 2.5rem; margin-bottom: 2.5rem; border-bottom: 1px solid var(--border); }
+    .hero-name {
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: 1.875rem;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      color: var(--text);
+      margin-bottom: 0.5rem;
+      line-height: 1.2;
+    }
+    .hero-desc {
+      font-size: 0.9375rem;
+      color: var(--muted);
+      line-height: 1.65;
+      max-width: 480px;
+      margin-bottom: 1.5rem;
+    }
+    .hero-install {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.625rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.5625rem 0.875rem;
+      position: relative;
+    }
+    .hero-prompt {
+      font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+      font-size: 0.8125rem;
+      color: var(--green);
+      user-select: none;
+    }
+    .hero-install code {
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: 0.8125rem;
+      color: var(--text);
+      background: none;
+      border: none;
+      padding: 0;
+    }
+    .hero-copy {
+      margin-left: 0.5rem;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.6875rem;
+      font-family: inherit;
+      background: var(--surface-hi);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: color 0.1s;
+    }
+    .hero-copy:hover { color: var(--text); }
+    .hero-copy.copied { color: var(--green); border-color: var(--green); }
+
+    /* ── Sections ────────────────────────────────────────────── */
+    .section { margin-bottom: 2.75rem; }
+
+    .section-rule {
+      /* One section is shown at a time (see pagination JS below), so these
+         no longer sit between visible content - hidden rather than removed
+         to keep the section markup/spacing untouched. */
+      display: none;
+    }
+
+    h2 {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 1rem;
+      scroll-margin-top: calc(var(--header-h) + 1.25rem);
+    }
+
+    h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 1.75rem 0 0.75rem;
+      scroll-margin-top: calc(var(--header-h) + 1.25rem);
+    }
+    h3:first-of-type { margin-top: 0.5rem; }
+
+    p { color: var(--muted); margin-bottom: 0.875rem; }
+    p:last-child { margin-bottom: 0; }
+    p strong, li strong { color: var(--text); font-weight: 500; }
+
+    ul, ol { color: var(--muted); padding-left: 1.25rem; margin-bottom: 0.875rem; }
+    li { margin-bottom: 0.25rem; }
+    li:last-child { margin-bottom: 0; }
+
+    /* ── Code ────────────────────────────────────────────────── */
+    :not(pre) > code {
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: 0.8125rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.1em 0.38em;
+      color: var(--text);
+    }
+
+    .code-block {
+      position: relative;
+      margin: 0.75rem 0 1rem;
+    }
+    .code-block pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.125rem;
+      overflow-x: auto;
+    }
+    .code-block code {
+      font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+      font-size: 0.8125rem;
+      color: var(--text);
+      background: none;
+      border: none;
+      padding: 0;
+      line-height: 1.75;
+    }
+    .c { color: var(--muted); }  /* comment */
+    .p { color: var(--green); }  /* prompt $ */
+
+    .copy-btn {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.6875rem;
+      font-family: inherit;
+      background: var(--surface-hi);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .copy-btn:hover { color: var(--text); }
+    .copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+    /* ── Table ───────────────────────────────────────────────── */
+    .tbl-wrap { overflow-x: auto; margin: 0.75rem 0 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+    thead th {
+      padding: 0.5rem 0.875rem;
+      text-align: left;
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 0.5625rem 0.875rem;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    td:first-child { color: var(--text); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface-hi); }
+
+    /* ── Callout ─────────────────────────────────────────────── */
+    .callout {
+      border-left: 2px solid var(--accent);
+      background: var(--accent-dim);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      padding: 0.75rem 1rem;
+      margin: 1rem 0;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+
+    /* ── Pager ───────────────────────────────────────────────── */
+    .pager {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+    .pager-link {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      max-width: 48%;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .pager-link:hover { border-color: var(--accent); background: var(--surface); text-decoration: none; }
+    .pager-next { margin-left: auto; text-align: right; align-items: flex-end; }
+    .pager-dir {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .pager-title { font-size: 0.875rem; color: var(--text); }
+
+    /* ── Responsive ──────────────────────────────────────────── */
+    @media (max-width: 1180px) {
+      .toc { display: none; }
+    }
+    @media (max-width: 860px) {
+      .sidebar { display: none; }
+      .main { padding: 2rem 1.5rem 4rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="hdr">
+    <a href="index.html" class="hdr-brand">Specyl</a>
+    <div class="hdr-right">
+      <a href="index.html">Home</a>
+      <a href="https://github.com/devenock/specyl" target="_blank" rel="noopener">GitHub</a>
+      <button class="theme-btn" id="themeBtn" aria-label="Toggle theme">☀</button>
+    </div>
+  </header>
+
+  <div class="layout">
+
+    <aside class="sidebar" aria-label="Documentation navigation">
+      <nav>
+        <div class="nav-section">
+          <span class="nav-label">Getting started</span>
+          <a class="nav-link" href="#why">Why</a>
+          <a class="nav-link" href="#install">Install</a>
+          <a class="nav-link" href="#generate">Generate docs</a>
+          <a class="nav-link" href="#output">Output</a>
+          <a class="nav-link" href="#coverage">Coverage</a>
+          <a class="nav-link" href="#applying">Applying it to your project</a>
+        </div>
+        <div class="nav-section">
+          <span class="nav-label">Usage</span>
+          <a class="nav-link" href="#flags">Flags</a>
+          <a class="nav-link" href="#config">Config file</a>
+          <a class="nav-link" href="#build-check">Build check</a>
+          <a class="nav-link" href="#postman">Postman</a>
+          <a class="nav-link" href="#docker">Docker</a>
+          <a class="nav-link" href="#ci">CI &amp; scripts</a>
+        </div>
+        <div class="nav-section">
+          <span class="nav-label">Reference</span>
+          <a class="nav-link" href="#security">Security</a>
+          <a class="nav-link" href="#troubleshooting">Troubleshooting</a>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="main-inner">
+
+      <!-- Hero -->
+      <div class="hero">
+        <h1 class="hero-name">Specyl</h1>
+        <p class="hero-desc">
+          Scan your Go API and generate Swagger/OpenAPI or a Postman Collection —
+          no annotations, no code changes. Supports Gin, Echo, Fiber, Gorilla Mux, and Chi.
+        </p>
+        <div class="hero-install">
+          <span class="hero-prompt">$</span>
+          <code>go install github.com/devenock/specyl@latest</code>
+          <button class="hero-copy">Copy</button>
+        </div>
+      </div>
+
+      <!-- Why -->
+      <div class="section" id="why">
+        <h2>Why</h2>
+        <p>The standard way to generate OpenAPI docs for a Go API — <a href="https://github.com/swaggo/swag" target="_blank" rel="noopener">swaggo/swag</a> — works by parsing comment annotations you write above every handler:</p>
+        <div class="code-block">
+          <pre><code><span class="c">// @Summary      Show an account
+// @Router       /accounts/{id} [get]
+// @Param        id   path  int  true  "Account ID"
+// @Success      200  {object}  model.Account</span>
+func (c *Controller) ShowAccount(ctx *gin.Context) {</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>That's a real, well-established tool, but the annotations are a second source of truth you maintain by hand: add an endpoint and forget the comment block, and the docs silently fall behind the code with no error to catch it.</p>
+        <p><strong>specyl removes that step entirely.</strong> It reads your code as-is — route registrations, handler signatures, request/response structs, binding calls — via Go's own AST parser, the same way <code>go vet</code> or <code>gofmt</code> do, and builds the OpenAPI/Postman spec from what's actually there. No comments to write, no existing code to touch.</p>
+        <p>One consequence of that: because there's nothing to keep in sync, docs stay accurate as you build incrementally. Register one handler, generate, ship; add the next one whenever it's ready, generate again — each run reflects exactly what's in the code at that moment, with zero extra steps. (To be precise: every run is a full, fresh scan of the project, not a cached diff of what changed — "incremental" describes the workflow this enables, not an incremental-build engine under the hood.)</p>
+        <p>"No annotations" only helps if the scanner is actually reliable, so the analyzer is built to degrade honestly rather than guess silently: it resolves route groups, auth middleware, embedded struct fields, query/path parameters, and response bodies across real-world patterns in Gin, Echo, Fiber, Gorilla Mux, and Chi; falls back to generic <code>net/http</code>-style detection for anything else; and surfaces ambiguity instead of hiding it — a <code>.go</code> file that fails to parse, a framework it can't confidently pick between, or zero endpoints found are all reported explicitly (<code>-v</code> for detail) rather than producing a spec that looks complete but silently isn't.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Install -->
+      <div class="section" id="install">
+        <h2>Install</h2>
+        <p>Requires Go 1.26.8+. The binary is installed to <code>$(go env GOPATH)/bin</code> — usually <code>~/go/bin</code>. Make sure that directory is on your <code>PATH</code>.</p>
+        <div class="code-block">
+          <pre><code><span class="c"># Add to ~/.zshrc or ~/.bashrc if needed</span>
+export PATH="$PATH:$(go env GOPATH)/bin"</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Verify:</p>
+        <div class="code-block">
+          <pre><code>specyl --version</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <div class="callout">
+          No Go toolchain? Prebuilt binaries for Linux, macOS, and Windows (amd64/arm64) are published on the
+          <a href="https://github.com/devenock/specyl/releases" target="_blank" rel="noopener">Releases page</a> for every tagged version.
+        </div>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Generate -->
+      <div class="section" id="generate">
+        <h2>Generate docs</h2>
+        <p>Run from your Go project root — the directory that contains <code>go.mod</code> and your route definitions.</p>
+        <div class="code-block">
+          <pre><code><span class="c"># Interactive wizard — choose type, output dir, title, etc.</span>
+specyl generate
+
+<span class="c"># Or non-interactive — skip all prompts</span>
+specyl generate --no-interactive --type swagger -o ./docs
+specyl generate --no-interactive --type postman -o ./docs</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Point at a project in a different directory:</p>
+        <div class="code-block">
+          <pre><code>specyl generate /path/to/your-api --no-interactive --type swagger -o /path/to/your-api/docs</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <div class="callout">
+          Run <code>specyl init</code> inside your project to generate a <code>.specyl.yaml</code> config file.
+          Commit it so the whole team shares the same defaults.
+        </div>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Output -->
+      <div class="section" id="output">
+        <h2>Output</h2>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Type</th><th>Files</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>swagger</code></td>
+                <td><code>openapi.json</code> · <code>openapi.yaml</code> · <code>index.html</code> (Swagger UI)</td>
+              </tr>
+              <tr>
+                <td><code>postman</code></td>
+                <td><code>collection.json</code> (Postman Collection v2.1)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Swagger</strong> — after generating, a local preview server starts automatically (bound to <code>127.0.0.1</code> only — never exposed to your network) and opens <code>index.html</code> in your browser. Pass <code>-q</code>/<code>--quiet</code> in CI or scripts to skip this. The Swagger UI assets are vendored into the binary and written alongside your docs, so the page works fully offline — no CDN calls, nothing to break if you view it later without a network connection. To reopen it later, open <code>./docs/index.html</code> directly in your browser.</p>
+        <p><strong>Postman</strong> — open Postman, click <strong>Import</strong> in the sidebar, and drag <code>collection.json</code> onto the dialog. Endpoints are organized into folders by tag, with example request bodies and bearer auth pre-wired.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Coverage -->
+      <div class="section" id="coverage">
+        <h2>Coverage</h2>
+        <p>What the analyzer actually detects and emits, checked against the code rather than aspirational.</p>
+
+        <h3 id="coverage-supported">Supported</h3>
+        <ul>
+          <li>Paths, operations, path and query parameters</li>
+          <li>Request bodies — JSON binding calls (<code>ShouldBindJSON</code>, <code>BodyParser</code>, <code>Decode</code>, and common project-specific wrapper names matched by hint)</li>
+          <li>Response bodies — JSON responses across Gin/Echo/Fiber/Gorilla Mux/Chi/net/http response patterns</li>
+          <li>Bearer auth detection — marks a route <code>security: [BearerAuth]</code> when its middleware looks like auth (or matches your configured <code>auth_middleware</code> list)</li>
+          <li>Struct tags — <code>json</code> (name, <code>omitempty</code>, <code>-</code> to exclude), <code>binding:"required"</code> / <code>validate:"required"</code></li>
+          <li>Embedded struct fields promoted into the parent schema</li>
+          <li>Tags for Swagger UI grouping, derived from the path</li>
+          <li>OpenAPI 3.0.3 and Postman Collection v2.1 output</li>
+          <li>Common external types — <code>time.Time</code>, <code>time.Duration</code>, <code>uuid.UUID</code> (<a href="https://github.com/google/uuid" target="_blank" rel="noopener">google/uuid</a>), and <code>database/sql</code>'s <code>Null*</code> types resolve to their real, verified JSON shape (checked against <code>encoding/json</code>'s actual output, not assumed — <code>sql.NullString</code> looks like it should marshal as a plain string, but it has no custom <code>MarshalJSON</code>, so it's really <code>{"String":...,"Valid":...}</code>)</li>
+        </ul>
+
+        <h3 id="coverage-not-supported">Not yet supported</h3>
+        <ul>
+          <li>Header parameters — not extracted</li>
+          <li>Non-JSON content types — request/response bodies are always modeled as <code>application/json</code>; no multipart/form-data, XML, or plain text</li>
+          <li>Auth schemes other than Bearer — no API Key, Basic Auth, or OAuth2 security scheme detection</li>
+          <li>Enums, example values, response headers — the schema model has fields for all three (so output stays forward-compatible), but nothing in the analyzer populates them yet</li>
+          <li>Any other type from outside the scanned project (a third-party library type not in the supported list above, a shared internal module, etc.) resolves to an empty <code>object</code> with no fields</li>
+          <li>File uploads (<code>multipart/form-data</code>) — not detected</li>
+        </ul>
+        <p>Found a pattern that isn't covered? <a href="https://github.com/devenock/specyl/issues" target="_blank" rel="noopener">Open an issue</a> — new patterns belong in the analyzer, not worked around.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Applying it to your project -->
+      <div class="section" id="applying">
+        <h2>Applying it to your project</h2>
+        <p>Your project does not need any changes — the tool reads your existing route definitions.</p>
+
+        <h3 id="applying-layout">Recommended layout</h3>
+        <div class="code-block">
+          <pre><code>my-go-api/
+├── go.mod
+├── main.go
+├── handlers/
+├── .specyl.yaml   <span class="c">← optional config (see below)</span>
+└── docs/              <span class="c">← generated output</span></code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+
+        <h3 id="applying-makefile">Optional Makefile target</h3>
+        <p>So the whole team runs the same command:</p>
+        <div class="code-block">
+          <pre><code>docs:
+	specyl generate --no-interactive --type swagger -o ./docs</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+
+        <h3 id="applying-config">Optional config file</h3>
+        <p>Run <code>specyl init</code> inside your project to create <code>.specyl.yaml</code>. Commit it so everyone shares the same defaults (output dir, title, framework, etc.). In interactive mode, doc type and framework are skipped entirely once set in the file; title, version, base path, and output directory are still prompted but pre-filled with the file's value — press Enter to accept it. Use <code>--no-interactive</code> to skip all prompts and use the file (plus flags/env) as-is.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Flags -->
+      <div class="section" id="flags">
+        <h2>Flags</h2>
+
+        <h3 id="flags-core">Core</h3>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>-t, --type</code></td><td>Output type: <code>swagger</code> or <code>postman</code></td></tr>
+              <tr><td><code>-o, --output</code></td><td>Output directory (default: <code>./docs</code>)</td></tr>
+              <tr><td><code>-f, --framework</code></td><td>Force framework: <code>gin</code> · <code>echo</code> · <code>fiber</code> · <code>gorilla</code> · <code>chi</code></td></tr>
+              <tr><td><code>-y, --no-interactive</code></td><td>Disable all prompts — required in CI</td></tr>
+              <tr><td><code>--exclude</code></td><td>Directory names to skip (repeatable). <strong>Replaces</strong> the default list entirely rather than adding to it — if you use this flag, re-list <code>vendor</code>, <code>node_modules</code>, <code>.git</code>, <code>test</code>, <code>tests</code> alongside your own if you still want them skipped</td></tr>
+              <tr><td><code>--tags</code></td><td>Filter endpoints by tag: plain name to include, <code>!name</code> to exclude (comma-separated, mixable)</td></tr>
+              <tr><td><code>--required-by-default</code></td><td>Mark every struct field required unless it has <code>json:",omitempty"</code> (default: only <code>binding</code>/<code>validate:"required"</code> tags count)</td></tr>
+              <tr><td><code>--title</code></td><td>API title (default: auto-detected from your <code>go.mod</code> module name)</td></tr>
+              <tr><td><code>--version</code></td><td>API version string (default: <code>1.0.0</code>)</td></tr>
+              <tr><td><code>--base-path</code></td><td>Prefix prepended to every path</td></tr>
+              <tr><td><code>--description</code></td><td>API description shown in the generated spec</td></tr>
+              <tr><td><code>--dry-run</code></td><td>Show what would be generated, write nothing</td></tr>
+              <tr><td><code>--show-config</code></td><td>Print effective config and exit</td></tr>
+              <tr><td><code>--serve</code></td><td>Serve the Swagger UI (on the app's own detected port when found, else <code>8765</code>) and open it in your browser after generating (swagger only, default <code>true</code>); pass <code>--serve=false</code> to skip</td></tr>
+              <tr><td><code>--write-annotations</code></td><td>Write swag-style <code>// @...</code> comments above same-file handler functions</td></tr>
+              <tr><td><code>--skip-build-check</code></td><td>Skip the <code>go vet ./...</code> pre-flight check against the target project (see <a href="#build-check">Build check</a>)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="flags-global">Global (all commands)</h3>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>--config</code></td><td>Path to config file (default: <code>.specyl.yaml</code> in the current directory)</td></tr>
+              <tr><td><code>-v, --verbose</code></td><td>Show detected framework, endpoint count, matched middleware, etc.</td></tr>
+              <tr><td><code>-q, --quiet</code></td><td>Suppress progress output and skip the auto-opened browser preview (errors still print to stderr)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Full list: <code>specyl generate --help</code></p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Config -->
+      <div class="section" id="config">
+        <h2>Config file</h2>
+        <p>Create <code>.specyl.yaml</code> in your project root to set persistent defaults. Run <code>specyl init</code> to generate one interactively.</p>
+        <div class="code-block">
+          <pre><code><span class="c"># .specyl.yaml</span>
+type: swagger
+output: ./docs
+framework: ""       <span class="c"># leave blank to auto-detect from go.mod</span>
+title: My API
+version: 1.0.0</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+
+        <h3 id="config-precedence">Precedence</h3>
+        <p>Configuration is merged from lowest to highest precedence — flags always win:</p>
+        <ol>
+          <li><strong>Config file</strong> — <code>.specyl.yaml</code> in the current directory (or the path set by <code>--config</code>)</li>
+          <li><strong>Env vars</strong> — <code>SPECYL_&lt;KEY&gt;</code> (e.g. <code>SPECYL_TYPE</code>, <code>SPECYL_OUTPUT</code>)</li>
+          <li><strong>Flags</strong> — e.g. <code>--type swagger</code>, <code>-o ./docs</code></li>
+        </ol>
+
+        <h3 id="config-mapping">Flag · env · config key mapping</h3>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Flag</th><th>Env var</th><th>Config key</th><th>Default</th></tr></thead>
+            <tbody>
+              <tr><td><code>--output, -o</code></td><td><code>SPECYL_OUTPUT</code></td><td><code>output</code></td><td><code>./docs</code></td></tr>
+              <tr><td><code>--type, -t</code></td><td><code>SPECYL_TYPE</code></td><td><code>type</code></td><td>—</td></tr>
+              <tr><td><code>--framework, -f</code></td><td><code>SPECYL_FRAMEWORK</code></td><td><code>framework</code></td><td>auto-detect</td></tr>
+              <tr><td><code>--base-path</code></td><td><code>SPECYL_BASE_PATH</code></td><td><code>base_path</code></td><td><code>""</code></td></tr>
+              <tr><td><code>--title</code></td><td><code>SPECYL_TITLE</code></td><td><code>title</code></td><td>auto-detected from <code>go.mod</code>'s module name (falls back to <code>API Documentation</code>)</td></tr>
+              <tr><td><code>--version</code></td><td><code>SPECYL_VERSION</code></td><td><code>version</code></td><td><code>1.0.0</code></td></tr>
+              <tr><td><code>--description</code></td><td><code>SPECYL_DESCRIPTION</code></td><td><code>description</code></td><td><code>""</code></td></tr>
+              <tr><td><code>--exclude</code></td><td><code>SPECYL_EXCLUDE</code></td><td><code>exclude</code></td><td><code>vendor</code>, <code>node_modules</code>, <code>.git</code>, <code>test</code>, <code>tests</code></td></tr>
+              <tr><td><code>--no-interactive, -y</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--verbose, -v</code></td><td><code>SPECYL_VERBOSE</code></td><td><code>verbose</code></td><td><code>false</code></td></tr>
+              <tr><td><code>--quiet, -q</code></td><td><code>SPECYL_QUIET</code></td><td><code>quiet</code></td><td><code>false</code></td></tr>
+              <tr><td><code>--dry-run</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--show-config</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--write-annotations</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--skip-build-check</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--required-by-default</code></td><td>—</td><td>—</td><td><code>false</code></td></tr>
+              <tr><td><code>--tags</code></td><td>—</td><td>—</td><td>none — keeps everything</td></tr>
+              <tr><td><code>--serve</code> <em>(swagger)</em></td><td>—</td><td>—</td><td><code>true</code></td></tr>
+              <tr><td><code>[path]</code> <em>(positional)</em></td><td>—</td><td>—</td><td><code>.</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Default <code>exclude</code> dirs are matched by exact directory name (basename), not substring.</p>
+
+        <h3 id="config-auth-middleware">Auth middleware detection</h3>
+        <p>Config-file only (no flag/env equivalent). By default, a route group is marked authenticated (<code>security: [BearerAuth]</code> in the generated spec) when its middleware's name contains <code>auth</code> or <code>jwt</code> (case-insensitive), plus a small set of common exact names. Set <code>auth_middleware</code> in <code>.specyl.yaml</code> to override that heuristic entirely with an exact (case-insensitive) list of your own middleware names:</p>
+        <div class="code-block">
+          <pre><code>auth_middleware:
+  - requireSession
+  - JWTAuth</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Run with <code>-v</code> to see exactly what was matched, either way.</p>
+
+        <h3 id="config-inspect">Inspect effective config</h3>
+        <div class="code-block">
+          <pre><code>specyl generate --show-config</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Prints the merged values and exits without generating or prompting.</p>
+        <p>Full reference: <a href="../docs/CONFIGURATION.md" target="_blank" rel="noopener">CONFIGURATION.md</a></p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Build check -->
+      <div class="section" id="build-check">
+        <h2>Build check</h2>
+        <p>Before analyzing, <code>generate</code> runs <code>go vet ./...</code> against the target project as a pre-flight check. It's purely advisory — a project that fails it still gets docs generated from whatever the AST parser can recover, but you get a warning up front that the result may be incomplete, rather than silently missing routes with no explanation:</p>
+        <div class="code-block">
+          <pre><code>⚠️  This project does not currently pass `go vet ./...` —
+   generated docs may be incomplete or incorrect.
+   Run with -v for details, or pass --skip-build-check to suppress this check.</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Pass <code>--skip-build-check</code> to disable it (e.g. running against a branch mid-refactor in CI). It also skips itself automatically wherever the <code>go</code> toolchain isn't on <code>PATH</code> — including this project's own Docker runtime image, which ships as a slim <code>alpine</code> base with just the compiled binary and no Go toolchain.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Postman -->
+      <div class="section" id="postman">
+        <h2>Postman</h2>
+        <p><code>--type postman</code> generates <code>collection.json</code> with your endpoints organized into folders by tag, example request bodies pre-filled, and Bearer auth wired up. Specyl does not upload it anywhere or talk to the Postman API — that would need an API key, and holding Postman credentials just to skip a five-second drag-and-drop isn't worth the complexity. Import it yourself:</p>
+        <ol>
+          <li>Open Postman</li>
+          <li>Click <strong>Import</strong> (top-left of the sidebar)</li>
+          <li>Choose <strong>Upload Files</strong> and select <code>collection.json</code></li>
+        </ol>
+        <p>Or drag the file directly into the Postman sidebar.</p>
+        <div class="code-block">
+          <pre><code>specyl generate --no-interactive --type postman -o ./docs</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Docker -->
+      <div class="section" id="docker">
+        <h2>Docker</h2>
+        <p>No Go installation needed. Pull the published image:</p>
+        <div class="code-block">
+          <pre><code>docker run --rm \
+  -v "$(pwd)":/workspace \
+  -w /workspace \
+  ghcr.io/devenock/specyl:latest generate --no-interactive --type swagger -o ./docs</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Or build it yourself from source:</p>
+        <div class="code-block">
+          <pre><code>docker build -t specyl .
+
+docker run --rm \
+  -v "$(pwd)":/workspace \
+  -w /workspace \
+  specyl generate --no-interactive --type swagger -o ./docs</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Replace <code>$(pwd)</code> with the path to your API project if you're not running from its root. The container runs as a non-root user — if generated files come out owned by a UID your host user can't write to, add <code>--user "$(id -u):$(id -g)"</code> to the <code>docker run</code> command.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- CI -->
+      <div class="section" id="ci">
+        <h2>CI &amp; scripts</h2>
+        <p>Always pass <code>-y</code> and <code>--type</code> so the CLI never waits for input.</p>
+        <div class="code-block">
+          <pre><code><span class="c"># GitHub Actions example</span>
+- name: Generate API docs
+  run: |
+    go install github.com/devenock/specyl@latest
+    specyl generate -y --type swagger -o ./docs --title "My API"</code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <p>Exit codes: <code>0</code> success · <code>1</code> validation error · <code>2</code> runtime error.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Security -->
+      <div class="section" id="security">
+        <h2>Security</h2>
+        <p>specyl only reads your project's source to extract routes and types via static AST parsing — it never executes your code. A few specific hardening notes, since this runs against real codebases:</p>
+        <ul>
+          <li><strong>Confined file access</strong> — every file read is scoped to your project directory via Go's <code>os.Root</code>, so a symlink (accidental or crafted) pointing outside the project tree is never followed, even if it's swapped in mid-scan.</li>
+          <li><strong>Output stays put</strong> — the output directory is validated to stay within your working directory unless you pass <code>--output</code>/<code>-o</code> explicitly yourself, so a <code>.specyl.yaml</code> from a repo you don't control can't silently redirect where files get written.</li>
+          <li><strong>Local-only preview</strong> — the Swagger UI preview server binds to <code>127.0.0.1</code>, never your network, and generated docs are fully offline (no CDN dependency).</li>
+          <li><strong>No credentials, ever</strong> — Specyl never talks to any external API (Postman included); it only reads your project and writes files locally, so there's no credential-handling surface at all.</li>
+        </ul>
+        <p>Found a security issue? See <a href="https://github.com/devenock/specyl/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a> for how to report it.</p>
+      </div>
+
+      <hr class="section-rule">
+
+      <!-- Troubleshooting -->
+      <div class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <h3 id="ts-not-found">Command not found after go install</h3>
+        <p>Go's bin directory is not on your <code>PATH</code>. Add it and reload your shell:</p>
+        <div class="code-block">
+          <pre><code>export PATH="$PATH:$(go env GOPATH)/bin"
+source ~/.zshrc   <span class="c"># or ~/.bashrc</span></code></pre>
+          <button class="copy-btn">Copy</button>
+        </div>
+
+        <h3 id="ts-no-endpoints">No endpoints found</h3>
+        <p>Usually one of:</p>
+        <ul>
+          <li>The framework wasn't auto-detected — pass <code>--framework</code> explicitly (e.g. <code>--framework gin</code>).</li>
+          <li>Routes are registered in a file inside an excluded directory (<code>vendor</code>, <code>test</code>, <code>tests</code>, etc.) — check <code>--exclude</code> and the defaults.</li>
+          <li>Routes are registered through an indirection the analyzer doesn't follow (a wrapper function several layers removed from the route-registration call).</li>
+          <li>Run with <code>-v</code> to see exactly what the analyzer read and which framework it picked.</li>
+        </ul>
+
+        <h3 id="ts-multi-framework">"Multiple frameworks detected in go.mod"</h3>
+        <p>Your <code>go.mod</code> imports more than one supported framework (e.g. migrating from Gin to Echo). Pass <code>--framework</code> explicitly to disambiguate.</p>
+
+        <h3 id="ts-vet-fail">"This project does not currently pass go vet ./..."</h3>
+        <p>Advisory only — docs are still generated from whatever the AST parser can recover. Run with <code>-v</code> for details on what failed, or pass <code>--skip-build-check</code> to suppress the warning (see <a href="#build-check">Build check</a>).</p>
+
+        <h3 id="ts-parse-fail">"N file(s) could not be parsed"</h3>
+        <p>One or more <code>.go</code> files have a syntax error the Go parser can't recover from. Endpoints and types in that file are skipped; everything else still generates. Run with <code>-v</code> to see which files failed and why.</p>
+
+        <h3 id="ts-invalid-config">Invalid configuration</h3>
+        <p>Two specific error strings to watch for: an unrecognized <code>type</code> value (only <code>swagger</code> and <code>postman</code> are valid), or an output path that resolves outside your project directory when it wasn't explicitly passed via <code>--output</code>/<code>-o</code> (a deliberate safety check — see <a href="#security">Security</a>).</p>
+
+        <h3 id="ts-config-not-read">Config file not being read</h3>
+        <p>Ensure <code>.specyl.yaml</code> is in the directory you're running from, not a subdirectory (or point <code>--config</code> at it explicitly). Inspect the merged result with <code>specyl generate --show-config</code>.</p>
+
+        <h3 id="ts-prompts-in-ci">Prompts appearing in CI</h3>
+        <p>Always pass <code>-y</code> (<code>--no-interactive</code>) and <code>--type</code>. Without these the CLI waits for interactive input. Exit codes in non-interactive mode: <code>0</code> success · <code>1</code> validation error · <code>2</code> runtime error.</p>
+
+        <h3 id="ts-quiet-verbose">Quiet and verbose modes</h3>
+        <p><code>-q</code>/<code>--quiet</code> suppresses progress output and skips the auto-opened browser preview; errors still print to stderr. <code>-v</code>/<code>--verbose</code> shows the detected framework, endpoint count, matched auth middleware, and per-file parse results.</p>
+
+        <p>Full guide: <a href="../docs/TROUBLESHOOTING.md" target="_blank" rel="noopener">TROUBLESHOOTING.md</a></p>
+      </div>
+
+      <!-- Pager -->
+      <nav class="pager" aria-label="Page navigation">
+        <a class="pager-link pager-prev" id="pagerPrev" href="#">
+          <span class="pager-dir">&larr; Previous</span>
+          <span class="pager-title"></span>
+        </a>
+        <a class="pager-link pager-next" id="pagerNext" href="#">
+          <span class="pager-dir">Next &rarr;</span>
+          <span class="pager-title"></span>
+        </a>
+      </nav>
+
+      </div>
+    </main>
+
+    <aside class="toc" aria-label="On this page" id="toc"></aside>
+
+  </div>
+
+  <script>
+    // ── Theme ──────────────────────────────────────────────────
+    const root = document.documentElement;
+    const btn  = document.getElementById('themeBtn');
+
+    function applyTheme(t) {
+      root.setAttribute('data-theme', t);
+      btn.textContent = t === 'dark' ? '☀' : '🌙';
+      try { localStorage.setItem('specylTheme', t); } catch {}
+    }
+
+    (function () {
+      let saved;
+      try { saved = localStorage.getItem('specylTheme'); } catch {}
+      applyTheme(saved || 'dark');
+    })();
+
+    btn.addEventListener('click', () => {
+      applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    });
+
+    // ── Copy buttons ───────────────────────────────────────────
+    function makeCopy(button, getText) {
+      button.addEventListener('click', () => {
+        navigator.clipboard.writeText(getText()).then(() => {
+          const orig = button.textContent;
+          button.textContent = 'Copied!';
+          button.classList.add('copied');
+          setTimeout(() => { button.textContent = orig; button.classList.remove('copied'); }, 1800);
+        });
+      });
+    }
+
+    document.querySelectorAll('.copy-btn').forEach(btn => {
+      makeCopy(btn, () => btn.closest('.code-block').querySelector('code').innerText);
+    });
+
+    makeCopy(document.querySelector('.hero-copy'), () => {
+      return document.querySelector('.hero-install code').innerText;
+    });
+
+    // ── Pagination ───────────────────────────────────────────────
+    // One section visible at a time, navigated via the sidebar or the
+    // Previous/Next pager — page order/labels come straight from the
+    // sidebar links, so adding a section there is all that's needed.
+    const pages = Array.from(document.querySelectorAll('.nav-link')).map(a => ({
+      id: a.getAttribute('href').slice(1),
+      label: a.textContent.trim(),
+      link: a,
+    }));
+    const hero      = document.querySelector('.hero');
+    const pagerPrev = document.getElementById('pagerPrev');
+    const pagerNext = document.getElementById('pagerNext');
+    const tocEl     = document.getElementById('toc');
+
+    // ── On-this-page TOC ───────────────────────────────────────
+    // Rebuilt from the active section's <h3> headings each time the
+    // page switches — sections with no subsections just leave the
+    // rail empty, which collapses it entirely (see .toc.empty).
+    function renderToc(sectionEl) {
+      const headings = sectionEl ? Array.from(sectionEl.querySelectorAll('h3')) : [];
+      if (headings.length === 0) {
+        tocEl.innerHTML = '';
+        tocEl.classList.add('empty');
+        return;
+      }
+      tocEl.classList.remove('empty');
+      const label = document.createElement('span');
+      label.className = 'toc-label';
+      label.textContent = 'On this page';
+      tocEl.replaceChildren(label);
+      headings.forEach(h => {
+        const link = document.createElement('a');
+        link.className = 'toc-link';
+        link.href = '#' + h.id;
+        link.textContent = h.textContent;
+        link.addEventListener('click', e => {
+          e.preventDefault();
+          h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+        tocEl.appendChild(link);
+      });
+    }
+
+    function showPage(id) {
+      let index = pages.findIndex(p => p.id === id);
+      if (index === -1) index = 0;
+
+      let activeSection = null;
+      pages.forEach((p, i) => {
+        const section = document.getElementById(p.id);
+        if (section) section.style.display = i === index ? '' : 'none';
+        if (i === index) activeSection = section;
+        p.link.classList.toggle('active', i === index);
+      });
+      if (hero) hero.style.display = index === 0 ? '' : 'none';
+      renderToc(activeSection);
+
+      const prev = pages[index - 1];
+      const next = pages[index + 1];
+      pagerPrev.style.visibility = prev ? 'visible' : 'hidden';
+      pagerNext.style.visibility = next ? 'visible' : 'hidden';
+      if (prev) {
+        pagerPrev.href = '#' + prev.id;
+        pagerPrev.querySelector('.pager-title').textContent = prev.label;
+      }
+      if (next) {
+        pagerNext.href = '#' + next.id;
+        pagerNext.querySelector('.pager-title').textContent = next.label;
+      }
+
+      window.scrollTo(0, 0);
+    }
+
+    function navigateTo(id) {
+      history.pushState(null, '', '#' + id);
+      showPage(id);
+    }
+
+    pages.forEach(p => {
+      p.link.addEventListener('click', e => {
+        e.preventDefault();
+        navigateTo(p.id);
+      });
+    });
+    pagerPrev.addEventListener('click', e => { e.preventDefault(); navigateTo(pagerPrev.href.split('#')[1]); });
+    pagerNext.addEventListener('click', e => { e.preventDefault(); navigateTo(pagerNext.href.split('#')[1]); });
+
+    // A shared/bookmarked link may point at a subsection <h3> id rather
+    // than a page id (e.g. #ts-no-endpoints) - resolve it to the page
+    // that contains it so it doesn't just fall back to the first page.
+    function resolveInitialHash() {
+      const hash = location.hash.slice(1);
+      if (!hash) return { pageId: pages[0].id, target: null };
+      if (pages.some(p => p.id === hash)) return { pageId: hash, target: null };
+      const el = document.getElementById(hash);
+      const section = el ? el.closest('.section') : null;
+      if (section) return { pageId: section.id, target: el };
+      return { pageId: pages[0].id, target: null };
+    }
+
+    function showForCurrentHash() {
+      const resolved = resolveInitialHash();
+      showPage(resolved.pageId);
+      if (resolved.target) resolved.target.scrollIntoView();
+    }
+
+    window.addEventListener('popstate', showForCurrentHash);
+
+    showForCurrentHash();
+  </script>
+
+</body>
+</html>
