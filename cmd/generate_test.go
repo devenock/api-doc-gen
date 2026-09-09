@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/devenock/api-doc-gen/pkg/config"
+	"github.com/devenock/specyl/pkg/config"
 )
 
 // captureStdout redirects os.Stdout for the duration of fn and returns

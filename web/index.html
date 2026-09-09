@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>api-doc-gen — API Docs Generator for Go</title>
+  <title>Specyl — API Docs Generator for Go</title>
   <meta name="description" content="Scan your Go API and generate Swagger/OpenAPI or a Postman Collection. No annotations. No code changes.">
   <style>
     /* ── Tokens ─────────────────────────────────────────── */
@@ -478,10 +478,10 @@
 
   <!-- Nav -->
   <header class="nav">
-    <a href="index.html" class="nav-brand">api-doc-gen</a>
+    <a href="index.html" class="nav-brand">Specyl</a>
     <div class="nav-right">
       <a href="docs.html">Docs</a>
-      <a href="https://github.com/devenock/api-doc-gen" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/devenock/specyl" target="_blank" rel="noopener">GitHub</a>
       <button class="nav-theme" id="themeBtn" aria-label="Toggle theme">☀</button>
     </div>
   </header>
@@ -489,11 +489,11 @@
   <!-- Hero -->
   <section class="hero">
     <span class="hero-eyebrow">Open source · Go · MIT</span>
-    <h1 class="hero-title">api-doc-gen</h1>
+    <h1 class="hero-title">Specyl</h1>
     <p class="hero-sub">Generate Swagger/OpenAPI or a Postman Collection from your Go API. No annotations. No code changes. One command.</p>
     <div class="hero-actions">
       <a href="docs.html" class="btn-fill">Get started</a>
-      <a href="https://github.com/devenock/api-doc-gen" target="_blank" rel="noopener" class="btn-outline">View on GitHub</a>
+      <a href="https://github.com/devenock/specyl" target="_blank" rel="noopener" class="btn-outline">View on GitHub</a>
     </div>
     <div class="term-wrap" aria-label="Terminal demo" aria-live="polite">
       <div class="terminal">
@@ -522,13 +522,13 @@
         <div class="step-num">01 &mdash; Install</div>
         <div class="step-name">One command, any machine</div>
         <p class="step-desc">Install globally. Works from any Go project root — no per-project setup required.</p>
-        <div class="step-snippet">go install github.com/devenock/api-doc-gen@latest</div>
+        <div class="step-snippet">go install github.com/devenock/specyl@latest</div>
       </div>
       <div class="step">
         <div class="step-num">02 &mdash; Generate</div>
         <div class="step-name">Point and run</div>
         <p class="step-desc">Run from your project root. The tool reads your existing routes and handler comments.</p>
-        <div class="step-snippet">api-doc-gen generate --type swagger</div>
+        <div class="step-snippet">specyl generate --type swagger</div>
       </div>
       <div class="step">
         <div class="step-num">03 &mdash; Open</div>
@@ -586,20 +586,20 @@
     <p class="cta-sub">Requires Go 1.24+. Install takes under ten seconds.</p>
     <div class="cta-install">
       <span class="cta-ps">$</span>
-      <code>go install github.com/devenock/api-doc-gen@latest</code>
+      <code>go install github.com/devenock/specyl@latest</code>
     </div>
     <div class="cta-actions">
       <a href="docs.html" class="btn-fill">Read the docs</a>
-      <a href="https://github.com/devenock/api-doc-gen" target="_blank" rel="noopener" class="btn-outline">GitHub</a>
+      <a href="https://github.com/devenock/specyl" target="_blank" rel="noopener" class="btn-outline">GitHub</a>
     </div>
   </section>
 
   <!-- Footer -->
   <footer class="footer">
-    <span class="footer-brand">api-doc-gen</span>
+    <span class="footer-brand">Specyl</span>
     <div class="footer-links">
       <a href="docs.html">Docs</a>
-      <a href="https://github.com/devenock/api-doc-gen" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/devenock/specyl" target="_blank" rel="noopener">GitHub</a>
       <span class="footer-mit">MIT License</span>
     </div>
   </footer>
@@ -611,10 +611,10 @@
     function applyTheme(t) {
       root.setAttribute('data-theme', t);
       themeBtn.textContent = t === 'dark' ? '☀' : '🌙';
-      try { localStorage.setItem('apidocTheme', t); } catch {}
+      try { localStorage.setItem('specylTheme', t); } catch {}
     }
     (function () {
-      let saved; try { saved = localStorage.getItem('apidocTheme'); } catch {}
+      let saved; try { saved = localStorage.getItem('specylTheme'); } catch {}
       applyTheme(saved || 'dark');
     })();
     themeBtn.addEventListener('click', () => {
@@ -626,7 +626,7 @@
     const cursorEl = document.getElementById('termCursor');
     const outEl    = document.getElementById('termOut');
 
-    const COMMAND = 'api-doc-gen generate';
+    const COMMAND = 'specyl generate';
     const LINES = [
       { t: '📊 Analyzing codebase...',                   c: 't-out'  },
       { t: '📝 Generating swagger documentation...',     c: 't-out'  },

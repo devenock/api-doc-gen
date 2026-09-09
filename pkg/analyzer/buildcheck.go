@@ -34,7 +34,7 @@ const buildCheckTimeout = 2 * time.Minute
 
 // CheckBuild runs `go vet ./...` against the project at projectPath as a
 // pre-flight safety check: does this project actually compile (and pass
-// vet's other correctness checks) before api-doc-gen spends time analyzing
+// vet's other correctness checks) before specyl spends time analyzing
 // it? This intentionally does not change how routes/types are resolved —
 // the analyzer stays AST-only — it only tells the caller up front whether
 // the project is in a state where that analysis can be trusted to be

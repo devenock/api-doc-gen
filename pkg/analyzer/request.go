@@ -5,7 +5,7 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 // This file resolves a handler's request-body type: finding the

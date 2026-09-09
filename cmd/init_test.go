@@ -20,9 +20,9 @@ func TestRunInit_CreatesConfigWithDetectedFramework(t *testing.T) {
 		t.Fatalf("runInit: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, ".apidoc-gen.yaml"))
+	data, err := os.ReadFile(filepath.Join(dir, ".specyl.yaml"))
 	if err != nil {
-		t.Fatalf("expected .apidoc-gen.yaml to be created: %v", err)
+		t.Fatalf("expected .specyl.yaml to be created: %v", err)
 	}
 	content := string(data)
 	if !strings.Contains(content, `framework: "gin"`) {
@@ -37,7 +37,7 @@ func TestRunInit_DoesNotOverwriteExisting(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	configPath := filepath.Join(dir, ".apidoc-gen.yaml")
+	configPath := filepath.Join(dir, ".specyl.yaml")
 	sentinel := "# hand-edited, do not touch\n"
 	if err := os.WriteFile(configPath, []byte(sentinel), 0o644); err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestRunInit_NoFrameworkDetected(t *testing.T) {
 		t.Fatalf("runInit: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, ".apidoc-gen.yaml"))
+	data, err := os.ReadFile(filepath.Join(dir, ".specyl.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,10 +1,10 @@
-# api-doc-gen
+# Specyl
 
-[![CI](https://github.com/devenock/api-doc-gen/actions/workflows/ci.yml/badge.svg)](https://github.com/devenock/api-doc-gen/actions/workflows/ci.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/devenock/api-doc-gen.svg)](https://pkg.go.dev/github.com/devenock/api-doc-gen)
-[![Go Report Card](https://goreportcard.com/badge/github.com/devenock/api-doc-gen)](https://goreportcard.com/report/github.com/devenock/api-doc-gen)
-[![Latest release](https://img.shields.io/github/v/release/devenock/api-doc-gen)](https://github.com/devenock/api-doc-gen/releases)
-[![License](https://img.shields.io/github/license/devenock/api-doc-gen)](LICENSE)
+[![CI](https://github.com/devenock/specyl/actions/workflows/ci.yml/badge.svg)](https://github.com/devenock/specyl/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/devenock/specyl.svg)](https://pkg.go.dev/github.com/devenock/specyl)
+[![Go Report Card](https://goreportcard.com/badge/github.com/devenock/specyl)](https://goreportcard.com/report/github.com/devenock/specyl)
+[![Latest release](https://img.shields.io/github/v/release/devenock/specyl)](https://github.com/devenock/specyl/releases)
+[![License](https://img.shields.io/github/license/devenock/specyl)](LICENSE)
 
 CLI that scans your Go API and generates **Swagger/OpenAPI** or a **Postman Collection** — no annotations required.
 
@@ -26,7 +26,7 @@ func (c *Controller) ShowAccount(ctx *gin.Context) {
 
 That's a real, well-established tool, but the annotations are a second source of truth you maintain by hand: add an endpoint and forget the comment block, and the docs silently fall behind the code with no error to catch it.
 
-**api-doc-gen removes that step entirely.** It reads your code as-is — route registrations, handler signatures, request/response structs, binding calls — via Go's own AST parser, the same way `go vet` or `gofmt` do, and builds the OpenAPI/Postman spec from what's actually there. No comments to write, no existing code to touch.
+**Specyl removes that step entirely.** It reads your code as-is — route registrations, handler signatures, request/response structs, binding calls — via Go's own AST parser, the same way `go vet` or `gofmt` do, and builds the OpenAPI/Postman spec from what's actually there. No comments to write, no existing code to touch.
 
 One consequence of that: because there's nothing to keep in sync, docs stay accurate as you build incrementally. Register one handler, generate, ship; add the next one whenever it's ready, generate again — each run reflects exactly what's in the code at that moment, with zero extra steps. (To be precise: every run is a full, fresh scan of the project, not a cached diff of what changed — "incremental" describes the workflow this enables, not an incremental-build engine under the hood.)
 
@@ -39,13 +39,13 @@ One consequence of that: because there's nothing to keep in sync, docs stay accu
 Requires Go 1.26.8 or later.
 
 ```bash
-go install github.com/devenock/api-doc-gen@latest
+go install github.com/devenock/specyl@latest
 ```
 
 The binary lands in `$(go env GOPATH)/bin` (usually `~/go/bin`). Make sure that directory is on your `PATH`.
 
 Prebuilt binaries for Linux, macOS, and Windows (amd64/arm64) are also published on the
-[Releases page](https://github.com/devenock/api-doc-gen/releases) for each tagged version.
+[Releases page](https://github.com/devenock/specyl/releases) for each tagged version.
 
 ---
 
@@ -54,7 +54,7 @@ Prebuilt binaries for Linux, macOS, and Windows (amd64/arm64) are also published
 Run from your Go project root (the directory that has `go.mod`):
 
 ```bash
-api-doc-gen generate
+specyl generate
 ```
 
 This starts an interactive wizard — choose your doc type, output folder, title, and so on.
@@ -62,14 +62,14 @@ This starts an interactive wizard — choose your doc type, output folder, title
 **Skip the wizard** (CI, scripts, or if you already know what you want):
 
 ```bash
-api-doc-gen generate --no-interactive --type swagger -o ./docs
-api-doc-gen generate --no-interactive --type postman -o ./docs
+specyl generate --no-interactive --type swagger -o ./docs
+specyl generate --no-interactive --type postman -o ./docs
 ```
 
 **Point at a project in another directory:**
 
 ```bash
-api-doc-gen generate /path/to/your-api \
+specyl generate /path/to/your-api \
   --no-interactive --type swagger \
   -o /path/to/your-api/docs
 ```
@@ -109,7 +109,7 @@ What the analyzer actually detects and emits, checked against the code rather th
 - [ ] Any other type from outside the scanned project (a third-party library type not in the list above, a shared internal module, etc.) resolves to an empty `object` with no fields
 - [ ] File uploads (`multipart/form-data`) — not detected
 
-Found a pattern that isn't covered? [Open an issue](https://github.com/devenock/api-doc-gen/issues) — new patterns belong in the analyzer, not worked around.
+Found a pattern that isn't covered? [Open an issue](https://github.com/devenock/specyl/issues) — new patterns belong in the analyzer, not worked around.
 
 ---
 
@@ -124,7 +124,7 @@ my-go-api/
 ├── go.mod
 ├── main.go
 ├── handlers/
-├── .apidoc-gen.yaml   ← optional config (see below)
+├── .specyl.yaml   ← optional config (see below)
 └── docs/              ← generated output
 ```
 
@@ -132,10 +132,10 @@ my-go-api/
 
 ```makefile
 docs:
-	api-doc-gen generate --no-interactive --type swagger -o ./docs
+	specyl generate --no-interactive --type swagger -o ./docs
 ```
 
-**Optional config file** — run `api-doc-gen init` inside your project to create `.apidoc-gen.yaml`. Commit it so everyone shares the same defaults (output dir, title, framework, etc.). In interactive mode, doc type and framework are skipped entirely once set in the file; title, version, base path, and output directory are still prompted but pre-filled with the file's value — press Enter to accept it. Use `--no-interactive` to skip all prompts and use the file (plus flags/env) as-is.
+**Optional config file** — run `specyl init` inside your project to create `.specyl.yaml`. Commit it so everyone shares the same defaults (output dir, title, framework, etc.). In interactive mode, doc type and framework are skipped entirely once set in the file; title, version, base path, and output directory are still prompted but pre-filled with the file's value — press Enter to accept it. Use `--no-interactive` to skip all prompts and use the file (plus flags/env) as-is.
 
 ---
 
@@ -153,7 +153,7 @@ docs:
 | `--required-by-default` | Mark every struct field required unless it has `json:",omitempty"` (default: only `binding`/`validate:"required"` tags count) |
 | `--tags` | Filter endpoints by tag: `users` includes only that tag, `!internal` excludes it (comma-separated, mixable) |
 
-Full reference: `api-doc-gen generate --help`
+Full reference: `specyl generate --help`
 
 ---
 
@@ -179,17 +179,17 @@ No Go installation needed. Pull the published image:
 docker run --rm \
   -v "$(pwd)":/workspace \
   -w /workspace \
-  ghcr.io/devenock/api-doc-gen:latest generate --no-interactive --type swagger -o ./docs
+  ghcr.io/devenock/specyl:latest generate --no-interactive --type swagger -o ./docs
 ```
 
 Or build it yourself from source:
 
 ```bash
-docker build -t api-doc-gen .
+docker build -t specyl .
 docker run --rm \
   -v "$(pwd)":/workspace \
   -w /workspace \
-  api-doc-gen generate --no-interactive --type swagger -o ./docs
+  specyl generate --no-interactive --type swagger -o ./docs
 ```
 
 The container runs as a non-root user. If the generated files come out owned by
@@ -202,7 +202,7 @@ a UID your host user can't write to, add `--user "$(id -u):$(id -g)"` to the
 
 **No endpoints found** — pass `--framework` explicitly or run with `-v` (verbose) to see what the analyzer is reading.
 
-**Config not picked up** — ensure `.apidoc-gen.yaml` is in the directory you are running the command from, or run `--show-config` to inspect the effective config.
+**Config not picked up** — ensure `.specyl.yaml` is in the directory you are running the command from, or run `--show-config` to inspect the effective config.
 
 **Prompts appearing in CI** — always pass `-y` (`--no-interactive`) and `--type` in CI pipelines.
 

@@ -9,13 +9,13 @@ ARG VERSION=dev
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/devenock/api-doc-gen/cmd.version=${VERSION}" -o /api-doc-gen .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/devenock/specyl/cmd.version=${VERSION}" -o /specyl .
 
 # Runtime stage
 FROM alpine:3.19
 RUN apk --no-cache add ca-certificates \
-    && addgroup -S apidocgen && adduser -S apidocgen -G apidocgen
-COPY --from=builder /api-doc-gen /usr/local/bin/api-doc-gen
+    && addgroup -S specyl && adduser -S specyl -G specyl
+COPY --from=builder /specyl /usr/local/bin/specyl
 WORKDIR /workspace
-USER apidocgen
-ENTRYPOINT ["/usr/local/bin/api-doc-gen"]
+USER specyl
+ENTRYPOINT ["/usr/local/bin/specyl"]

@@ -1,6 +1,6 @@
 package main
 
-import "github.com/devenock/api-doc-gen/cmd"
+import "github.com/devenock/specyl/cmd"
 
 func main() {
 	cmd.Execute()

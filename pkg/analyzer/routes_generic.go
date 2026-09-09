@@ -5,7 +5,7 @@ import (
 	"go/ast"
 	"strings"
 
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 // Fallback route parsing used when the framework wasn't detected/recognized:

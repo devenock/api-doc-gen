@@ -6,13 +6,13 @@ package prompt
 import (
 	"fmt"
 
-	"github.com/devenock/api-doc-gen/pkg/config"
+	"github.com/devenock/specyl/pkg/config"
 	"github.com/manifoldco/promptui"
 )
 
 // GetUserPreferences prompts the user for their preferences
 func GetUserPreferences(cfg *config.Config) error {
-	fmt.Println("\nWelcome to API Documentation Generator!")
+	fmt.Println("\nWelcome to Specyl!")
 
 	// Documentation Type selection
 	if cfg.DocType == "" {
@@ -76,7 +76,7 @@ func GetUserPreferences(cfg *config.Config) error {
 	}
 
 	// API Description (default from config file / flags). Optional - the
-	// same field --description/APIDOC_DESCRIPTION/the config file's
+	// same field --description/SPECYL_DESCRIPTION/the config file's
 	// `description` key already set, just previously with no way to set it
 	// from the wizard itself.
 	descriptionPrompt := promptui.Prompt{

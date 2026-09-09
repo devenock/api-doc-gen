@@ -1,6 +1,6 @@
 # Example APIs
 
-Three complete REST APIs for testing and demonstrating `api-doc-gen` across different Go router libraries.
+Three complete REST APIs for testing and demonstrating `specyl` across different Go router libraries.
 
 | Example | Framework | Module |
 |---------|-----------|--------|
@@ -52,7 +52,7 @@ go run .           # starts on :8082
 
 ## Incremental documentation workflow
 
-Developers rarely implement all modules at once. `api-doc-gen` reads whatever routes exist in your code — no config changes required.
+Developers rarely implement all modules at once. `specyl` reads whatever routes exist in your code — no config changes required.
 
 **Pattern:** register one module, generate, ship docs, repeat.
 

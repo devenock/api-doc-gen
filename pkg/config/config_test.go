@@ -108,7 +108,7 @@ func TestValidate_SymlinkedGoModIsIgnored(t *testing.T) {
 }
 
 func TestValidate_RejectsOutputEscapingWorkingDirWhenNotFromFlag(t *testing.T) {
-	// A malicious .apidoc-gen.yaml (or env var) redirecting Output outside the
+	// A malicious .specyl.yaml (or env var) redirecting Output outside the
 	// working directory must be refused unless the user typed --output
 	// themselves for this run.
 	outside := filepath.Join(t.TempDir(), "elsewhere")

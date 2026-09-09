@@ -8,9 +8,9 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 
-	"github.com/devenock/api-doc-gen/pkg/analyzer"
-	"github.com/devenock/api-doc-gen/pkg/config"
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/analyzer"
+	"github.com/devenock/specyl/pkg/config"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 // validateOpenAPI loads and validates a generated openapi.json against the

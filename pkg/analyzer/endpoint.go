@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 // This file assembles a single models.Endpoint once its route/method are

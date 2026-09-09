@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 func writeSource(t *testing.T, dir, name, src string) string {

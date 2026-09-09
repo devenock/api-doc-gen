@@ -101,8 +101,8 @@ jobs:
       #     (open/xdg-open/cmd) with the variable part only ever in argv,
       #     never the command itself.
       #   G301/G306 (dir/file permissions) - generated docs and the
-      #     .apidoc-gen.yaml config file are meant to be shared/committed;
-      #     0755/0644 is correct for them. api-doc-gen holds no credentials
+      #     .specyl.yaml config file are meant to be shared/committed;
+      #     0755/0644 is correct for them. specyl holds no credentials
       #     of its own (it never talks to any external API), so there's
       #     nothing here that should be narrower.
       - name: Run gosec

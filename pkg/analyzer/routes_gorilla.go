@@ -6,7 +6,7 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/devenock/api-doc-gen/pkg/models"
+	"github.com/devenock/specyl/pkg/models"
 )
 
 // Gorilla/mux route parsing: subrouter/prefix tracking, .Methods() chains,

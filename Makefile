@@ -1,9 +1,9 @@
-# API Documentation Generator - Makefile
-BINARY_NAME := api-doc-gen
+# Specyl - Makefile
+BINARY_NAME := specyl
 BIN_DIR     := bin
 MAIN_PATH   := .
 VERSION     := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS     := -X github.com/devenock/api-doc-gen/cmd.version=$(VERSION)
+LDFLAGS     := -X github.com/devenock/specyl/cmd.version=$(VERSION)
 
 .PHONY: build test run install clean
 

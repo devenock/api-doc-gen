@@ -1,4 +1,4 @@
-module github.com/devenock/api-doc-gen
+module github.com/devenock/specyl
 
 go 1.26.8
 

@@ -13,11 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/devenock/api-doc-gen/internal/annotations"
-	"github.com/devenock/api-doc-gen/internal/prompt"
-	"github.com/devenock/api-doc-gen/pkg/analyzer"
-	"github.com/devenock/api-doc-gen/pkg/config"
-	"github.com/devenock/api-doc-gen/pkg/generator"
+	"github.com/devenock/specyl/internal/annotations"
+	"github.com/devenock/specyl/internal/prompt"
+	"github.com/devenock/specyl/pkg/analyzer"
+	"github.com/devenock/specyl/pkg/config"
+	"github.com/devenock/specyl/pkg/generator"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -28,10 +28,10 @@ var generateCmd = &cobra.Command{
 	Long:  `Scan a codebase and generate API documentation in the format of your choice. Use --no-interactive (or set --type) for CI/scripts.`,
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runGenerate,
-	Example: `  api-doc-gen generate
-  api-doc-gen generate .
-  api-doc-gen generate --type swagger -o ./docs
-  api-doc-gen generate --no-interactive --type postman --title "My API"`,
+	Example: `  specyl generate
+  specyl generate .
+  specyl generate --type swagger -o ./docs
+  specyl generate --no-interactive --type postman --title "My API"`,
 	SilenceUsage: true,
 }
 
@@ -105,7 +105,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		RequiredByDefault: viper.GetBool("required-by-default"),
 		OutputFromFlag:    cmd.Flags().Changed("output"),
 	}
-	// Load servers from config file (viper unmarshals .apidoc-gen.yaml "servers" key)
+	// Load servers from config file (viper unmarshals .specyl.yaml "servers" key)
 	_ = viper.UnmarshalKey("servers", &cfg.Servers)
 	_ = viper.UnmarshalKey("auth_middleware", &cfg.AuthMiddleware)
 
@@ -128,7 +128,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		if cfgFile == "" && viper.ConfigFileUsed() == "" {
 			// Config file not found; suggest init (only in interactive)
 			if !quiet {
-				fmt.Fprintln(os.Stderr, "Tip: run 'api-doc-gen init' to create .apidoc-gen.yaml with defaults.")
+				fmt.Fprintln(os.Stderr, "Tip: run 'specyl init' to create .specyl.yaml with defaults.")
 			}
 		}
 		if err := prompt.GetUserPreferences(cfg); err != nil {
