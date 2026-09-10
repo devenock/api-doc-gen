@@ -8,49 +8,18 @@ import (
 	"github.com/devenock/specyl/pkg/models"
 )
 
-// This file resolves a handler's request-body type: finding the
-// Bind/ShouldBindJSON/BodyParser/Decode-style call in a handler body (or a
-// helper it delegates to), and extracting query parameters. Framework
-// differences here are just method-name tables (bindMethodHints,
-// nonBodyBindMethods) checked against arbitrary call expressions, not
-// separate parsers per framework.
-
-// bindMethodHints are substrings (checked case-insensitively against the
-// call's package/receiver-qualified name) that mark a call as a JSON
-// body-binding call even when it's a project-specific wrapper around the
-// standard framework methods (e.g. ShouldBindAndValidate, h.decodeBody,
-// utils.ParseJSON). Real codebases very commonly wrap binding in a shared
-// helper for consistent error handling, so matching by exact method name
-// alone misses a large fraction of real handlers.
 var bindMethodHints = []string{"bind", "decode", "unmarshal", "parse"}
 
-// nonBodyBindMethods are framework methods that contain a bind-like hint but
-// bind from a source other than the JSON body (query string, URI params,
-// headers) and must not be mistaken for request-body binding.
 var nonBodyBindMethods = map[string]bool{
 	"ShouldBindQuery": true, "BindQuery": true,
 	"ShouldBindUri": true, "BindUri": true,
 	"ShouldBindHeader": true, "BindHeader": true,
 }
 
-// findBindingTypeName scans a handler function body for JSON-binding calls
-// and returns the unqualified type name bound from the request body, or "".
-//
-// Recognized patterns (Gin / Echo / Fiber / stdlib / wrappers / generics):
-//
-//	c.ShouldBindJSON(&req) / c.BindJSON(&req) / c.ShouldBind(&req) / c.Bind(&req)
-//	c.BodyParser(&req) / c.BodyParser(req)
-//	json.NewDecoder(r.Body).Decode(&req) / json.Unmarshal(body, &req)
-//	h.bindAndValidate(c, &req)          (project-specific wrapper — matched by name hint)
-//	req.Bind(c) / req.Validate()        (self-binding request struct — struct is the receiver)
-//	bind.JSON[LoginRequest](c, &req)    (explicit generic type argument)
 func (a *Analyzer) findBindingTypeName(file *ast.File, funcName string) string {
 	return a.findBindingTypeNameDepth(file, funcName, 0)
 }
 
-// findBindingTypeNameDepth is findBindingTypeName's implementation, plus a
-// bounded fallback (findDelegatedBindingTypeName) for thin wrapper handlers.
-// depth caps delegation-chain recursion so a cycle can't loop forever.
 func (a *Analyzer) findBindingTypeNameDepth(file *ast.File, funcName string, depth int) string {
 	bindMethods := map[string]bool{
 		"ShouldBindJSON": true, "BindJSON": true,
@@ -94,8 +63,6 @@ func (a *Analyzer) findBindingTypeNameDepth(file *ast.File, funcName string, dep
 			}
 		}
 
-		// Explicit generic type argument takes priority when present:
-		// bind[LoginRequest](c) / pkg.Bind[LoginRequest](c, &req)
 		if typ := genericTypeArg(call.Fun); typ != "" {
 			result = localTypeName(typ)
 			return false
@@ -129,16 +96,6 @@ func (a *Analyzer) findBindingTypeNameDepth(file *ast.File, funcName string, dep
 	return a.findDelegatedBindingTypeName(file, funcName, depth)
 }
 
-// findDelegatedBindingTypeName handles thin wrapper handlers whose entire
-// job is delegating to another method on the same receiver, e.g.:
-//
-//	func (h *MpesaHandler) B2CResult(c *fiber.Ctx) error  { return h.handleB2CCallback(c) }
-//	func (h *MpesaHandler) B2CTimeout(c *fiber.Ctx) error { return h.handleB2CCallback(c) }
-//
-// where the real binding call lives in handleB2CCallback, not in the
-// wrapper. Only follows a call whose receiver identifier matches the
-// wrapper's own receiver, so it can't wander into an unrelated type's
-// same-named method.
 func (a *Analyzer) findDelegatedBindingTypeName(file *ast.File, funcName string, depth int) string {
 	var fd *ast.FuncDecl
 	for _, decl := range file.Decls {
@@ -179,14 +136,6 @@ func (a *Analyzer) findDelegatedBindingTypeName(file *ast.File, funcName string,
 	return a.findBindingTypeNameDepth(file, delegateFunc, depth+1)
 }
 
-// responseBodyIdentNames returns the names of local identifiers used as the
-// body argument of a response-emitting call in fd's body — e.g. the "resp"
-// in `resp := &UserResponse{...}; c.JSON(200, resp)`, or the "user" in
-// `json.NewEncoder(w).Encode(user)`. Used by findAddressTakenStructVar to
-// exclude an address-taken variable that is actually the response, not the
-// request — precisely, from the same call recognition response inference
-// (review §3) already does, rather than guessing from the variable's type
-// name the way the pre-§3 heuristic had to.
 func (a *Analyzer) responseBodyIdentNames(fd *ast.FuncDecl, recvName string) map[string]bool {
 	names := make(map[string]bool)
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
@@ -208,16 +157,6 @@ func (a *Analyzer) responseBodyIdentNames(fd *ast.FuncDecl, recvName string) map
 	return names
 }
 
-// findAddressTakenStructVar is a last-resort structural fallback for request
-// body detection on POST/PUT/PATCH handlers: it looks for a locally-declared
-// variable of a named type whose address is taken somewhere in the function
-// body — the overwhelmingly common reason being a call to a project-specific
-// bind/validate helper this package can't recognize by name at all (a fluent
-// builder, a validation library, a helper named nothing like "bind"). Picks
-// the first such variable in declaration order, excluding any variable
-// already identified as a response body (responseBodyIdentNames) so a
-// response DTO built later in the handler isn't mistaken for the request
-// body.
 func (a *Analyzer) findAddressTakenStructVar(file *ast.File, funcName string) string {
 	fd := findFuncDecl(file, funcName)
 	if fd == nil || fd.Body == nil {
@@ -242,14 +181,6 @@ func (a *Analyzer) findAddressTakenStructVar(file *ast.File, funcName string) st
 	return ""
 }
 
-// findLocalStructType looks for a struct type declared LOCALLY inside the
-// named function's body (`type req struct {...}` as a statement, not a
-// package-level declaration) — a common pattern for small, handler-specific
-// request DTOs that don't warrant a dedicated exported type. Local types are
-// resolved per-function rather than added to the global type registry
-// because their names are not unique across the project — it's idiomatic for
-// many unrelated handlers to each independently name their local request
-// struct "req".
 func (a *Analyzer) findLocalStructType(file *ast.File, funcName, typeName string) (models.Schema, bool) {
 	body := findFuncBody(file, funcName)
 	if body == nil {
@@ -281,16 +212,6 @@ func (a *Analyzer) findLocalStructType(file *ast.File, funcName, typeName string
 	return a.buildSchemaFromStruct(found), true
 }
 
-// resolveRequestSchema looks up typeName in the global type registry first
-// (package-level types, resolvable across files), then falls back to a type
-// declared locally inside funcName's own body. See findLocalStructType.
-// The third return value reports whether the match came from a local
-// (function-scoped) declaration — callers must not register those in the
-// project-wide component-schema map (addSchemaAndRefsToModels), since local
-// type names are not unique across the project (many handlers independently
-// name their request struct "req"); doing so would silently and
-// non-deterministically overwrite one handler's schema with another's under
-// a shared, misleading name in the published spec.
 func (a *Analyzer) resolveRequestSchema(file *ast.File, funcName, typeName string) (schema models.Schema, ok bool, isLocal bool) {
 	if schema, ok := a.typeRegistry[typeName]; ok {
 		return schema, true, false
@@ -299,8 +220,6 @@ func (a *Analyzer) resolveRequestSchema(file *ast.File, funcName, typeName strin
 	return localSchema, localOk, true
 }
 
-// findFuncBody returns the body of the top-level function or method named
-// funcName in file, or nil if not found.
 func findFuncBody(file *ast.File, funcName string) *ast.BlockStmt {
 	for _, decl := range file.Decls {
 		if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == funcName && fd.Body != nil {
@@ -310,14 +229,6 @@ func findFuncBody(file *ast.File, funcName string) *ast.BlockStmt {
 	return nil
 }
 
-// collectLocalTypedVars walks body and returns every local variable declared
-// with a named type (`var x T`, `x := T{}`, `x := &T{}`, `x := new(T)`,
-// `x := v.(T)`), its declaration order, the set of variable names whose
-// address is taken (`&x`) anywhere in the body, and the set of variable
-// names obtained via a type assertion (`x := v.(*T)` / `x, ok := v.(*T)`) —
-// the latter is how frameworks that bind the request body in middleware and
-// hand it to the handler through a context value typically surface it
-// (e.g. `req := c.MustGet("body").(*CreateRequest)`).
 func collectLocalTypedVars(body *ast.BlockStmt) (varTypes map[string]string, order []string, addressTaken map[string]bool, typeAsserted map[string]bool) {
 	varTypes = make(map[string]string)
 	addressTaken = make(map[string]bool)
@@ -391,8 +302,6 @@ func collectLocalTypedVars(body *ast.BlockStmt) (varTypes map[string]string, ord
 	return
 }
 
-// identOrAddrIdentName returns the identifier name from `&x` or a plain `x`
-// expression, or "" for anything else.
 func identOrAddrIdentName(e ast.Expr) string {
 	switch a := e.(type) {
 	case *ast.UnaryExpr:
@@ -407,9 +316,6 @@ func identOrAddrIdentName(e ast.Expr) string {
 	return ""
 }
 
-// calleeBaseName returns the exact method/function name being called
-// (`Sel.Name` for a selector, the identifier itself for a plain call), used
-// for matching against the known bindMethods whitelist.
 func calleeBaseName(e ast.Expr) string {
 	switch x := e.(type) {
 	case *ast.Ident:
@@ -420,10 +326,6 @@ func calleeBaseName(e ast.Expr) string {
 	return ""
 }
 
-// calleeHintText returns a lowercase-friendly "qualifier.name" (or just
-// "name") string for hint-based matching, so a package/receiver qualifier
-// like "bind" in `bind.JSON(...)` still counts even though the method name
-// itself ("JSON") doesn't contain a bind-like hint.
 func calleeHintText(e ast.Expr) string {
 	switch x := e.(type) {
 	case *ast.Ident:
@@ -437,9 +339,6 @@ func calleeHintText(e ast.Expr) string {
 	return ""
 }
 
-// hasBindHint reports whether text (as produced by calleeHintText) looks
-// like a binding/decoding call by name even though it isn't one of the known
-// framework methods.
 func hasBindHint(text string) bool {
 	if text == "" {
 		return false
@@ -453,9 +352,6 @@ func hasBindHint(text string) bool {
 	return false
 }
 
-// genericBaseExpr returns the callee expression underneath an explicit
-// generic type-argument list (the `bind` in `bind[T](...)`), or nil if fun
-// isn't a generic instantiation.
 func genericBaseExpr(fun ast.Expr) ast.Expr {
 	switch f := fun.(type) {
 	case *ast.IndexExpr:
@@ -466,9 +362,6 @@ func genericBaseExpr(fun ast.Expr) ast.Expr {
 	return nil
 }
 
-// genericTypeArg extracts the first explicit generic type argument from a
-// call's function expression, e.g. the "LoginRequest" in bind[LoginRequest]
-// or bind.JSON[LoginRequest]. Returns "" when fun has no type arguments.
 func genericTypeArg(fun ast.Expr) string {
 	switch f := fun.(type) {
 	case *ast.IndexExpr:
@@ -481,10 +374,6 @@ func genericTypeArg(fun ast.Expr) string {
 	return ""
 }
 
-// extractQueryParams scans a handler function body for query-parameter reads
-// and returns them as optional query Parameters. Supports Gin/Fiber-style
-// c.Query/DefaultQuery, Echo-style c.QueryParam, and the stdlib/Gorilla/Chi
-// r.URL.Query().Get("name") pattern.
 func extractQueryParams(file *ast.File, funcName string) []models.Parameter {
 	queryMethods := map[string]bool{
 		"Query": true, "DefaultQuery": true, "QueryParam": true,

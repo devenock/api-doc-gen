@@ -13,9 +13,6 @@ import (
 	"github.com/devenock/specyl/pkg/models"
 )
 
-// validateOpenAPI loads and validates a generated openapi.json against the
-// OpenAPI 3.0 JSON Schema, failing the test with kin-openapi's error if the
-// document is invalid.
 func validateOpenAPI(t *testing.T, path string) {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -31,14 +28,6 @@ func validateOpenAPI(t *testing.T, path string) {
 	}
 }
 
-// TestSwaggerGenerate_OutputIsValidOpenAPI is review §6.1: the generator
-// hand-builds the OpenAPI document as map[string]interface{}, so nothing
-// short of an actual schema validator catches a malformed edge case (empty
-// properties, a missing required "description" on a response, $ref
-// siblings). Runs across a spread of shapes — empty, minimal, and every
-// feature the analyzer can produce at once — since a bug in one code path
-// (e.g. nullable, or an endpoint with no properties) wouldn't necessarily
-// show up in another.
 func TestSwaggerGenerate_OutputIsValidOpenAPI(t *testing.T) {
 	tests := []struct {
 		name string
@@ -69,12 +58,6 @@ func TestSwaggerGenerate_OutputIsValidOpenAPI(t *testing.T) {
 	}
 }
 
-// TestSwaggerGenerate_RealProjectOutputIsValidOpenAPI runs the full
-// analyzer+generator pipeline against a bundled real-world example project
-// and validates the result — a stronger check than hand-crafted specs,
-// since real code exercises combinations of analyzer inference (embedded
-// fields, multiple responses per endpoint, nullable pointers, map-literal
-// bodies, etc.) that a synthetic spec might not happen to combine.
 func TestSwaggerGenerate_RealProjectOutputIsValidOpenAPI(t *testing.T) {
 	projectPath := filepath.Join("..", "..", "examples", "ecommerce-gin")
 	if _, err := os.Stat(projectPath); err != nil {
@@ -105,11 +88,6 @@ func TestSwaggerGenerate_RealProjectOutputIsValidOpenAPI(t *testing.T) {
 	validateOpenAPI(t, filepath.Join(dir, "openapi.json"))
 }
 
-// kitchenSinkSpec exercises every schema feature the analyzer can produce in
-// one document: a $ref'd request body, multiple typed responses on one
-// endpoint (review §3), a nullable pointer field (review §2.3/2.4), an
-// array-of-$ref property, an inline object with no declared properties, and
-// a security requirement (which pulls in the BearerAuth scheme).
 func kitchenSinkSpec() *models.APISpec {
 	return &models.APISpec{
 		Title:       "Kitchen Sink API",

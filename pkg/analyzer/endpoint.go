@@ -12,21 +12,8 @@ import (
 	"github.com/devenock/specyl/pkg/models"
 )
 
-// This file assembles a single models.Endpoint once its route/method are
-// known: resolving the handler's source file, backfilling request/response
-// bodies that a first pass left unresolved (a handler can be defined in a
-// different file/package than where it's registered), extracting doc
-// comments, and deduplicating endpoints registered more than once.
-
 var errStopWalk = errors.New("stop walk")
 
-// finishEndpoint fills in handler-derived fields for an endpoint whose
-// Path/Method/Tags/Security/Parameters are already set: comments, request/response
-// schemas (resolved from the handler's signature or body-binding calls), query
-// parameters, summary/description fallbacks, and HandlerName/Package/SourceFile
-// (used by --write-annotations). handlerArg is the route call's handler argument
-// (an *ast.Ident for same-file handlers, or *ast.SelectorExpr like controllers.Create
-// for cross-package handlers, which only get HandlerName/HandlerPackage recorded here).
 func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file *ast.File) {
 	var handlerName, handlerPkg string
 	switch h := handlerArg.(type) {
@@ -38,11 +25,7 @@ func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file
 			handlerPkg = pkgIdent.Name
 			handlerName = h.Sel.Name
 		} else if _, ok := h.X.(*ast.SelectorExpr); ok {
-			// Multi-level: r.auth.Register, s.user.Create, etc.
-			// Common in dependency-injection style routing where a struct field
-			// holds the handler group. Extract the method name and use "_" as a
-			// sentinel package so resolveHandlerSourceFiles falls through to the
-			// function-name-only fallback in findFileWithFunction.
+
 			handlerName = h.Sel.Name
 			handlerPkg = "_"
 		}
@@ -54,14 +37,11 @@ func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file
 		if handlerPkg == "" {
 			a.extractHandlerComments(file, handlerName, ep)
 			reqTypeName, respTypeName := getHandlerRequestAndResponseTypes(file, handlerName)
-			// Standard Gin/Echo/Fiber handlers have func(c *gin.Context) — no typed body
-			// param — so fall back to scanning the body for binding calls.
+
 			if reqTypeName == "" {
 				reqTypeName = a.findBindingTypeName(file, handlerName)
 			}
-			// Last resort for POST/PUT/PATCH: a locally-declared struct var whose
-			// address is taken somewhere in the body, even if we don't recognize
-			// the call it's passed to (project-specific bind/validate helpers).
+
 			if reqTypeName == "" && (ep.Method == "POST" || ep.Method == "PUT" || ep.Method == "PATCH") {
 				reqTypeName = a.findAddressTakenStructVar(file, handlerName)
 			}
@@ -95,22 +75,13 @@ func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file
 					}
 				}
 			}
-			// Response inference: walk the handler body for response-emitting
-			// calls (review §3). Runs regardless of whether the signature-based
-			// respTypeName path above found anything — for context-style
-			// Gin/Echo/Fiber/Gorilla/Chi handlers (the overwhelming majority)
-			// that path never matches, since these frameworks return no typed
-			// value at all.
+
 			for status, resp := range a.extractResponses(file, handlerName) {
 				ep.Responses[status] = resp
 			}
 			ep.Parameters = append(ep.Parameters, extractQueryParams(file, handlerName)...)
 		}
-		// Cross-package/cross-file handlers (handlerPkg != "") are resolved
-		// later by resolveHandlerSourceFiles / resolveRemainingResponses, once
-		// their defining file is located. ep.Responses is deliberately left
-		// empty here rather than placeholder-filled, so those later passes can
-		// tell "not yet resolved" apart from "resolved, no response found".
+
 	}
 
 	// Description/summary fallback when no comment
@@ -131,8 +102,6 @@ func (a *Analyzer) finishEndpoint(ep *models.Endpoint, handlerArg ast.Expr, file
 	}
 }
 
-// resolveHandlerSourceFiles sets SourceFile for endpoints that have HandlerPackage and HandlerName
-// by finding the .go file that defines that function (e.g. controllers.CreateUser -> controllers/user_controller.go).
 func (a *Analyzer) resolveHandlerSourceFiles() {
 	for i := range a.endpoints {
 		ep := &a.endpoints[i]
@@ -184,11 +153,6 @@ func (a *Analyzer) resolveHandlerSourceFiles() {
 	}
 }
 
-// resolveRemainingResponses is the response-side counterpart of
-// resolveRemainingRequestBodies: a final pass for endpoints whose response
-// is still unresolved after the per-file and cross-package passes — same-
-// package, different-file handlers like r.POST("/x", Create) where Create
-// lives in a sibling file of the same package.
 func (a *Analyzer) resolveRemainingResponses() {
 	for i := range a.endpoints {
 		ep := &a.endpoints[i]
@@ -243,10 +207,6 @@ func (a *Analyzer) resolveRemainingResponses() {
 	}
 }
 
-// resolveRemainingRequestBodies is a final pass that fills request body schemas
-// for endpoints that still have none after the per-file and cross-package passes.
-// It handles the common case of same-package, different-file handlers: routes like
-// r.POST("/products", Create) where Create is in a sibling file of the same package.
 func (a *Analyzer) resolveRemainingRequestBodies() {
 	for i := range a.endpoints {
 		ep := &a.endpoints[i]
@@ -264,8 +224,6 @@ func (a *Analyzer) resolveRemainingRequestBodies() {
 			}
 		}
 
-		// 2. Walk the project looking for a file that defines the handler.
-		//    Use a fast string pre-filter to avoid parsing every .go file.
 		_ = a.walkProjectDir(func(path string, d fs.DirEntry) error {
 			if ep.RequestBody != nil {
 				return nil
@@ -286,16 +244,12 @@ func (a *Analyzer) resolveRemainingRequestBodies() {
 				return nil
 			}
 			content := string(raw)
-			// Match both standalone functions ("func CreateUser(") and method
-			// receivers ("func (h *Handler) CreateUser(") by checking for the
-			// function name preceded by a space and followed by "(".
+
 			if !strings.Contains(content, " "+ep.HandlerName+"(") {
 				return nil
 			}
 			if a.extractBodyFromFile(ep, path) {
-				// Always update SourceFile to the file that actually contains the
-				// handler — the previous value may have been the router file (set
-				// as a placeholder when handlerPkg was unknown).
+
 				ep.SourceFile = path
 				return errStopWalk
 			}
@@ -304,9 +258,6 @@ func (a *Analyzer) resolveRemainingRequestBodies() {
 	}
 }
 
-// extractBodyFromFile parses filePath, finds ep.HandlerName, scans its body for
-// binding calls, and populates ep.RequestBody when a known type is resolved.
-// Returns true if a schema was successfully attached.
 func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) bool {
 	fset := token.NewFileSet()
 	node, err := a.rootParseFile(fset, filePath, 0)
@@ -315,8 +266,6 @@ func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) boo
 	}
 	typName := a.findBindingTypeName(node, ep.HandlerName)
 	if typName == "" {
-		// extractBodyFromFile is only ever called for POST/PUT/PATCH endpoints
-		// (see resolveRemainingRequestBodies), so the structural fallback is safe here.
 		typName = a.findAddressTakenStructVar(node, ep.HandlerName)
 	}
 	if typName == "" {
@@ -339,10 +288,6 @@ func (a *Analyzer) extractBodyFromFile(ep *models.Endpoint, filePath string) boo
 	return true
 }
 
-// findFileWithFunction returns the path of a .go file that declares package matching pkgName (or in dir pkgName) and defines func funcName.
-// When the package-name match finds nothing (pkgName may be a variable/instance name, not a package), it falls back to
-// searching the whole project for any file that defines funcName — handling patterns like "userHandler.CreateUser"
-// where "userHandler" is a struct instance, not a package.
 func (a *Analyzer) findFileWithFunction(pkgName, funcName string) string {
 	skipDir := func(path string) bool {
 		for _, ex := range a.config.Exclude {
@@ -468,10 +413,6 @@ func (a *Analyzer) deduplicateEndpoints(endpoints []models.Endpoint) []models.En
 	return out
 }
 
-// filterEndpointsByTags keeps only endpoints matching a.config.Tags, when
-// set — see the Config.Tags doc comment for the include/exclude convention.
-// Runs after tags are fully assigned (the tagFromPath fallback in Analyze),
-// so filtering sees the same tags the generated docs will show.
 func (a *Analyzer) filterEndpointsByTags(endpoints []models.Endpoint) []models.Endpoint {
 	if len(a.config.Tags) == 0 {
 		return endpoints

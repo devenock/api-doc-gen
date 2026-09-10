@@ -6,12 +6,6 @@ import (
 	"path/filepath"
 )
 
-// printPostmanInstructions tells the user where the generated Postman
-// collection is and how to import it. Specyl does not upload
-// collections to Postman directly - that needs an API key, and asking an
-// unfamiliar CLI to hold Postman credentials just to skip a five-second
-// drag-and-drop isn't worth the confusion (or the credential-handling
-// surface) it adds.
 func printPostmanInstructions(outputDir string, quiet bool) {
 	if quiet {
 		return

@@ -15,19 +15,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// swaggerUIAssets embeds a vendored, integrity-verified copy of
-// swagger-ui-dist (see swaggerui_assets/SOURCE.md) so the generated docs work
-// fully offline with no runtime dependency on a third-party CDN — unlike
-// loading these from jsdelivr at view-time, nothing here can be silently
-// swapped out from under an already-generated doc set.
-//
 //go:embed swaggerui_assets/swagger-ui.css swaggerui_assets/swagger-ui-bundle.js swaggerui_assets/swagger-ui-standalone-preset.js
 var swaggerUIAssets embed.FS
 
 const swaggerUIAssetsDir = "swaggerui_assets"
 
-// swaggerUIAssetFiles are copied verbatim into the output directory
-// alongside index.html, which references them by these same filenames.
 var swaggerUIAssetFiles = []string{
 	"swagger-ui.css",
 	"swagger-ui-bundle.js",
@@ -258,9 +250,7 @@ func (g *SwaggerGenerator) convertEndpoint(endpoint models.Endpoint) map[string]
 		operation["parameters"] = params
 	}
 
-	// Add request body. When the analyzer inferred a typed schema, use it.
-	// For POST/PUT/PATCH with no inferred schema, show a generic JSON editor
-	// so Swagger UI always renders a body field for methods that carry a payload.
+	// Add request body.
 	if endpoint.RequestBody != nil {
 		operation["requestBody"] = map[string]interface{}{
 			"description": endpoint.RequestBody.Description,
@@ -321,13 +311,6 @@ func (g *SwaggerGenerator) writeJSON(path string, data interface{}) error {
 	return encoder.Encode(data)
 }
 
-// generateSwaggerUI generates a Swagger UI HTML file. g.config.Title is
-// attacker-controllable (a malicious go.mod module name, or --title in a
-// scripted/CI context reading an untrusted value) and this file gets
-// auto-opened in the user's browser after generation, so it must be
-// HTML-escaped before being embedded — otherwise a title like
-// `</title><script>...` would execute as stored XSS in the locally
-// generated page.
 func (g *SwaggerGenerator) generateSwaggerUI(path string) error {
 	pageHTML := `<!DOCTYPE html>
 <html lang="en">

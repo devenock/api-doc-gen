@@ -45,10 +45,6 @@ func TestSwaggerGenerate_WritesExpectedFiles(t *testing.T) {
 	}
 }
 
-// TestGenerateSwaggerUI_EscapesTitleAgainstXSS is a regression test for the
-// stored-XSS fix: the API title comes from an attacker-controllable source
-// (a crafted go.mod module name, or an untrusted --title in CI) and is
-// embedded into an HTML page that gets auto-opened in the user's browser.
 func TestGenerateSwaggerUI_EscapesTitleAgainstXSS(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &config.Config{Output: dir, Title: `</title><script>alert(1)</script>`}

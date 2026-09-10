@@ -14,9 +14,6 @@ import (
 	"github.com/devenock/specyl/pkg/config"
 )
 
-// captureStdout redirects os.Stdout for the duration of fn and returns
-// everything written to it. The functions under test here (printShowConfig,
-// runDryRun) print directly via fmt.Print*, not through an injectable writer.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	old := os.Stdout
@@ -36,8 +33,6 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
-// ginFixtureProject writes a minimal Gin project (go.mod + a handler with
-// one route) under a fresh temp dir and returns its root.
 func ginFixtureProject(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -127,12 +122,6 @@ func TestRunDryRun_ReportsEndpointsWithoutWriting(t *testing.T) {
 func TestRunGenerate_NoTypeNonInteractiveStdin_FailsFastWithClearError(t *testing.T) {
 	dir := ginFixtureProject(t)
 
-	// A closed pipe mimics stdin redirected from /dev/null or a script - not
-	// a terminal, and reading it returns EOF immediately. Without the
-	// isInteractiveTerminal guard, this used to reach promptui, which itself
-	// doesn't hang here, but does write raw terminal escape sequences into
-	// stdout/stderr before failing with a cryptic "^D" error instead of this
-	// clear, actionable one.
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -175,11 +164,6 @@ func TestRunGenerate_SwaggerNoInteractive(t *testing.T) {
 	}
 }
 
-// TestRunGenerate_ServeFalseReturnsWithoutBlocking guards against the --serve
-// flag going back to being a no-op: swagger generation used to always call
-// runServeDocs (which blocks until Ctrl+C) whenever --quiet wasn't set,
-// completely ignoring --serve's value. This asserts --serve=false actually
-// skips it - if it doesn't, this test hangs instead of failing cleanly.
 func TestRunGenerate_ServeFalseReturnsWithoutBlocking(t *testing.T) {
 	dir := ginFixtureProject(t)
 	outDir := t.TempDir()
@@ -205,10 +189,6 @@ func TestRunGenerate_ServeFalseReturnsWithoutBlocking(t *testing.T) {
 	}
 }
 
-// TestListenForPreview_PrefersDetectedPort guards the fix for a real
-// finding: the Swagger UI preview server always bound the fixed port 8765,
-// unrelated to whatever port the app itself actually runs on. It must
-// prefer the app's own detected port instead.
 func TestListenForPreview_PrefersDetectedPort(t *testing.T) {
 	ln, port, err := listenForPreview("18080")
 	if err != nil {
@@ -220,10 +200,6 @@ func TestListenForPreview_PrefersDetectedPort(t *testing.T) {
 	}
 }
 
-// TestListenForPreview_FallsBackWhenPreferredPortIsTaken covers the other
-// half: the preferred port can't always be bound - most plausibly because
-// the real app is genuinely running on it while its docs are being
-// previewed - and that must fall back to 8765 rather than erroring out.
 func TestListenForPreview_FallsBackWhenPreferredPortIsTaken(t *testing.T) {
 	occupied, err := net.Listen("tcp", "127.0.0.1:18081")
 	if err != nil {
@@ -241,9 +217,6 @@ func TestListenForPreview_FallsBackWhenPreferredPortIsTaken(t *testing.T) {
 	}
 }
 
-// TestListenForPreview_NoPreferredPortUsesFallback covers the case
-// DetectedPort found nothing at all (empty string) - must go straight to
-// 8765 rather than trying to bind an empty address.
 func TestListenForPreview_NoPreferredPortUsesFallback(t *testing.T) {
 	ln, port, err := listenForPreview("")
 	if err != nil {

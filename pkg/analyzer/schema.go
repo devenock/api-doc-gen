@@ -10,12 +10,6 @@ import (
 	"github.com/devenock/specyl/pkg/models"
 )
 
-// This file builds models.Schema from Go struct declarations: parsing struct
-// tags, resolving embedded fields, and mapping Go types (including locally
-// defined ones) to OpenAPI schema shapes. Framework-agnostic — used for both
-// request and response bodies regardless of which router package is in use.
-
-// collectTypesInFile parses a Go file and adds struct type definitions to the type registry.
 func (a *Analyzer) collectTypesInFile(filePath string) error {
 	fset := token.NewFileSet()
 	node, err := a.rootParseFile(fset, filePath, 0)
@@ -68,15 +62,9 @@ func (a *Analyzer) buildSchemaFromStruct(st *ast.StructType) models.Schema {
 	var embeds []string
 	for _, f := range st.Fields.List {
 		if len(f.Names) == 0 {
-			// Anonymous (embedded) field, e.g. `gorm.Model` or a local `BaseModel`.
-			// With an explicit json tag it behaves like a normal nested property;
-			// without one, encoding/json promotes its fields to the top level, so
-			// record it for the field-promotion post-pass (resolveEmbeddedFields)
-			// that runs once every type in the project has been collected —
-			// the embedded type may be defined in a file not parsed yet.
 			embeddedName := embeddedTypeName(f.Type)
 			if embeddedName == "" {
-				continue // qualified (cross-package) embed, e.g. gorm.Model — can't resolve locally
+				continue
 			}
 			tags := parseFieldTags(f.Tag)
 			if tags.skip {
@@ -89,16 +77,13 @@ func (a *Analyzer) buildSchemaFromStruct(st *ast.StructType) models.Schema {
 			}
 			continue
 		}
-		// encoding/json never marshals unexported fields — a schema property
-		// for one could never appear in a real request/response payload.
+
 		if !f.Names[0].IsExported() {
 			continue
 		}
 		tags := parseFieldTags(f.Tag)
 		if tags.skip {
-			// json:"-" — the idiomatic tag for secret-bearing fields
-			// (password hashes, API tokens, internal IDs). Must not appear
-			// in the generated public spec at all.
+
 			continue
 		}
 		fieldName := f.Names[0].Name
@@ -106,21 +91,12 @@ func (a *Analyzer) buildSchemaFromStruct(st *ast.StructType) models.Schema {
 			fieldName = tags.name
 		}
 		fieldSchema := a.goTypeToSchema(f.Type)
-		// A pointer field's absence of Go's zero value is nullability, not a
-		// signal about whether the field is required — those are independent
-		// (see the `required` derivation below). $ref siblings are forbidden
-		// in OpenAPI 3.0, so a pointer-to-struct field can't carry `nullable`.
+
 		if isPointerType(f.Type) && fieldSchema.Ref == "" {
 			fieldSchema.Nullable = true
 		}
 		props[fieldName] = fieldSchema
-		// required is a Go-side validation concern, not something JSON typing
-		// implies: a plain non-pointer `int` with no validation tag is still
-		// entirely optional on the wire (it just defaults to zero if absent).
-		// Derive it instead from the tags Go handlers actually validate
-		// against, and let omitempty stand as an explicit "not required" —
-		// unless RequiredByDefault is set, in which case every field is
-		// required unless omitempty says otherwise.
+
 		if (tags.required || a.config.RequiredByDefault) && !tags.omitempty {
 			required = append(required, fieldName)
 		}
@@ -133,11 +109,6 @@ func (a *Analyzer) buildSchemaFromStruct(st *ast.StructType) models.Schema {
 	}
 }
 
-// fieldTags carries the parsed json/binding/validate tag information for a
-// single struct field: the OpenAPI property name (name), whether the field
-// is excluded from the schema entirely (skip, from json:"-"), whether it
-// carries an explicit not-required signal (omitempty), and whether a
-// binding/validate tag marks it required.
 type fieldTags struct {
 	name      string
 	skip      bool
@@ -145,9 +116,6 @@ type fieldTags struct {
 	required  bool
 }
 
-// parseFieldTags extracts json/binding/validate semantics from a struct
-// field's tag using reflect.StructTag so quoting/escaping matches Go's own
-// tag parsing exactly, rather than a hand-rolled space-split.
 func parseFieldTags(tag *ast.BasicLit) fieldTags {
 	var ft fieldTags
 	if tag == nil {
@@ -158,10 +126,7 @@ func parseFieldTags(tag *ast.BasicLit) fieldTags {
 	if jsonTag, ok := st.Lookup("json"); ok {
 		parts := strings.Split(jsonTag, ",")
 		name := parts[0]
-		// `json:"-"` (exactly, no trailing comma) excludes the field.
-		// `json:"-,"` is encoding/json's escape for a field literally named
-		// "-" that should still be marshaled — parts would be ["-", ""] here,
-		// which correctly falls through to the name-assignment below instead.
+
 		if name == "-" && len(parts) == 1 {
 			ft.skip = true
 			return ft
@@ -182,8 +147,6 @@ func parseFieldTags(tag *ast.BasicLit) fieldTags {
 	return ft
 }
 
-// tagOptionPresent reports whether opt appears as one of the comma-separated
-// options in a binding/validate tag value (e.g. "required,min=1,max=100").
 func tagOptionPresent(tagValue, opt string) bool {
 	for _, part := range strings.Split(tagValue, ",") {
 		if strings.TrimSpace(part) == opt {
@@ -193,9 +156,6 @@ func tagOptionPresent(tagValue, opt string) bool {
 	return false
 }
 
-// embeddedTypeName returns the local type name for an embedded field's type
-// expression (`Foo` or `*Foo`), or "" for anything not locally resolvable
-// (qualified selectors like `gorm.Model` live in another package/module).
 func embeddedTypeName(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.Ident:
@@ -208,11 +168,6 @@ func embeddedTypeName(expr ast.Expr) string {
 	return ""
 }
 
-// resolveEmbeddedFields flattens anonymous (embedded) struct fields recorded
-// during collectTypesInFile into their parent schema's Properties, mirroring
-// Go's field-promotion behavior for JSON marshaling. Runs after every file in
-// the project has been scanned so embedding a type defined in another file
-// resolves correctly regardless of file processing order.
 func (a *Analyzer) resolveEmbeddedFields() {
 	resolved := make(map[string]bool)
 	var flatten func(name string) models.Schema
@@ -242,32 +197,13 @@ func (a *Analyzer) resolveEmbeddedFields() {
 	}
 }
 
-// externalTypeSchemas maps "package.Type", as written at the selector
-// expression (e.g. "time.Time", "sql.NullString"), to the schema it should
-// produce. Every entry here was checked against encoding/json's actual
-// output before being added, not assumed from the Go-level shape — that
-// distinction matters: sql.NullString looks like it should marshal as a
-// plain string, but it has no custom MarshalJSON, so it actually marshals
-// as its literal struct fields ({"String":...,"Valid":...}). Getting this
-// wrong would be worse than the generic {"type":"object"} fallback below,
-// since it would confidently show the wrong shape instead of an honestly
-// incomplete one.
-//
-// Matched purely by identifier name (this package has no go/types import
-// resolution), so it has the same known limitation the pre-existing
-// time.Time case already had: an import alias or a same-named local type
-// would be matched too. Accepted for the same reason it already was.
 var externalTypeSchemas = map[string]models.Schema{
 	"time.Time": {Type: "string", Format: "date-time"},
-	// Duration has no custom MarshalJSON; it's `type Duration int64`
-	// marshaling as a plain nanosecond count, not a formatted string.
+
 	"time.Duration": {Type: "integer", Format: "int64"},
-	// github.com/google/uuid: implements encoding.TextMarshaler, so
-	// encoding/json renders it as the canonical hyphenated string form.
+
 	"uuid.UUID": {Type: "string", Format: "uuid"},
 
-	// database/sql's Null* types have no custom MarshalJSON either, so each
-	// marshals as its two literal fields, not the plain underlying value.
 	"sql.NullString": {Type: "object", Properties: map[string]models.Schema{
 		"String": {Type: "string"}, "Valid": {Type: "boolean"},
 	}},
@@ -307,11 +243,7 @@ func (a *Analyzer) goTypeToSchema(expr ast.Expr) models.Schema {
 	case *ast.MapType:
 		return models.Schema{Type: "object", AdditionalProperties: map[string]interface{}{}}
 	case *ast.SelectorExpr:
-		// e.g. time.Time — a type from outside the scanned project, which we
-		// have no way to inspect the fields of (no go/types, and it isn't
-		// necessarily even downloaded). externalTypeSchemas special-cases
-		// the handful of common ones with a well-established JSON shape;
-		// anything else falls back to a bare object below.
+
 		if ident, ok := t.X.(*ast.Ident); ok {
 			if schema, ok := externalTypeSchemas[ident.Name+"."+t.Sel.Name]; ok {
 				return schema

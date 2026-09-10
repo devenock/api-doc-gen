@@ -157,10 +157,7 @@ func (g *PostmanGenerator) convertToPostman(spec *models.APISpec) *PostmanCollec
 	endpointsByTag := g.groupEndpointsByTag(spec.Endpoints)
 
 	if len(endpointsByTag) > 1 {
-		// Create folders for each tag, in a stable (sorted) order — ranging a
-		// Go map directly would randomize folder order on every run, which
-		// breaks reproducible output and makes generated collection.json
-		// diffs noisy in CI/version control for no reason.
+
 		tags := make([]string, 0, len(endpointsByTag))
 		for tag := range endpointsByTag {
 			tags = append(tags, tag)
@@ -201,8 +198,6 @@ func (g *PostmanGenerator) groupEndpointsByTag(endpoints []models.Endpoint) map[
 	return grouped
 }
 
-// requestName builds a short Postman request name from the HTTP method and path.
-// Examples: GET /users/:id → get_user, POST /products → add_product
 func requestName(method, path string) string {
 	segments := strings.Split(strings.Trim(path, "/"), "/")
 
@@ -308,9 +303,7 @@ func (g *PostmanGenerator) convertEndpointToItem(endpoint models.Endpoint, spec 
 		}
 	}
 
-	// Add request body. For POST/PUT/PATCH always include a body editor —
-	// use the inferred schema when available, otherwise an empty object so
-	// Postman still shows the body field for the user to fill in.
+	// Add request body.
 	bodyMethods := map[string]bool{"POST": true, "PUT": true, "PATCH": true}
 	if endpoint.RequestBody != nil || bodyMethods[endpoint.Method] {
 		body := &PostmanBody{
@@ -354,9 +347,6 @@ func (g *PostmanGenerator) createPostmanURL(endpoint models.Endpoint, spec *mode
 		}
 	}
 
-	// Do NOT set Protocol here. The {{baseUrl}} variable already contains
-	// the full base URL including scheme (e.g. "http://localhost:8080"), so
-	// adding a separate Protocol field causes Postman to double-prefix it.
 	url := PostmanURL{
 		Raw:  "{{baseUrl}}" + path,
 		Host: []string{"{{baseUrl}}"},
@@ -375,9 +365,7 @@ func (g *PostmanGenerator) createPostmanURL(endpoint models.Endpoint, spec *mode
 		}
 	}
 
-	// Add path variables. param.Example is interface{} and may be nil
-	// (the analyzer does not currently set it for path params), so we must
-	// guard the type assertion to avoid a panic.
+	// Add path variables.
 	for _, param := range endpoint.Parameters {
 		if param.In == "path" {
 			value := ""
@@ -399,24 +387,15 @@ func (g *PostmanGenerator) createPostmanURL(endpoint models.Endpoint, spec *mode
 	return url
 }
 
-// generateExampleFromSchema generates an example object from a schema.
-// componentSchemas is the OpenAPI components/schemas map used to resolve $ref.
 func (g *PostmanGenerator) generateExampleFromSchema(schema models.Schema, componentSchemas map[string]models.Schema) interface{} {
 	return g.generateExample(schema, componentSchemas, map[string]bool{})
 }
 
-// generateExample is generateExampleFromSchema's implementation. seenRefs
-// tracks $ref names already expanded on the current recursion path so a
-// self-referential schema (e.g. `type Category struct { Children []Category }`
-// — trees, comments, org charts are all common real-world shapes) terminates
-// instead of recursing forever and crashing with a stack overflow.
 func (g *PostmanGenerator) generateExample(schema models.Schema, componentSchemas map[string]models.Schema, seenRefs map[string]bool) interface{} {
 	// Resolve $ref before doing anything else.
 	if schema.Ref != "" {
 		refName := strings.TrimPrefix(schema.Ref, "#/components/schemas/")
 		if seenRefs[refName] {
-			// Cycle: stop expanding and return an empty placeholder instead of
-			// recursing into the same type again.
 			return map[string]interface{}{}
 		}
 		if resolved, ok := componentSchemas[refName]; ok {
@@ -455,10 +434,6 @@ func (g *PostmanGenerator) generateExample(schema models.Schema, componentSchema
 	}
 }
 
-// withRef returns a copy of seenRefs with name added, leaving the original
-// untouched — sibling branches of the schema tree (e.g. two different
-// properties both $ref-ing the same type) must not affect each other's cycle
-// detection.
 func withRef(seenRefs map[string]bool, name string) map[string]bool {
 	out := make(map[string]bool, len(seenRefs)+1)
 	for k := range seenRefs {

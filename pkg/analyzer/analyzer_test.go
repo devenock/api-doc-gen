@@ -10,8 +10,6 @@ import (
 	"github.com/devenock/specyl/pkg/models"
 )
 
-// writeProject materializes files (relative path -> content) under a fresh
-// temp directory and returns its root.
 func writeProject(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -119,12 +117,6 @@ func AuthMiddleware() gin.HandlerFunc { return nil }
 	}
 }
 
-// TestAnalyze_Gin_GroupPrefixAndPathFromNamedConstant guards against a real
-// production bug: group-prefix and route-path arguments were resolved only
-// when passed as an inline string literal. A named constant - a common,
-// arguably better-practice alternative to a magic string, especially for a
-// shared version prefix - silently dropped the whole prefix (for a group)
-// or the endpoint entirely (for a single route), with no warning.
 func TestAnalyze_Gin_GroupPrefixAndPathFromNamedConstant(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -150,13 +142,6 @@ func ListUsers(c *gin.Context) {}
 	findEndpoint(t, spec, "GET", "/api/v1/users")
 }
 
-// TestAnalyze_ServerURL_DetectedFromListenCall guards the fix for another
-// real-world finding: the generated docs' server URL always defaulted to
-// :8080 unless the port happened to be in a .env file, so Swagger UI's
-// "Try it out" sent requests to the wrong port for any app that hardcodes
-// its listen address in code (the common case) instead. detectListenPort
-// must find the literal port passed to .Run/.Listen/.Start/
-// http.ListenAndServe and use it instead of the generic default.
 func TestAnalyze_ServerURL_DetectedFromListenCall(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -181,11 +166,6 @@ func Ping(c *gin.Context) {}
 	}
 }
 
-// TestAnalyze_ServerURL_FallsBackToEnvWhenPortIsNotALiteral covers the case
-// detectListenPort can't resolve - the port is read from an env var at
-// runtime, not passed as a literal or named constant - which must still
-// fall back to the existing .env-scanning behavior rather than silently
-// defaulting to :8080 when a real value is sitting right there in .env.
 func TestAnalyze_ServerURL_FallsBackToEnvWhenPortIsNotALiteral(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -213,15 +193,6 @@ func Ping(w http.ResponseWriter, r *http.Request) {}
 	}
 }
 
-// TestAnalyzer_DetectedPort_MatchesEnvFallback guards a real bug: when the
-// app's port is only resolvable via .env (not a literal/const in code -
-// TestAnalyze_ServerURL_FallsBackToEnvWhenPortIsNotALiteral's scenario
-// above), DetectedPort() returned "" instead of matching whatever port
-// Servers[0].URL actually ended up using. A caller trying to reuse "the
-// port we detected" (the Swagger UI preview server binding to the app's own
-// port) fell back to its own unrelated default instead, even though the
-// Servers dropdown in the generated docs correctly showed the real port -
-// the two were silently out of sync.
 func TestAnalyzer_DetectedPort_MatchesEnvFallback(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -257,10 +228,6 @@ func Ping(w http.ResponseWriter, r *http.Request) {}
 	}
 }
 
-// TestAnalyzer_DetectedPort_EmptyWhenServersConfigured guards the other
-// direction: a user-configured .specyl.yaml `servers:` entry may point
-// anywhere (a remote host, a different scheme) - DetectedPort() must not
-// hand that back as if it were a local port safe to bind a server to.
 func TestAnalyzer_DetectedPort_EmptyWhenServersConfigured(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod":  "module example.com/api\n\ngo 1.24\n",
@@ -322,13 +289,6 @@ func CreateProduct(c *gin.Context) {
 	}
 }
 
-// TestAnalyze_ExternalTypeSchemas covers the hardcoded external-type schemas
-// (time.Time/Duration, uuid.UUID, database/sql's Null* types) — fields whose
-// type is defined outside the scanned project, where the analyzer can't see
-// the real definition. Note the fixture doesn't need github.com/google/uuid
-// as an actual resolvable dependency: this package is AST-only and never
-// type-checks or builds the target project, so a syntactically valid import
-// is all parsing requires.
 func TestAnalyze_ExternalTypeSchemas(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -393,10 +353,6 @@ func main() {
 	}
 }
 
-// TestAnalyze_Gin_JSONTagSemantics is the "edge-jsontags" fixture from the
-// code review: a struct exercising every json/binding tag edge case in one
-// place. It must model encoding/json's actual marshaling behavior, not Go's
-// pointer-ness or a naive tag-name split.
 func TestAnalyze_Gin_JSONTagSemantics(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -440,11 +396,7 @@ func main() {
 	if _, ok := schema.Properties["internalFlag"]; ok {
 		t.Error("unexported field internalFlag must not appear in the schema (encoding/json never marshals it)")
 	}
-	// APIToken has no json tag at all. encoding/json still marshals an
-	// exported, untagged field under its Go name — so unlike PasswordHash
-	// (explicit json:"-") it correctly belongs in the schema. A reviewer
-	// wanting API tokens redacted from docs needs to tag the field, the same
-	// way they'd need to for encoding/json itself to stop marshaling it.
+
 	if _, ok := schema.Properties["APIToken"]; !ok {
 		t.Error("APIToken has no exclusion tag, so encoding/json would marshal it — it should still appear in the schema")
 	}
@@ -470,10 +422,6 @@ func main() {
 	}
 }
 
-// TestAnalyze_RequiredByDefault covers the config.RequiredByDefault flag
-// (--required-by-default): every field should be required unless it has
-// omitempty, regardless of whether it also carries an explicit
-// binding/validate:"required" tag.
 func TestAnalyze_RequiredByDefault(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -524,9 +472,6 @@ func main() {
 	}
 }
 
-// TestAnalyze_JSONTag_DashCommaIsALiteralFieldName covers encoding/json's
-// escape for a field that must be marshaled under the literal name "-":
-// json:"-," (note the trailing comma) — distinct from json:"-" (exclude).
 func TestAnalyze_JSONTag_DashCommaIsALiteralFieldName(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -576,9 +521,6 @@ func slicesEqualUnordered(got, want []string) bool {
 	return true
 }
 
-// TestAnalyze_Gin_ResponseInference_EdgeStatusCodes is the "edge-statuscodes"
-// fixture from the code review: a Created+error-body handler and a
-// No-Content handler, exercising the response side end to end.
 func TestAnalyze_Gin_ResponseInference_EdgeStatusCodes(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -754,10 +696,6 @@ func main() {
 	}
 }
 
-// TestAnalyze_Gorilla_ResponseInference_BranchScoped covers the net/http
-// WriteHeader+Encode pattern, and that two branches (success/error) of the
-// same handler resolve to distinct status/schema pairs without conflating
-// them — the review's "correlate by position within the block" requirement.
 func TestAnalyze_Gorilla_ResponseInference_BranchScoped(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -808,10 +746,6 @@ func main() {
 	}
 }
 
-// TestAnalyze_Gin_ResponseInference_HelperDelegation covers the
-// "respondError(c, http.StatusNotFound, ...)" pattern: the status is a
-// literal at the call site but only a parameter name inside the helper's own
-// body, so resolving it requires substituting the call-site argument in.
 func TestAnalyze_Gin_ResponseInference_HelperDelegation(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -849,10 +783,6 @@ func main() {
 	}
 }
 
-// TestAnalyze_Gin_ResponseInference_PlaceholderIsLabeled covers the Step 6
-// fallback: a handler with no recognizable response call at all still gets
-// exactly one response entry, clearly marked as inference having failed
-// rather than silently presented as a real 200.
 func TestAnalyze_Gin_ResponseInference_PlaceholderIsLabeled(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -884,14 +814,6 @@ func main() {
 	}
 }
 
-// TestAnalyze_Gin_AddressTakenFallback_ExcludesActualResponseVar is a
-// regression test for review §5.2: findAddressTakenStructVar's last-resort
-// request-body fallback used to skip candidates by checking whether the
-// variable's Go type name contained the substring "response" — a type named
-// "Result" (declared and address-taken before the real request variable)
-// would slip past that check and get wrongly picked as the request body.
-// It's now excluded precisely, by recognizing it's actually passed to a
-// response call (review §3's call recognition), regardless of its name.
 func TestAnalyze_Gin_AddressTakenFallback_ExcludesActualResponseVar(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -937,13 +859,6 @@ func main() {
 	}
 }
 
-// TestAnalyze_AuthMiddleware_ConfiguredListOverridesHeuristic is a
-// regression test for review §5.2: an explicit, user-configured
-// auth_middleware list should be matched precisely (case-insensitive exact
-// match), replacing the built-in substring heuristic entirely — fixing both
-// a false positive (a middleware literally named "AuthorMiddleware", which
-// contains "author" but isn't an auth check) and a false negative
-// ("requireSession", which contains neither "auth" nor "jwt").
 func TestAnalyze_AuthMiddleware_ConfiguredListOverridesHeuristic(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -988,10 +903,6 @@ func requireSession(c *gin.Context)     {}
 	}
 }
 
-// TestAnalyze_VerboseMode_ReportsHeuristicMatches covers review §5.2's
-// "report every heuristic match in verbose output" — the built-in
-// (unconfigured) auth heuristic's matches must be visible via
-// AuthMiddlewareMatches() when Verbose is set, and absent otherwise.
 func TestAnalyze_VerboseMode_ReportsHeuristicMatches(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -1186,10 +1097,6 @@ func main() {
 	}
 }
 
-// TestAnalyze_Gin_ResponseInference_MapLiteralBody covers the extremely
-// common gin.H{...} inline-object shape: no declared type to resolve, so the
-// literal's own keys become string-typed placeholder properties instead of
-// an empty object.
 func TestAnalyze_Gin_ResponseInference_MapLiteralBody(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -1222,10 +1129,6 @@ func main() {
 	}
 }
 
-// TestAnalyze_Gin_ResponseInference_CallExprBody covers c.JSON(status,
-// buildResponse(user)) — the body is itself a call, resolved via the
-// name-based return-type fallback (review §3, Step 3's last bullet; full
-// resolution needs the go/types migration in §4).
 func TestAnalyze_Gin_ResponseInference_CallExprBody(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -1263,11 +1166,6 @@ func main() {
 	}
 }
 
-// TestAnalyze_RecordsParseFailureDiagnostic is a regression test for review
-// §5.3: a .go file that fails to parse used to vanish silently — every route
-// and type it defined disappeared from the output with no indication why.
-// Analyze() must still succeed (skip the bad file, keep going) but record
-// what it skipped, and other files' routes must still be found.
 func TestAnalyze_RecordsParseFailureDiagnostic(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n",
@@ -1378,11 +1276,6 @@ func TestDetectFramework(t *testing.T) {
 	}
 }
 
-// TestDetectFramework_AmbiguousReturnsEmpty is a regression test: a project
-// genuinely depending on two routing frameworks (Gin for the API, Chi in a
-// vendored subpackage is the review's own example) used to silently resolve
-// to whichever framework's case came first in the old switch statement.
-// Silently picking wrong is worse than admitting "unknown".
 func TestDetectFramework_AmbiguousReturnsEmpty(t *testing.T) {
 	dir := t.TempDir()
 	content := "module example.com/x\n\ngo 1.24\n\nrequire (\n\tgithub.com/gin-gonic/gin v1.9.0\n\tgithub.com/go-chi/chi/v5 v5.0.0\n)\n"
@@ -1398,10 +1291,6 @@ func TestDetectFramework_AmbiguousReturnsEmpty(t *testing.T) {
 	}
 }
 
-// TestDetectFrameworks_IgnoresIndirectDependencies covers the false-positive
-// case: a framework pulled in transitively by some other dependency (never
-// imported by the project's own routing code) must not count as "this
-// project uses it" and trigger a spurious ambiguity warning.
 func TestDetectFrameworks_IgnoresIndirectDependencies(t *testing.T) {
 	dir := t.TempDir()
 	content := "module example.com/x\n\ngo 1.24\n\nrequire (\n\tgithub.com/gin-gonic/gin v1.9.0\n\tgithub.com/go-chi/chi/v5 v5.0.0 // indirect\n)\n"
@@ -1413,10 +1302,6 @@ func TestDetectFrameworks_IgnoresIndirectDependencies(t *testing.T) {
 	}
 }
 
-// TestAnalyze_AmbiguousFrameworkFallsBackToUnknown covers the end-to-end
-// behavior: Analyze() with no explicit --framework and an ambiguous go.mod
-// must not silently guess — it should behave the same as a genuinely
-// unrecognized framework (generic net/http-style route detection).
 func TestAnalyze_AmbiguousFrameworkFallsBackToUnknown(t *testing.T) {
 	dir := writeProject(t, map[string]string{
 		"go.mod": "module example.com/api\n\ngo 1.24\n\nrequire (\n\tgithub.com/gin-gonic/gin v1.9.0\n\tgithub.com/go-chi/chi/v5 v5.0.0\n)\n",
@@ -1432,15 +1317,10 @@ func main() {
 `,
 	})
 
-	// framework="" triggers auto-detection, which must resolve to unknown
-	// (not silently pick gin or chi) given both appear as direct dependencies.
 	spec := analyze(t, dir, "")
 	findEndpoint(t, spec, "GET", "/health")
 }
 
-// tagFilterFixture is shared by the TestAnalyze_TagsFilter_* tests: two
-// tagged route groups (from tagFromPath, derived from the first path
-// segment) to include/exclude between.
 func tagFilterFixture(t *testing.T) string {
 	t.Helper()
 	return writeProject(t, map[string]string{

@@ -9,12 +9,6 @@ import (
 	"github.com/devenock/specyl/pkg/models"
 )
 
-// TestGenerateExampleFromSchema_SelfReferentialSchema is a regression test:
-// generateExampleFromSchema used to recurse through $ref with no cycle guard,
-// so any target project with a self-referential struct (a tree/category/
-// comment-reply shape — all common) would stack-overflow the CLI while
-// building the Postman example body. It now must terminate and still produce
-// a sane example for the non-cyclic fields.
 func TestGenerateExampleFromSchema_SelfReferentialSchema(t *testing.T) {
 	g := &PostmanGenerator{config: &config.Config{}}
 	components := map[string]models.Schema{
@@ -47,8 +41,6 @@ func TestGenerateExampleFromSchema_SelfReferentialSchema(t *testing.T) {
 	}
 }
 
-// TestGenerateExampleFromSchema_MutualCycle covers an indirect cycle
-// (A -> B -> A), not just direct self-reference.
 func TestGenerateExampleFromSchema_MutualCycle(t *testing.T) {
 	g := &PostmanGenerator{config: &config.Config{}}
 	components := map[string]models.Schema{
@@ -82,10 +74,6 @@ func runWithTimeout(t *testing.T, fn func() interface{}) interface{} {
 	}
 }
 
-// TestConvertToPostman_DeterministicFolderOrder is a regression test: folders
-// were previously built by ranging a Go map directly, so collection.json's
-// item order (and therefore its diff against the previous run) was
-// randomized on every invocation, defeating the tool's own CI-friendliness.
 func TestConvertToPostman_DeterministicFolderOrder(t *testing.T) {
 	g := &PostmanGenerator{config: &config.Config{}}
 	spec := &models.APISpec{

@@ -66,13 +66,6 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {}
 	}
 }
 
-// TestWriteSwagAnnotations_ParamUsesActualLocationAndRequiredness guards
-// against a real bug found by actually running swag against generated
-// output: every @Param line was hardcoded as "path ... true", regardless of
-// the parameter's real location - a query param (already correctly tagged
-// In: "query", Required: false on the endpoint model) came out identical to
-// a required path param, silently misdescribing the API to anything that
-// consumes these annotations.
 func TestWriteSwagAnnotations_ParamUsesActualLocationAndRequiredness(t *testing.T) {
 	dir := t.TempDir()
 	file := writeSource(t, dir, "handlers.go", `package handlers
@@ -104,10 +97,6 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {}
 
 	for _, want := range []string{
 		`// @Param id path string true "user ID"`,
-		// No description was given for "role" - it must still come out as a
-		// non-empty quoted string (swag's own @Param regexp requires at
-		// least one character between the quotes, or it fails to parse the
-		// comment at all and aborts the whole file).
 		`// @Param role query string false "role"`,
 	} {
 		if !strings.Contains(content, want) {
@@ -116,14 +105,6 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {}
 	}
 }
 
-// TestWriteSwagAnnotations_QualifiesCrossPackageTypeName guards against
-// another bug confirmed by running swag directly: request/response type
-// names were always written bare (CreateUserRequest), which swag can only
-// resolve within the annotated handler's own package. Handlers and their
-// request/response structs living in separate packages (handlers/ +
-// models/) is the normal, idiomatic layout - and exactly how every example
-// in this repo is organized - so an unqualified name reliably failed with
-// "cannot find type definition" the moment swag itself parsed the output.
 func TestWriteSwagAnnotations_QualifiesCrossPackageTypeName(t *testing.T) {
 	dir := t.TempDir()
 	file := writeSource(t, dir, "handlers.go", `package handlers
@@ -238,12 +219,6 @@ func Health(w http.ResponseWriter, r *http.Request) {}
 }
 
 func TestWriteSwagAnnotations_StripsEmbeddedNewlinesFromPathAndParams(t *testing.T) {
-	// A route path is normally lexically incapable of containing a raw
-	// newline, but a backtick raw-string literal in the analyzed project's
-	// own source can legitimately span multiple lines. If that newline were
-	// written verbatim into a `// @Router ...` comment, everything after it
-	// would land as literal (non-comment) source in the target file instead
-	// of staying inside the comment block.
 	dir := t.TempDir()
 	file := writeSource(t, dir, "handlers.go", `package handlers
 
@@ -252,10 +227,6 @@ import "net/http"
 func Evil(w http.ResponseWriter, r *http.Request) {}
 `)
 
-	// Deliberately does NOT start with "func " (or any other token that would
-	// coincidentally match a legitimate declaration line) - the point is to
-	// prove this marker never appears anywhere except inside a `//` comment,
-	// not to smuggle it past an allowlist.
 	const injected = "PWNED_MARKER_should_never_appear_outside_a_comment"
 	endpoints := []models.Endpoint{
 		{
@@ -277,10 +248,6 @@ func Evil(w http.ResponseWriter, r *http.Request) {}
 	}
 	content := string(out)
 
-	// The marker may still appear (harmlessly) inline within a single
-	// comment line - escapeSwagLine joins around the newline with a space
-	// rather than deleting it. What must never happen is the marker landing
-	// on a line that isn't a `//` comment (i.e. it escaped into real source).
 	for _, line := range strings.Split(content, "\n") {
 		if !strings.Contains(line, injected) {
 			continue

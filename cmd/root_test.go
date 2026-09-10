@@ -8,8 +8,6 @@ import (
 	"testing"
 )
 
-// captureStderr redirects os.Stderr for the duration of fn and returns
-// everything written to it.
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	old := os.Stderr
@@ -52,8 +50,6 @@ func TestIsInteractiveTerminal_DevNullIsNotInteractive(t *testing.T) {
 	}
 }
 
-// withWorkingDir chdirs into dir for the duration of the test, restoring the
-// original working directory on cleanup.
 func withWorkingDir(t *testing.T, dir string) {
 	t.Helper()
 	old, err := os.Getwd()

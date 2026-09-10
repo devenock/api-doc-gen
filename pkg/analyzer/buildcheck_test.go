@@ -51,10 +51,6 @@ func main() {
 	}
 }
 
-// TestCheckBuild_SkipsWithoutGoToolchain covers the tool's own Docker
-// runtime image: a slim alpine image with just the compiled binary and no
-// Go toolchain. CheckBuild must degrade to "skipped", not error, when `go`
-// isn't on PATH.
 func TestCheckBuild_SkipsWithoutGoToolchain(t *testing.T) {
 	emptyPathDir := t.TempDir()
 	t.Setenv("PATH", emptyPathDir)

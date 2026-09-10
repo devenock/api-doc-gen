@@ -8,20 +8,11 @@ import (
 	"github.com/devenock/specyl/pkg/models"
 )
 
-// Chi route parsing. Structurally narrower than the other route families:
-// walkChiStmts walks a router's setup statements directly (r.Route/r.Group/
-// r.Use/r.Get-style calls) rather than an unscoped ast.Inspect over the
-// whole file, so it tracks nesting and inherited auth without needing the
-// group-variable bookkeeping in routegroups.go.
-
-// chiValidMethods are the HTTP-verb methods chi.Router exposes (Go-cased: Get, Post, ...).
 var chiValidMethods = map[string]bool{
 	"GET": true, "POST": true, "PUT": true, "DELETE": true,
 	"PATCH": true, "HEAD": true, "OPTIONS": true,
 }
 
-// isChiAuthMiddlewareCall reports whether a r.Use(...) call's first argument
-// looks like an auth middleware, using the same name heuristic as buildGinAuthGroups.
 func (a *Analyzer) isChiAuthMiddlewareCall(call *ast.CallExpr) bool {
 	if len(call.Args) == 0 {
 		return false
@@ -38,15 +29,8 @@ func (a *Analyzer) isChiAuthMiddlewareCall(call *ast.CallExpr) bool {
 	return a.middlewareLooksLikeAuth(name)
 }
 
-// walkChiStmts recursively extracts routes from a chi.Router setup, tracking
-// the path prefix and inherited auth state through nested r.Route(...)/r.Group(...)
-// closures. Chi reuses the same receiver identifier (conventionally "r") at every
-// nesting level, so this can't be modeled with a flat var->prefix map the way
-// Gin's r.Group() assignments are (buildGinGroupPrefixes) — each closure's body
-// has to be walked with its own prefix/auth context instead.
 func (a *Analyzer) walkChiStmts(stmts []ast.Stmt, file *ast.File, prefix string, inheritedAuth bool) {
-	// A .Use(...) call anywhere in this scope protects every route registered
-	// in this scope, per chi's middleware-before-routes convention.
+
 	scopeAuth := inheritedAuth
 	for _, stmt := range stmts {
 		call := chiCallFromStmt(stmt)
@@ -90,8 +74,6 @@ func (a *Analyzer) walkChiStmts(stmts []ast.Stmt, file *ast.File, prefix string,
 	}
 }
 
-// chiCallFromStmt returns the CallExpr for a statement like `r.Get("/", h)`
-// (an ExprStmt wrapping a CallExpr whose Fun is a method selector), or nil.
 func chiCallFromStmt(stmt ast.Stmt) *ast.CallExpr {
 	exprStmt, ok := stmt.(*ast.ExprStmt)
 	if !ok {
@@ -107,9 +89,6 @@ func chiCallFromStmt(stmt ast.Stmt) *ast.CallExpr {
 	return call
 }
 
-// buildChiEndpoint builds a rich endpoint (comments, request/response schema,
-// query params, tags) for a single chi.Router HTTP-verb call, mirroring the
-// extraction parseGinRoutes does for Gin/Echo/Fiber.
 func (a *Analyzer) buildChiEndpoint(call *ast.CallExpr, file *ast.File, prefix string, auth bool) {
 	if len(call.Args) < 2 {
 		return

@@ -1,6 +1,3 @@
-// Package config defines the Config struct that carries a generate run's
-// settings end to end (flags, config file, and env vars are all merged into
-// it by cmd/generate.go before Validate is called) and validates it.
 package config
 
 import (
@@ -13,66 +10,24 @@ import (
 
 // Config represent application configuration
 type Config struct {
-	ProjectPath string
-	Output      string
-	DocType     string
-	Framework   string
-	Exclude     []string
-	BasePath    string
-	Title       string
-	Version     string
-	Description string
-	Servers     []ServerConfig
-	Verbose     bool
-	Quiet       bool
-
-	// WriteAnnotations writes swag-style comment blocks above handler functions.
-	WriteAnnotations bool
-
-	// OutputFromFlag is true when Output was set via an explicit --output/-o
-	// flag on this invocation, as opposed to a config file, env var, or the
-	// default. Output resolves relative to the current working directory (not
-	// ProjectPath — see the README's cross-directory example, which passes an
-	// absolute -o for exactly this reason), and Validate only trusts an
-	// Output that escapes the working directory tree when a human typed it on
-	// the command line for this run. A malicious .specyl.yaml committed
-	// to a repo (auth_middleware and friends are meant to be shared/trusted,
-	// but output is a filesystem write target) must not be able to silently
-	// redirect where generate writes files.
-	OutputFromFlag bool
-
-	// SkipBuildCheck disables the `go vet ./...` pre-flight check that runs
-	// against the target project by default. The check only warns (it never
-	// blocks generation) — this flag exists for skipping it entirely, e.g.
-	// in CI against a branch mid-refactor, or environments without a Go
-	// toolchain where the check would otherwise just no-op anyway.
-	SkipBuildCheck bool
-
-	// RequiredByDefault flips the default a struct field's presence in the
-	// generated schema's `required` list: normally a field is required only
-	// when it carries an explicit `binding:"required"`/`validate:"required"`
-	// tag (a plain non-pointer Go field being non-required by default is not
-	// a real signal — it just means the zero value is used if absent on the
-	// wire). With this set, every field is required unless it has
-	// `json:",omitempty"` or an explicit validation tag says otherwise.
+	ProjectPath       string
+	Output            string
+	DocType           string
+	Framework         string
+	Exclude           []string
+	BasePath          string
+	Title             string
+	Version           string
+	Description       string
+	Servers           []ServerConfig
+	Verbose           bool
+	Quiet             bool
+	WriteAnnotations  bool
+	OutputFromFlag    bool
+	SkipBuildCheck    bool
 	RequiredByDefault bool
-
-	// AuthMiddleware, when set (via .specyl.yaml's auth_middleware key),
-	// is the exact list of middleware identifier names (case-insensitive)
-	// that mark a route group as authenticated, overriding the analyzer's
-	// built-in heuristic (a common-name set plus a substring match on
-	// "auth"/"jwt") entirely. For projects whose middleware names the
-	// heuristic gets wrong in either direction — a false positive like
-	// "AuthorMiddleware", or a false negative like "requireSession".
-	AuthMiddleware []string
-
-	// Tags filters which endpoints are included in the generated docs by
-	// their (auto-derived-from-path) tag. A plain entry ("users") is an
-	// include filter — at least one include entry must match, if any are
-	// given. A "!"-prefixed entry ("!internal") excludes any endpoint
-	// carrying that tag outright, regardless of include matches. Mirrors
-	// swag's --tags flag/convention. Unset (the default) keeps everything.
-	Tags []string
+	AuthMiddleware    []string
+	Tags              []string
 }
 
 // ServerConfig represent a server configuration
@@ -81,13 +36,6 @@ type ServerConfig struct {
 	Description string `yaml:"description"`
 }
 
-// readProjectFile reads a single well-known file (here, just go.mod) directly
-// under projectPath, refusing to follow it if it's a symlink — a crafted
-// project could otherwise point it at an arbitrary file elsewhere on disk.
-// Uses os.Root (Go 1.24+) rather than a plain Lstat-then-ReadFile so the
-// symlink check and the read are confined to projectPath's tree as a single
-// operation instead of two separate steps a race could fall between (see the
-// matching helper and its longer rationale in pkg/analyzer).
 func readProjectFile(projectPath, name string) ([]byte, error) {
 	root, err := os.OpenRoot(projectPath)
 	if err != nil {
@@ -104,8 +52,6 @@ func readProjectFile(projectPath, name string) ([]byte, error) {
 	return root.ReadFile(name)
 }
 
-// detectProjectName reads go.mod and returns a human-readable project name
-// derived from the module path's last segment. Falls back to "API Documentation".
 func detectProjectName(projectPath string) string {
 	data, err := readProjectFile(projectPath, "go.mod")
 	if err != nil {
@@ -135,7 +81,6 @@ func detectProjectName(projectPath string) string {
 	return "API Documentation"
 }
 
-// Validate checks if the configuration is valid and returns clear, actionable errors.
 func (c *Config) Validate() error {
 	// check if project path exists
 	if _, err := os.Stat(c.ProjectPath); os.IsNotExist(err) {
@@ -172,19 +117,11 @@ func (c *Config) Validate() error {
 	}
 
 	if len(c.Exclude) == 0 {
-		// Matched by exact basename (see analyzer.go), so this must be ".git"
-		// — a bare "git" never matches a real directory and silently excludes
-		// nothing.
 		c.Exclude = []string{"vendor", "node_modules", ".git", "test", "tests"}
 	}
 	return nil
 }
 
-// checkOutputWithinWorkingDir rejects an Output path that resolves outside
-// the current working directory's tree. Only called when Output did not come
-// from an explicit --output/-o flag (see OutputFromFlag) — i.e. it came from
-// a config file, env var, or the "./docs" default, none of which a user
-// necessarily typed or reviewed for this specific run.
 func checkOutputWithinWorkingDir(output string) error {
 	cwd, err := os.Getwd()
 	if err != nil {

@@ -1,7 +1,3 @@
-// Package models holds the framework-agnostic, intermediate representation
-// pkg/analyzer produces and pkg/generator consumes: an APISpec (endpoints,
-// schemas, servers) that neither package needs to know the other's details
-// to work with.
 package models
 
 // APISpec represents the complete API specification
@@ -14,12 +10,6 @@ type APISpec struct {
 	Endpoints   []Endpoint        `json:"endpoints" yaml:"endpoints"`
 	Models      map[string]Schema `json:"models" yaml:"models"`
 
-	// TypePackageName maps a type name (as used in RequestTypeName/
-	// ResponseTypeName) to the Go package it's declared in, e.g.
-	// "CreateUserRequest" -> "models". Used only by --write-annotations to
-	// qualify a cross-package type reference (models.CreateUserRequest)
-	// instead of a bare name swag can't resolve outside the handler's own
-	// package - not part of the OpenAPI/Postman output itself.
 	TypePackageName map[string]string `json:"-" yaml:"-"`
 }
 
@@ -40,11 +30,11 @@ type Endpoint struct {
 	RequestBody *RequestBody          `json:"requestBody,omitempty" yaml:"requestBody,omitempty"`
 	Responses   map[int]Response      `json:"responses" yaml:"responses"`
 	Security    []map[string][]string `json:"security,omitempty" yaml:"security,omitempty"`
-	// SourceFile and HandlerName are set so --write-annotations can target the handler (same file or resolved from HandlerPackage).
+
 	SourceFile     string `json:"-" yaml:"-"`
 	HandlerName    string `json:"-" yaml:"-"`
-	HandlerPackage string `json:"-" yaml:"-"` // e.g. "controllers" when route uses controllers.CreateUser
-	// RequestTypeName and ResponseTypeName are the Go type names for @Param body and @Success (for swag annotations).
+	HandlerPackage string `json:"-" yaml:"-"`
+
 	RequestTypeName  string `json:"-" yaml:"-"`
 	ResponseTypeName string `json:"-" yaml:"-"`
 }
@@ -98,9 +88,7 @@ type Schema struct {
 	AdditionalProperties interface{}       `json:"additionalProperties,omitempty" yaml:"additionalProperties,omitempty"`
 	Nullable             bool              `json:"nullable,omitempty" yaml:"nullable,omitempty"`
 	Ref                  string            `json:"$ref,omitempty" yaml:"$ref,omitempty"`
-	// Embeds lists locally-defined struct types anonymously embedded in this
-	// struct (e.g. `gorm.Model`, a shared `BaseModel`). Resolved into
-	// Properties by the analyzer's field-promotion pass; never serialized.
+
 	Embeds []string `json:"-" yaml:"-"`
 }
 

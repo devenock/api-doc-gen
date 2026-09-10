@@ -1,7 +1,3 @@
-// Package annotations implements --write-annotations: writing swag-style
-// `// @...` comment blocks above same-file handler functions, so a project
-// that adopts specyl can migrate to swaggo/swag-compatible annotations
-// without writing them by hand.
 package annotations
 
 import (
@@ -16,20 +12,6 @@ import (
 	"github.com/devenock/specyl/pkg/models"
 )
 
-// WriteSwagAnnotations writes swag-style comment blocks above handler functions for each endpoint that has SourceFile and HandlerName set.
-// basePath is prepended to route paths in @Router (e.g. /api/v1). It can be empty.
-// projectPath scopes every read/write to its tree via os.Root (Go 1.24+):
-// SourceFile was discovered during an earlier, separate analysis pass, and
-// this write step runs later still, in its own call — without root
-// confinement, a symlink swapped in for that path anytime in between (a
-// wider window than a single directory walk) would have its target read
-// and, worse, written to, regardless of where it points. See the equivalent
-// guard (with the fuller rationale) in pkg/analyzer.
-// typePackageName maps a type name (RequestTypeName/ResponseTypeName) to the
-// Go package it's declared in (models.APISpec.TypePackageName), so a
-// cross-package reference can be written as swag expects (models.Foo)
-// instead of a bare name swag can only resolve within the handler's own
-// package.
 func WriteSwagAnnotations(projectPath string, endpoints []models.Endpoint, basePath string, typePackageName map[string]string) (written int, err error) {
 	root, err := os.OpenRoot(projectPath)
 	if err != nil {
@@ -68,9 +50,7 @@ func writeSwagToFile(root *os.Root, projectPath, filePath, handlerName string, e
 	if err != nil {
 		return 0, fmt.Errorf("resolve %s relative to project: %w", filePath, err)
 	}
-	// Refuse a symlink exactly as the original analysis walk would have -
-	// os.Root follows symlinks that stay within the root (only escaping ones
-	// are blocked), so this still needs its own explicit check.
+
 	info, err := root.Lstat(rel)
 	if err != nil {
 		return 0, fmt.Errorf("stat %s: %w", filePath, err)
@@ -135,11 +115,7 @@ func buildSwagBlock(ep models.Endpoint, all []models.Endpoint, basePath, handler
 		if in == "" {
 			in = "path"
 		}
-		// swag's own @Param regexp requires a non-empty quoted description
-		// (`"([^"]+)"`, one-or-more) - an empty "" fails it outright and
-		// aborts parsing the whole file, so a param with no description
-		// (common for path/query params, which rarely get one) falls back
-		// to its name rather than emitting a description-shaped hole.
+
 		desc := p.Description
 		if desc == "" {
 			desc = p.Name
@@ -172,22 +148,6 @@ func buildSwagBlock(ep models.Endpoint, all []models.Endpoint, basePath, handler
 	return lines
 }
 
-// qualifyTypeName returns typeName as swag needs it in the handler's file:
-// bare if it's declared in the handler's own package (or its package is
-// unknown), or "pkg.TypeName" when it's declared elsewhere - swag can only
-// resolve a bare name within the annotated function's own package (see
-// PackagesDefinitions.FindTypeSpec upstream), so a cross-package reference
-// left unqualified fails with "cannot find type definition" when swag
-// itself later parses these annotations.
-//
-// The matching import is guaranteed to already be present in
-// handlerImports: whatever binding code in this same handler originally
-// referenced typeName (var req models.CreateUserRequest) necessarily
-// imports models to compile. If no matching import is found regardless
-// (typePackageName has no entry, e.g. the type was resolved before this
-// tracking existed, or came from an update this file predates), the bare
-// name is returned unchanged rather than guessing a qualifier that might be
-// wrong.
 func qualifyTypeName(typeName, handlerPkg string, handlerImports []*ast.ImportSpec, typePackageName map[string]string) string {
 	if typeName == "" {
 		return ""
@@ -212,16 +172,6 @@ func qualifyTypeName(typeName, handlerPkg string, handlerImports []*ast.ImportSp
 	return typeName
 }
 
-// escapeSwagLine strips embedded newlines before a value is interpolated
-// into a `// @...` comment line. Every such value here ultimately traces
-// back to a string literal in the analyzed project's own source (route
-// paths, handler doc comments) — normally that can't contain a raw newline,
-// but a backtick raw-string literal legitimately can. Without this, a
-// deliberately crafted route path containing one could break out of the `//`
-// comment when --write-annotations writes it back, turning the rest of the
-// crafted string into literal (non-comment) lines injected into the
-// project's own .go file — every field embedded here must go through this,
-// not just the ones that happen to look free-form (Summary/Description).
 func escapeSwagLine(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	return strings.TrimSpace(s)

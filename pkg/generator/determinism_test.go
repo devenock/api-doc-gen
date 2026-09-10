@@ -9,10 +9,6 @@ import (
 	"github.com/devenock/specyl/pkg/models"
 )
 
-// determinismTestSpec builds a spec with enough map-keyed data (multiple
-// tags, multiple schema properties, multiple registered models) that any
-// output path ranging a map without sorting first would have a real chance
-// of producing different byte output across runs.
 func determinismTestSpec() *models.APISpec {
 	return &models.APISpec{
 		Title:   "Determinism Test API",
@@ -46,12 +42,6 @@ func determinismTestSpec() *models.APISpec {
 	}
 }
 
-// TestSwaggerGenerate_DeterministicAcrossRuns is a regression test (review
-// §6.3): generating from the identical spec repeatedly must produce
-// byte-identical output. Go map iteration order is not guaranteed stable
-// even across repeated iterations of the same map within one process, so
-// any output path that ranges a map without sorting first has a real chance
-// of being caught by this across enough iterations.
 func TestSwaggerGenerate_DeterministicAcrossRuns(t *testing.T) {
 	spec := determinismTestSpec()
 	var first map[string][]byte

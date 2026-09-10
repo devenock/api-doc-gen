@@ -11,25 +11,10 @@ import (
 	"github.com/devenock/specyl/pkg/models"
 )
 
-// ---- Response inference ----
-//
-// This is the response-side counterpart of the request-binding inference in
-// request.go (findBindingTypeName et al.): same AST-walking approach, same
-// reliance on collectLocalTypedVars for identifier types, same depth-limited
-// delegation following. Unlike the request side, a handler can legitimately
-// emit more than one response (a success path and one or more error paths),
-// so extractResponses returns every distinct status code it finds rather
-// than a single type name. Per-framework response-call recognition
-// (recognizeGinResponseCall/recognizeEchoResponseCall/
-// recognizeFiberResponseCall) also lives here, alongside the net/http-style
-// walkNetHTTPResponses used by Gorilla/Chi/generic handlers.
-
-// responseCall is a normalized, framework-agnostic description of a single
-// response-emitting call found in a handler body.
 type responseCall struct {
 	status   int
 	hasBody  bool
-	isJSON   bool // false for String/Data/XML/Blob/SendString — still worth a response entry, just no inferred schema
+	isJSON   bool
 	bodyExpr ast.Expr
 }
 
@@ -47,9 +32,6 @@ var (
 	echoBodylessResponseMethod = "NoContent"
 )
 
-// httpStatusConstants maps net/http's exported Status* identifiers to their
-// integer values, so `http.StatusCreated` resolves the same as a literal 201
-// without needing full type information (go/types — see review §4).
 var httpStatusConstants = map[string]int{
 	"StatusContinue": 100, "StatusSwitchingProtocols": 101, "StatusProcessing": 102,
 	"StatusOK": 200, "StatusCreated": 201, "StatusAccepted": 202,
@@ -78,8 +60,6 @@ var httpStatusConstants = map[string]int{
 	"StatusNotExtended": 510, "StatusNetworkAuthenticationRequired": 511,
 }
 
-// statusDescription returns a short human-readable description for a status
-// code, used as the OpenAPI response's required "description" field.
 func statusDescription(status int) string {
 	if status >= 200 && status < 300 {
 		return "Successful response"
@@ -90,9 +70,7 @@ func statusDescription(status int) string {
 	return fmt.Sprintf("Response %d", status)
 }
 
-// resolveStatusCode resolves a call argument to an HTTP status code (review
-// §3, Step 2): either an integer literal (c.JSON(201, ...)) or a
-// net/http Status* constant (c.JSON(http.StatusCreated, ...)).
+// resolveStatusCode resolves a call argument to an HTTP status code
 func resolveStatusCode(expr ast.Expr) (int, bool) {
 	switch e := expr.(type) {
 	case *ast.BasicLit:
@@ -106,9 +84,7 @@ func resolveStatusCode(expr ast.Expr) (int, bool) {
 		return n, true
 	case *ast.SelectorExpr:
 		pkgIdent, ok := e.X.(*ast.Ident)
-		// fiber re-exports the same Status* constants (identical values) as
-		// its own idiomatic convenience aliases — fiber.StatusCreated is as
-		// common in real Fiber code as http.StatusCreated.
+
 		if !ok || (pkgIdent.Name != "http" && pkgIdent.Name != "fiber") {
 			return 0, false
 		}
@@ -118,10 +94,6 @@ func resolveStatusCode(expr ast.Expr) (int, bool) {
 	return 0, false
 }
 
-// substArg substitutes expr with its mapped replacement when expr is a bare
-// identifier matching a helper function's parameter name — see
-// resolveHelperDelegate. subst is nil on a direct (non-delegated) call, in
-// which case substitution is a no-op.
 func substArg(expr ast.Expr, subst map[string]ast.Expr) ast.Expr {
 	if subst == nil {
 		return expr
@@ -136,11 +108,6 @@ func substArg(expr ast.Expr, subst map[string]ast.Expr) ast.Expr {
 	return expr
 }
 
-// recognizeResponseCall inspects call and, if it matches a known
-// response-emitting method for the analyzer's configured framework, returns
-// the normalized call info and true. recvName is the handler's own context
-// parameter name (e.g. "c") — required so an unrelated foo.JSON(...) call
-// elsewhere in the body is never mistaken for a response.
 func (a *Analyzer) recognizeResponseCall(call *ast.CallExpr, recvName string, subst map[string]ast.Expr) (responseCall, bool) {
 	switch a.framework {
 	case models.FrameWorkGin:
@@ -239,10 +206,6 @@ func recognizeEchoResponseCall(call *ast.CallExpr, recvName string, subst map[st
 	return responseCall{}, false
 }
 
-// recognizeFiberResponseCall handles both Fiber shapes: a direct call
-// (c.JSON(obj), status implicitly 200) and the chained form
-// (c.Status(code).JSON(obj)) where the status is set by a preceding call
-// whose result is immediately re-selected on.
 func recognizeFiberResponseCall(call *ast.CallExpr, recvName string, subst map[string]ast.Expr) (responseCall, bool) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
@@ -300,8 +263,6 @@ func recognizeFiberResponseCall(call *ast.CallExpr, recvName string, subst map[s
 	return responseCall{}, false
 }
 
-// isMapLikeLiteralType reports whether t is a raw map type (map[string]any{})
-// or a well-known framework convenience alias for one: gin.H or fiber.Map.
 func isMapLikeLiteralType(t ast.Expr) bool {
 	switch e := t.(type) {
 	case *ast.MapType:
@@ -312,12 +273,6 @@ func isMapLikeLiteralType(t ast.Expr) bool {
 	return false
 }
 
-// schemaFromMapLiteralKeys builds an inline object schema from a map-literal
-// response body's keys (gin.H{"id": u.ID, "name": u.Name} or a raw
-// map[string]any{...}), typed as opaque strings since the literal's values
-// are arbitrary expressions with no declared type to inspect cheaply.
-// Non-string-literal keys (a computed key expression) are skipped — they
-// can't be named in an OpenAPI property map.
 func schemaFromMapLiteralKeys(lit *ast.CompositeLit) models.Schema {
 	props := make(map[string]models.Schema)
 	for _, elt := range lit.Elts {
@@ -334,8 +289,6 @@ func schemaFromMapLiteralKeys(lit *ast.CompositeLit) models.Schema {
 	return models.Schema{Type: "object", Properties: props}
 }
 
-// findFuncDecl returns the top-level function or method declaration named
-// funcName in file, or nil.
 func findFuncDecl(file *ast.File, funcName string) *ast.FuncDecl {
 	for _, decl := range file.Decls {
 		if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == funcName {
@@ -345,12 +298,6 @@ func findFuncDecl(file *ast.File, funcName string) *ast.FuncDecl {
 	return nil
 }
 
-// resolveCallReturnTypeName is a name-based fallback (go/types-free — see
-// review §4) for resolving the type of a function call used as a response
-// body expression, e.g. c.JSON(200, buildResponse(user)). Only handles the
-// simple, extremely common case of a same-file, non-generic function/method
-// with a named result type; anything else (cross-package calls, generics)
-// returns "".
 func resolveCallReturnTypeName(file *ast.File, call *ast.CallExpr) string {
 	name := calleeBaseName(call.Fun)
 	if name == "" {
@@ -370,10 +317,6 @@ func resolveCallReturnTypeName(file *ast.File, call *ast.CallExpr) string {
 	return ""
 }
 
-// findIdentAssignedCallType looks for `name := someFunc(...)` within body
-// and, if found, resolves someFunc's return type by name. Covers the very
-// common `user := service.Create(req); c.JSON(201, user)` shape that
-// collectLocalTypedVars's composite-literal-only tracking doesn't reach.
 func findIdentAssignedCallType(file *ast.File, body *ast.BlockStmt, name string) string {
 	var result string
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -400,11 +343,7 @@ func findIdentAssignedCallType(file *ast.File, body *ast.BlockStmt, name string)
 	return result
 }
 
-// resolveResponseBodySchema resolves the OpenAPI schema (and, when it comes
-// from a named type worth registering in components/schemas, the type name)
-// for a response body expression (review §3, Step 3). varTypes is the
-// enclosing block's local variable types (from collectLocalTypedVars); body
-// is the same block, used for the CallExpr-assigned-identifier fallback.
+// resolveResponseBodySchema resolves the OpenAPI schema
 func (a *Analyzer) resolveResponseBodySchema(file *ast.File, funcName string, expr ast.Expr, body *ast.BlockStmt, varTypes map[string]string) (schema models.Schema, typeName string) {
 	switch e := expr.(type) {
 	case *ast.UnaryExpr:
@@ -454,9 +393,6 @@ func (a *Analyzer) resolveResponseBodySchema(file *ast.File, funcName string, ex
 	return models.Schema{Type: "object"}, ""
 }
 
-// recordResponseCall converts a recognized responseCall into a
-// models.Response entry, resolving and registering its body schema when
-// present (review §3, Step 5).
 func (a *Analyzer) recordResponseCall(file *ast.File, funcName string, rc responseCall, body *ast.BlockStmt, varTypes map[string]string, responses map[int]models.Response) {
 	if !rc.hasBody || !rc.isJSON {
 		responses[rc.status] = models.Response{Description: statusDescription(rc.status)}
@@ -474,9 +410,6 @@ func (a *Analyzer) recordResponseCall(file *ast.File, funcName string, rc respon
 	}
 }
 
-// firstParamName returns the name of fd's first parameter (the context
-// param for Gin/Echo/Fiber handlers, the http.ResponseWriter param for
-// stdlib/Gorilla/Chi handlers), or "" if the signature has no named params.
 func firstParamName(fd *ast.FuncDecl) string {
 	if fd.Type.Params == nil || len(fd.Type.Params.List) == 0 {
 		return ""
@@ -526,13 +459,6 @@ func matchJSONEncode(call *ast.CallExpr, writerName string) (ast.Expr, bool) {
 	return call.Args[0], true
 }
 
-// walkNetHTTPResponses handles the Gorilla/Chi (net/http) response pattern:
-// w.WriteHeader(status) followed by json.NewEncoder(w).Encode(v), correlated
-// by position within each block (the function body and each nested
-// if/else block are scanned independently via ast.Inspect naturally
-// visiting each *ast.BlockStmt, so branch-specific status/body pairs like an
-// error branch vs. a success branch resolve separately without being
-// conflated).
 func (a *Analyzer) walkNetHTTPResponses(file *ast.File, funcName string, fd *ast.FuncDecl, writerName string, varTypes map[string]string, responses map[int]models.Response) {
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
 		block, ok := n.(*ast.BlockStmt)
@@ -552,9 +478,7 @@ func (a *Analyzer) walkNetHTTPResponses(file *ast.File, funcName string, fd *ast
 			if s, ok := matchWriteHeader(call, writerName); ok {
 				status = s
 				if _, has := responses[status]; !has {
-					// A WriteHeader with nothing (yet) encoded after it in this
-					// block — bodyless unless a later Encode in this same block
-					// overwrites the entry below.
+
 					responses[status] = models.Response{Description: statusDescription(status)}
 				}
 				continue
@@ -576,10 +500,6 @@ func (a *Analyzer) walkNetHTTPResponses(file *ast.File, funcName string, fd *ast
 	})
 }
 
-// isContextPassthroughCall reports whether call's first argument is the
-// handler's own context/receiver identifier — the signal used to find
-// candidate response-writing helper calls (review §3, Step 4) like
-// respondError(c, http.StatusNotFound, "not found").
 func isContextPassthroughCall(call *ast.CallExpr, recvName string) bool {
 	if len(call.Args) == 0 {
 		return false
@@ -595,9 +515,6 @@ func isContextPassthroughCall(call *ast.CallExpr, recvName string) bool {
 	return false
 }
 
-// flattenParamNames returns a FieldList's parameter names in declaration
-// order ("" for an unnamed parameter), so they can be zipped positionally
-// against a call's argument list.
 func flattenParamNames(fl *ast.FieldList) []string {
 	if fl == nil {
 		return nil
@@ -615,15 +532,6 @@ func flattenParamNames(fl *ast.FieldList) []string {
 	return names
 }
 
-// resolveHelperDelegate identifies what a candidate helper call (found by
-// isContextPassthroughCall) delegates to, and builds the parameter
-// substitution map so a status/message argument passed at the call site
-// (respondError(c, http.StatusNotFound, "not found")) resolves correctly
-// when we recurse into the helper's own body and find it referenced there
-// only by parameter name (see substArg). Only follows a free function or a
-// method on the caller's own receiver (h.someOtherMethod(c)), mirroring
-// findDelegatedBindingTypeName's guard against wandering into an unrelated
-// type's same-named method.
 func (a *Analyzer) resolveHelperDelegate(file *ast.File, callerFd *ast.FuncDecl, call *ast.CallExpr) (delegateName string, subst map[string]ast.Expr) {
 	switch fn := call.Fun.(type) {
 	case *ast.Ident:
@@ -658,19 +566,10 @@ func (a *Analyzer) resolveHelperDelegate(file *ast.File, callerFd *ast.FuncDecl,
 	return delegateName, subst
 }
 
-// extractResponses walks handler funcName's body for response-emitting
-// calls and builds one OpenAPI response entry per distinct status code
-// found (review §3). Returns nil (not an error) when funcName can't be
-// found or nothing was recognized — callers fall back to a clearly-labeled
-// placeholder (Step 6) rather than treating this as a hard failure.
 func (a *Analyzer) extractResponses(file *ast.File, funcName string) map[int]models.Response {
 	return a.extractResponsesDepth(file, funcName, nil, 0)
 }
 
-// extractResponsesDepth is extractResponses' implementation. subst carries a
-// parameter->argument substitution when this call is itself a recursion into
-// a helper function (see resolveHelperDelegate); depth caps the recursion
-// the same way findBindingTypeNameDepth caps request-side delegation.
 func (a *Analyzer) extractResponsesDepth(file *ast.File, funcName string, subst map[string]ast.Expr, depth int) map[int]models.Response {
 	fd := findFuncDecl(file, funcName)
 	if fd == nil || fd.Body == nil {
@@ -715,7 +614,7 @@ func (a *Analyzer) extractResponsesDepth(file *ast.File, funcName string, subst 
 				responses[status] = resp
 			}
 			if len(responses) > 0 {
-				break // first helper call that actually resolves something wins
+				break
 			}
 		}
 	}

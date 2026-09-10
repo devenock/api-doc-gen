@@ -54,10 +54,6 @@ func init() {
 	generateCmd.Flags().Bool("skip-build-check", false, "skip the 'go vet ./...' pre-flight check against the target project")
 	generateCmd.Flags().Bool("required-by-default", false, "mark every struct field required unless it has json:\",omitempty\" (default: only binding/validate:\"required\" tags count)")
 
-	// Bind flags to viper. Errors are discarded: they can only occur if the
-	// flag name doesn't exist on the FlagSet, which would mean a typo above —
-	// a programmer error that go vet/tests would catch, not a runtime
-	// condition worth surfacing to the user.
 	_ = viper.BindPFlag("output", generateCmd.Flags().Lookup("output"))
 	_ = viper.BindPFlag("type", generateCmd.Flags().Lookup("type"))
 	_ = viper.BindPFlag("framework", generateCmd.Flags().Lookup("framework"))
@@ -141,10 +137,6 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return &exitCodeError{fmt.Errorf("invalid configuration: %w", err), ExitUsageError}
 	}
 
-	// Pre-flight: does the target project actually build? A project with
-	// build errors can still be partially analyzed (the AST parser doesn't
-	// need type-correct code), but the result may be incomplete or
-	// misleading, so warn — never block; see runBuildCheck.
 	if !cfg.SkipBuildCheck {
 		runBuildCheck(cfg, quiet)
 	}
@@ -172,10 +164,6 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return &exitCodeError{fmt.Errorf("failed to analyze codebase: %w", err), ExitRuntimeError}
 	}
 
-	// A zero-endpoint result is always a degenerate, actionable situation —
-	// warn regardless of --verbose so it isn't mistaken for a normal success
-	// (the generator will otherwise happily write a well-formed but empty
-	// collection/spec and the run will still print "generated successfully").
 	if len(apiSpec.Endpoints) == 0 && !quiet {
 		fmt.Fprintln(os.Stderr, "⚠️  No endpoints found — the generated file will be empty.")
 		fmt.Fprintf(os.Stderr, "   Detected framework: %s\n", apiAnalyzer.Framework())
@@ -218,9 +206,6 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Swagger: start a local server and open the browser automatically.
-	// In --quiet mode (CI/scripts) or with --serve=false, skip the server
-	// and browser open.
 	if cfg.DocType == "swagger" && !quiet {
 		if viper.GetBool("serve") {
 			return runServeDocs(cmd.Context(), cfg.Output, quiet, apiAnalyzer.DetectedPort())
@@ -236,11 +221,6 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// listenForPreview binds a loopback listener for the Swagger UI preview
-// server, trying preferredPort first (when non-empty) and falling back to
-// 8765 if that port can't be bound - typically because the app itself is
-// already listening on it, which the docs preview server obviously can't
-// also do. Returns the listener and the port it actually bound.
 func listenForPreview(preferredPort string) (net.Listener, string, error) {
 	const fallbackPort = "8765"
 	tried := []string{fallbackPort}
@@ -258,8 +238,6 @@ func listenForPreview(preferredPort string) (net.Listener, string, error) {
 	return nil, "", lastErr
 }
 
-// runServeDocs serves the output directory on a local port, opens the browser
-// automatically, and blocks until ctx is canceled (Ctrl+C).
 func runServeDocs(ctx context.Context, outputDir string, quiet bool, preferredPort string) error {
 	absDir, err := filepath.Abs(outputDir)
 	if err != nil {
@@ -269,12 +247,6 @@ func runServeDocs(ctx context.Context, outputDir string, quiet bool, preferredPo
 		return &exitCodeError{fmt.Errorf("output directory does not exist: %s", absDir), ExitRuntimeError}
 	}
 
-	// Prefer the port the app itself listens on (detected from its own
-	// source - see Analyzer.DetectedPort) so the Swagger UI preview opens on
-	// the same port as the running app, rather than an arbitrary fixed one.
-	// Falls back to 8765 if that port can't be bound - most commonly because
-	// the real app is actually running on it right now, which is a very
-	// plausible thing to be true while previewing its docs.
 	ln, port, err := listenForPreview(preferredPort)
 	if err != nil {
 		return &exitCodeError{fmt.Errorf("failed to start preview server: %w", err), ExitRuntimeError}
@@ -290,17 +262,11 @@ func runServeDocs(ctx context.Context, outputDir string, quiet bool, preferredPo
 		fmt.Println()
 	}
 
-	// Open the browser after a short delay so the server is ready to accept connections.
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		openBrowser(browserURL)
 	}()
 
-	// lastActivity tracks the most recent request, so the auto-shutdown
-	// below waits out real browser load time (which can vary - a cold
-	// browser start is slower than a warm one) instead of a blind fixed
-	// delay that risks cutting the server off before the page finishes
-	// loading, or lingering long after it's done.
 	var lastActivity atomic.Int64
 	fileServer := http.FileServer(http.Dir(absDir))
 	trackedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -308,14 +274,6 @@ func runServeDocs(ctx context.Context, outputDir string, quiet bool, preferredPo
 		fileServer.ServeHTTP(w, r)
 	})
 
-	// Loopback-only: this serves the whole output directory over plain HTTP
-	// with no auth, so binding to all interfaces would expose it to the LAN
-	// (or the public internet, if run on a host without a firewall) whenever
-	// generate --serve runs. ReadHeaderTimeout guards against a slow-headers
-	// (Slowloris-style) resource-exhaustion connection. Serves on the
-	// listener listenForPreview already opened above, rather than
-	// ListenAndServe's own Addr-based bind, since the port was chosen (with
-	// fallback) before the server was constructed.
 	srv := &http.Server{
 		Handler:           trackedHandler,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -323,16 +281,9 @@ func runServeDocs(ctx context.Context, outputDir string, quiet bool, preferredPo
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
 
-	// Auto-exit once the browser has loaded the page and gone quiet, rather
-	// than blocking indefinitely for a manual Ctrl+C: once index.html,
-	// its assets, and openapi.json have been fetched, the docs are fully
-	// usable client-side, and "Try it out" targets the app's own detected
-	// port (see detectListenPort), not this preview server - so nothing
-	// here needs to keep running past that point. Ctrl+C still works if the
-	// user wants to stop even sooner.
 	const (
-		idleGracePeriod = 2 * time.Second  // shut down this long after the last request
-		neverLoadedCap  = 10 * time.Second // shut down after this long if the browser never made a single request (e.g. the open command failed)
+		idleGracePeriod = 2 * time.Second
+		neverLoadedCap  = 10 * time.Second
 	)
 	shutdown := func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -382,14 +333,9 @@ func openBrowser(url string) {
 	default:
 		return
 	}
-	cmd.Start() /* #nosec G104 -- best-effort, open failure isn't worth surfacing */ //nolint:errcheck
+	cmd.Start()
 }
 
-// runBuildCheck runs analyzer.CheckBuild against cfg.ProjectPath and prints
-// a warning if the project doesn't build. It never returns an error: the
-// check is advisory only (see the SkipBuildCheck doc comment) — a project
-// that fails to build can still be worth generating docs from, so the tool
-// warns and continues rather than blocking.
 func runBuildCheck(cfg *config.Config, quiet bool) {
 	result := analyzer.CheckBuild(cfg.ProjectPath)
 	if result.Skipped || result.OK || quiet {

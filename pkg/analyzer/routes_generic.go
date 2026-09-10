@@ -8,14 +8,6 @@ import (
 	"github.com/devenock/specyl/pkg/models"
 )
 
-// Fallback route parsing used when the framework wasn't detected/recognized:
-// a best-effort ast.Inspect over the whole file for anything that looks like
-// a route registration, rather than a framework-specific structured walk.
-
-// parseGenericRoutes attempts to extract routes from unknown frameworks.
-// It handles two patterns:
-//  1. router.GET("/path", handler) — method-named selectors (framework-agnostic)
-//  2. http.HandleFunc("/path", handler) / mux.HandleFunc / mux.Handle — stdlib net/http
 func (a *Analyzer) parseGenericRoutes(n ast.Node, file *ast.File) {
 	callExpr, ok := n.(*ast.CallExpr)
 	if !ok {
@@ -27,11 +19,6 @@ func (a *Analyzer) parseGenericRoutes(n ast.Node, file *ast.File) {
 		return
 	}
 
-	// Framework is unknown here, so accept either casing convention
-	// (ginCasedMethods for Gin/Echo, fiberCasedMethods for Fiber) — but still
-	// require a real handler (>=2 args, last arg not a literal) so unrelated
-	// single-arg/literal-arg calls like header or context-value lookups
-	// aren't fabricated into endpoints.
 	method := selExpr.Sel.Name
 	isRouteMethod := ginCasedMethods[method] || fiberCasedMethods[method]
 
@@ -47,8 +34,6 @@ func (a *Analyzer) parseGenericRoutes(n ast.Node, file *ast.File) {
 		return
 	}
 
-	// Pattern 2: http.HandleFunc("/path", handler) or mux.Handle("/path", handler)
-	// Method is unknown for stdlib registrations; default to GET so the path is visible.
 	if (selExpr.Sel.Name == "HandleFunc" || selExpr.Sel.Name == "Handle") && len(callExpr.Args) >= 2 {
 		if path, ok := a.literalStringArg(callExpr.Args[0]); ok {
 			ep := a.newGenericEndpoint(path, "GET")
@@ -58,9 +43,6 @@ func (a *Analyzer) parseGenericRoutes(n ast.Node, file *ast.File) {
 	}
 }
 
-// lastHandlerName returns the function name from the last argument in a route
-// call's arg list. This handles middleware chains like r.GET("/p", mid, handler)
-// where the real handler is always the final argument.
 func lastHandlerName(args []ast.Expr) string {
 	for i := len(args) - 1; i >= 0; i-- {
 		switch arg := args[i].(type) {

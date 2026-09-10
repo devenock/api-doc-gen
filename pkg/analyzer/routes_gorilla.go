@@ -9,12 +9,6 @@ import (
 	"github.com/devenock/specyl/pkg/models"
 )
 
-// Gorilla/mux route parsing: subrouter/prefix tracking, .Methods() chains,
-// and net/http-style handlers (see walkNetHTTPResponses in response.go).
-
-// buildGorillaSubrouterPrefixes builds a map of variable name -> path prefix
-// from gorilla/mux subrouter chains (e.g. api := r.PathPrefix("/api/v1").Subrouter())
-// so nested routes resolve to their full path, mirroring buildGinGroupPrefixes.
 func (a *Analyzer) buildGorillaSubrouterPrefixes(file *ast.File) map[string]string {
 	type link struct{ child, parent, path string }
 	var links []link
@@ -75,9 +69,6 @@ var gorillaValidMethods = map[string]bool{
 	"PATCH": true, "HEAD": true, "OPTIONS": true,
 }
 
-// buildGorillaEndpoints builds one rich endpoint per HTTP method for a gorilla/mux
-// route registration, extracting the same handler comments/request body/query
-// params/auth that parseGinRoutes extracts for Gin/Echo/Fiber/Chi.
 func (a *Analyzer) buildGorillaEndpoints(path string, methods []string, handlerArg ast.Expr, file *ast.File, receiverName string) []models.Endpoint {
 	path = normalizeBracePath(path)
 	if a.curGroupPrefix != nil && receiverName != "" {
@@ -113,9 +104,6 @@ func (a *Analyzer) buildGorillaEndpoints(path string, methods []string, handlerA
 	return endpoints
 }
 
-// parseGorillaRoutes extracts routes from gorilla/mux HandleFunc/Handle calls
-// that are not wrapped in a .Methods() chain (parseGorillaMethods handles
-// those via a.consumedCalls so the same registration isn't added twice).
 func (a *Analyzer) parseGorillaRoutes(n ast.Node, file *ast.File) {
 	callExpr, ok := n.(*ast.CallExpr)
 	if !ok || a.consumedCalls[callExpr] {
@@ -142,18 +130,10 @@ func (a *Analyzer) parseGorillaRoutes(n ast.Node, file *ast.File) {
 
 	receiverName := groupVarKey(selExpr.X)
 
-	// No .Methods() chain: gorilla/mux matches any HTTP method on this route.
-	// We record it as GET so the path is visible; if a .Methods() call exists
-	// it will have already marked this call as consumed and we won't get here.
 	handlerArg := callExpr.Args[len(callExpr.Args)-1]
 	a.endpoints = append(a.endpoints, a.buildGorillaEndpoints(path, []string{"GET"}, handlerArg, file, receiverName)...)
 }
 
-// parseGorillaMethods handles .Methods("POST", ...) chained after HandleFunc/Handle.
-// It marks the inner HandleFunc/Handle call as consumed (via a.consumedCalls) so
-// parseGorillaRoutes skips it when ast.Inspect visits that node directly —
-// otherwise both functions would add an endpoint for the same registration
-// (one with the correct method, one with the wrong default GET).
 func (a *Analyzer) parseGorillaMethods(n ast.Node, file *ast.File) {
 	callExpr, ok := n.(*ast.CallExpr)
 	if !ok || len(callExpr.Args) == 0 {
@@ -176,9 +156,6 @@ func (a *Analyzer) parseGorillaMethods(n ast.Node, file *ast.File) {
 		return
 	}
 
-	// httpMethodConsts maps the net/http package-level constant names to their
-	// string values so that .Methods(http.MethodPost) is handled the same way
-	// as .Methods("POST").
 	httpMethodConsts := map[string]string{
 		"MethodGet": "GET", "MethodPost": "POST", "MethodPut": "PUT",
 		"MethodDelete": "DELETE", "MethodPatch": "PATCH",

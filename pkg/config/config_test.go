@@ -88,9 +88,6 @@ func TestValidate_TitleFromGoMod(t *testing.T) {
 }
 
 func TestValidate_SymlinkedGoModIsIgnored(t *testing.T) {
-	// A symlinked go.mod could point at an arbitrary file outside the project
-	// tree; detectProjectName must refuse to follow it and fall back instead
-	// of reading (and deriving a title from) whatever it points to.
 	dir := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "real.mod")
 	writeFile(t, outside, "module should-not-be-read\n")
@@ -108,9 +105,6 @@ func TestValidate_SymlinkedGoModIsIgnored(t *testing.T) {
 }
 
 func TestValidate_RejectsOutputEscapingWorkingDirWhenNotFromFlag(t *testing.T) {
-	// A malicious .specyl.yaml (or env var) redirecting Output outside the
-	// working directory must be refused unless the user typed --output
-	// themselves for this run.
 	outside := filepath.Join(t.TempDir(), "elsewhere")
 	cfg := &Config{ProjectPath: t.TempDir(), DocType: "swagger", Output: outside}
 	if err := cfg.Validate(); err == nil {
@@ -119,9 +113,6 @@ func TestValidate_RejectsOutputEscapingWorkingDirWhenNotFromFlag(t *testing.T) {
 }
 
 func TestValidate_AllowsOutputEscapingWorkingDirWhenFromFlag(t *testing.T) {
-	// The same path is fine when the user explicitly passed --output/-o for
-	// this invocation - that's the README's documented cross-directory
-	// pattern (-o /path/to/other-project/docs).
 	outside := filepath.Join(t.TempDir(), "elsewhere")
 	cfg := &Config{ProjectPath: t.TempDir(), DocType: "swagger", Output: outside, OutputFromFlag: true}
 	if err := cfg.Validate(); err != nil {
@@ -130,8 +121,6 @@ func TestValidate_AllowsOutputEscapingWorkingDirWhenFromFlag(t *testing.T) {
 }
 
 func TestValidate_AllowsOutputUnderWorkingDir(t *testing.T) {
-	// The common cases - default "./docs" and any relative path under cwd -
-	// must never be blocked regardless of source.
 	for _, out := range []string{"", "./docs", "docs", "./nested/docs"} {
 		cfg := &Config{ProjectPath: t.TempDir(), DocType: "swagger", Output: out}
 		if err := cfg.Validate(); err != nil {

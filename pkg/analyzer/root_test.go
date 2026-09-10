@@ -10,9 +10,6 @@ import (
 	"github.com/devenock/specyl/pkg/config"
 )
 
-// newRootedAnalyzer builds an Analyzer with root opened exactly as Analyze()
-// opens it, without running a full Analyze() pass - for tests that exercise
-// rootReadFile/rootParseFile/walkProjectDir directly.
 func newRootedAnalyzer(t *testing.T, projectPath string) *Analyzer {
 	t.Helper()
 	root, err := os.OpenRoot(projectPath)
@@ -57,10 +54,7 @@ func TestRootReadFile_RefusesSymlinkEscapingProject(t *testing.T) {
 }
 
 func TestRootReadFile_RefusesSymlinkWithinProject(t *testing.T) {
-	// os.Root itself would follow a symlink that stays within the root (only
-	// escaping ones are blocked at that layer) - rootReadFile must add its
-	// own check on top, matching the pre-os.Root behavior of refusing every
-	// symlink unconditionally, not just ones that escape.
+
 	dir := writeProject(t, map[string]string{
 		"real.go": "package main\nconst X = 1\n",
 	})

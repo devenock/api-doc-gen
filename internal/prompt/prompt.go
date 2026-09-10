@@ -1,6 +1,3 @@
-// Package prompt implements the interactive wizard (doc type, framework,
-// title, output dir) that cmd/generate.go runs when neither --no-interactive
-// nor --type was given.
 package prompt
 
 import (
@@ -75,10 +72,6 @@ func GetUserPreferences(cfg *config.Config) error {
 		cfg.Title = title
 	}
 
-	// API Description (default from config file / flags). Optional - the
-	// same field --description/SPECYL_DESCRIPTION/the config file's
-	// `description` key already set, just previously with no way to set it
-	// from the wizard itself.
 	descriptionPrompt := promptui.Prompt{
 		Label:   "API Description (optional)",
 		Default: cfg.Description,
