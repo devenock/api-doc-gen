@@ -333,7 +333,7 @@ func openBrowser(url string) {
 	default:
 		return
 	}
-	cmd.Start()
+	_ = cmd.Start()
 }
 
 func runBuildCheck(cfg *config.Config, quiet bool) {
